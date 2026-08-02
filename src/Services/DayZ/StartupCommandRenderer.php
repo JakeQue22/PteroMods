@@ -44,7 +44,7 @@ final class StartupCommandRenderer
      */
     public function parameters(string $command): array
     {
-        $parts = preg_split('/\s+(?=-)/', trim($command)) ?: [];
+        $parts = preg_split('/\s+(?=["\']?-)/', trim($command)) ?: [];
 
         return array_values(array_filter(
             array_map('trim', $parts),

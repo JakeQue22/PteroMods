@@ -64,7 +64,7 @@
     @if (count($installed_mods) > 0)
         <div class="dz-mod-grid">
             @foreach ($installed_mods as $mod)
-                {!! $component('mod-card', ['mod' => $mod, 'server_id' => $server_id]) !!}
+                {!! $component('mod-card', ['mod' => $mod, 'server_id' => $client_id]) !!}
             @endforeach
         </div>
     @else

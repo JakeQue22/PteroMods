@@ -54,6 +54,17 @@ final class DayZServerContext
     }
 
     /**
+     * The identifier the panel client area uses in its URLs (the short UUID),
+     * falling back to the identifier the route was called with.
+     */
+    public function clientIdentifier(mixed $model, string $fallback = ''): string
+    {
+        $identifier = $this->attribute($model, ['uuidShort', 'uuid_short']);
+
+        return $identifier !== '' ? $identifier : $fallback;
+    }
+
+    /**
      * Reads the `server` route parameter as a string when a request is available.
      */
     public function routeServerParameter(): string

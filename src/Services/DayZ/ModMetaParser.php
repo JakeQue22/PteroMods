@@ -59,8 +59,12 @@ final class ModMetaParser
             return [];
         }
 
-        if (preg_match('/(?:^|\s)-' . preg_quote($parameter, '/') . '=(?:"([^"]*)"|(\S*))/i', $value, $matches) === 1) {
-            $value = $matches[1] !== '' ? $matches[1] : ($matches[2] ?? '');
+        // The parameter may be quoted as a whole ("-mod=@A;@B"), quoted after
+        // the equals sign (-mod="@A;@B"), or unquoted.
+        if (preg_match('/-' . preg_quote($parameter, '/') . '=(?:"([^"]*)"|\'([^\']*)\'|([^"\'\s]*))/i', $value, $matches) === 1) {
+            $value = ($matches[1] ?? '') !== ''
+                ? $matches[1]
+                : ((($matches[2] ?? '') !== '') ? $matches[2] : ($matches[3] ?? ''));
         } elseif (str_contains($value, '-mod=') || str_contains($value, '-serverMod=')) {
             // A startup command that does not carry the requested parameter.
             return [];

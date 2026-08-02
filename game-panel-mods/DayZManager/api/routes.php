@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-return [
+$routes = [
     ['method' => 'GET',    'uri' => '/api/servers/{server}/dayz/mods',                     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@index'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/install',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@install'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/remove',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@remove'],
@@ -32,3 +32,11 @@ return [
     ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/server/restart',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@restart'],
     ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/server/launch-parameters',    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@launchParameters'],
 ];
+
+foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix) {
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/tab', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZTabController@status'];
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dashboard', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'];
+    $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/power', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@power'];
+}
+
+return $routes;

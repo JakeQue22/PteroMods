@@ -18,7 +18,7 @@
             <p>{{ $server_name }}{{ ($server_id !== '' && $server_id !== $server_name) ? ' · ' . $server_id : '' }}</p>
         </div>
         @if ($server_id !== '')
-            <a class="dz-back" href="/server/{{ $server_id }}">&larr; Back to server</a>
+            <a class="dz-back" href="{{ $server_url }}">&larr; Back to server</a>
         @endif
     </header>
 

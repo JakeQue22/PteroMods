@@ -1,9 +1,21 @@
 {
   "name": "DayZ Manager",
   "slug": "dayz-manager",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "author": "JakeQue22",
-  "description": "DayZ server management with dashboard, workshop mod tooling, player list management, server controls, configuration editing, and API contracts.",
-  "supports": ["dayz", "dayz-dedicated", "source-engine-dayz", "source-engine", "source"],
-  "tabs": ["DayZ Manager", "Workshop Mods", "Player Lists", "Server", "Configuration"]
+  "description": "DayZ server management with a live dashboard, Workshop mod discovery, player list management, power controls, real launch parameters, and linked configuration file editing.",
+  "supports": [
+    "dayz",
+    "dayz-dedicated",
+    "source-engine-dayz",
+    "source-engine",
+    "source"
+  ],
+  "tabs": [
+    "DayZ Manager",
+    "Workshop Mods",
+    "Player Lists",
+    "Server",
+    "Configuration"
+  ]
 }

@@ -35,7 +35,7 @@
         <div class="dz-mod-grid" id="dz-mod-grid">
             @foreach ($installed_mods as $mod)
                 <div class="dz-mod-wrap" data-search="{{ strtolower(($mod['title'] ?? '') . ' ' . ($mod['folder_name'] ?? '') . ' ' . ($mod['workshop_id'] ?? '')) }}">
-                    {!! $component('mod-card', ['mod' => $mod, 'server_id' => $server_id]) !!}
+                    {!! $component('mod-card', ['mod' => $mod, 'server_id' => $client_id]) !!}
                 </div>
             @endforeach
         </div>

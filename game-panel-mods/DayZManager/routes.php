@@ -2,15 +2,33 @@
 
 declare(strict_types=1);
 
-return [
-    ['method' => 'GET', 'uri' => '/servers/{server}/dayz',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'],
-    ['method' => 'GET', 'uri' => '/servers/{server}/dayz/mods',         'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@index'],
-    ['method' => 'GET', 'uri' => '/servers/{server}/dayz/configuration', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZConfigurationController@index'],
-    ['method' => 'GET', 'uri' => '/servers/{server}/dayz/players',      'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@index'],
-    ['method' => 'GET', 'uri' => '/servers/{server}/dayz/server',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@launchParameters'],
-    ['method' => 'GET', 'uri' => '/server/{server}/dayz',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'],
-    ['method' => 'GET', 'uri' => '/server/{server}/dayz/mods',          'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@index'],
-    ['method' => 'GET', 'uri' => '/server/{server}/dayz/configuration', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZConfigurationController@index'],
-    ['method' => 'GET', 'uri' => '/server/{server}/dayz/players',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@index'],
-    ['method' => 'GET', 'uri' => '/server/{server}/dayz/server',        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@launchParameters'],
+$pages = [
+    ''               => 'DayZDashboardController@show',
+    '/mods'          => 'DayZWorkshopController@index',
+    '/configuration' => 'DayZConfigurationController@index',
+    '/players'       => 'DayZPlayerController@index',
+    '/server'        => 'DayZServerController@launchParameters',
 ];
+
+$routes = [];
+
+// The panel uses `/server/{id}` in the client area and `/admin/servers/view/{id}`
+// in the admin area; both (plus the plural `/servers/{id}` alias) reach the same
+// pages so the DayZ Manager tab works wherever it is opened from.
+foreach (['/servers/{server}/dayz', '/server/{server}/dayz', '/admin/servers/view/{server}/dayz'] as $prefix) {
+    foreach ($pages as $suffix => $action) {
+        $routes[] = [
+            'method' => 'GET',
+            'uri'    => $prefix . $suffix,
+            'action' => 'GamePanelMods\\DayZManager\\Controllers\\' . $action,
+        ];
+    }
+}
+
+$routes[] = [
+    'method' => 'GET',
+    'uri'    => '/game-panel-mods/dayz-manager/tab.js',
+    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZTabController@script',
+];
+
+return $routes;

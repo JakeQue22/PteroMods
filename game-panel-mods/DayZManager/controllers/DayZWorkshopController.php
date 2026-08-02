@@ -30,6 +30,7 @@ final class DayZWorkshopController
 
         try {
             $data = [
+                'client_id'      => $this->context->clientIdentifier($resolved['model'], $resolved['id']),
                 'settings'       => $this->service->settings($resolved['model']),
                 'installed_mods' => $this->service->installedMods($resolved['model']),
             ];

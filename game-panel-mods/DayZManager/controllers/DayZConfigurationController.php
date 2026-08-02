@@ -32,10 +32,12 @@ final class DayZConfigurationController
         $resolved = $this->context->resolve($server);
 
         try {
-            $groups = $this->service->groups($resolved['model'], $resolved['id']);
+            $clientId = $this->context->clientIdentifier($resolved['model'], $resolved['id']);
+            $groups = $this->service->groups($resolved['model'], $clientId);
             $paths = $paths !== [] ? $paths : $this->pathsIn($groups);
 
             $data = [
+                'client_id'       => $clientId,
                 'groups'          => $groups,
                 'files'           => $this->service->files($paths),
                 'editor_features' => $this->service->editorFeatures(),

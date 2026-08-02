@@ -38,6 +38,9 @@ final class DayZPageRenderer
         $base = $this->basePath($serverId);
         $data['server_id'] = $serverId;
         $data['base_url'] = $base;
+        // Panel file-manager deep links always use the client identifier, even
+        // when the page was opened from the admin area.
+        $data['client_id'] ??= $serverId;
         // Blade's @include resolves view names, not file paths, so views render
         // shared components through this callable instead.
         $data['component'] = fn (string $name, array $componentData = []): string => $this->component($name, $componentData);
@@ -75,10 +78,45 @@ final class DayZPageRenderer
 
     /**
      * Base URL for every DayZ Manager page of a server.
+     *
+     * Admin requests keep the admin prefix so the tab stays inside the admin
+     * area (and the numeric server id in the URL keeps working).
      */
     public function basePath(string $serverId): string
     {
-        return '/server/' . rawurlencode($serverId) . '/dayz';
+        return $this->serverPath($serverId) . '/dayz';
+    }
+
+    /**
+     * URL of the panel page the module pages link back to.
+     */
+    public function serverPath(string $serverId): string
+    {
+        $encoded = rawurlencode($serverId);
+
+        return $this->isAdminRequest()
+            ? '/admin/servers/view/' . $encoded
+            : '/server/' . $encoded;
+    }
+
+    /**
+     * True when the current request was made from the admin area.
+     */
+    private function isAdminRequest(): bool
+    {
+        if (!function_exists('request')) {
+            return false;
+        }
+
+        try {
+            $request = request();
+
+            return is_object($request)
+                && method_exists($request, 'path')
+                && str_starts_with('/' . ltrim((string) $request->path(), '/'), '/admin/');
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function wrap(string $content, string $activeTab, string $serverId, string $serverName): string
@@ -94,6 +132,7 @@ final class DayZPageRenderer
             'title'       => $this->tabLabel($activeTab),
             'server_name' => $serverName,
             'server_id'   => $serverId,
+            'server_url'  => $this->serverPath($serverId),
             'active_tab'  => $activeTab,
             'tabs'        => $tabs,
             'content'     => $content,

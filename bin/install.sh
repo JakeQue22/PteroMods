@@ -172,6 +172,54 @@ case "$ROUTE_STATUS" in
     *)         success "Module routes registered in: $ROUTE_STATUS" ;;
 esac
 
+echo ""
+echo "── Step 5b: Registering navigation tab script ──"
+
+cat > /tmp/pteromods-tab-patch.php << 'PHPEOF'
+<?php
+declare(strict_types=1);
+$panelRoot = $argv[1] ?? '';
+// The client area is a JavaScript application and the admin area is Blade, so
+// the tab script is loaded from both layouts; it decides where to inject the
+// "DayZ Manager" link based on the current URL.
+$candidates = ['resources/views/templates/wrapper.blade.php', 'resources/views/layouts/admin.blade.php'];
+$tag = '<script src="/game-panel-mods/dayz-manager/tab.js"></script>';
+$patched = [];
+$found = false;
+foreach ($candidates as $candidate) {
+    $file = $panelRoot . '/' . $candidate;
+    if (!is_file($file)) {
+        continue;
+    }
+    $found = true;
+    $contents = (string) file_get_contents($file);
+    if (str_contains($contents, 'dayz-manager/tab.js')) {
+        continue;
+    }
+    $position = strripos($contents, '</body>');
+    if ($position === false) {
+        continue;
+    }
+    $contents = substr($contents, 0, $position) . '        ' . $tag . "\n" . substr($contents, $position);
+    file_put_contents($file, $contents);
+    $patched[] = $candidate;
+}
+if (!$found) {
+    echo 'missing';
+    exit(0);
+}
+echo $patched === [] ? 'unchanged' : implode(',', $patched);
+PHPEOF
+
+TAB_STATUS="$(php /tmp/pteromods-tab-patch.php "$PANEL_ROOT")"
+rm -f /tmp/pteromods-tab-patch.php
+
+case "$TAB_STATUS" in
+    missing)   warn "Panel layouts not found - add the tab script manually (README, navigation tab)." ;;
+    unchanged) info "Navigation tab script already registered." ;;
+    *)         success "Navigation tab script registered in: $TAB_STATUS" ;;
+esac
+
 # ── step 6: run SQL migrations ────────────────────────────────────────────────
 
 echo ""
@@ -194,7 +242,7 @@ STATE_FILE="$PANEL_ROOT/game-panel-mods/.module-state.json"
 if [[ ! -f "$STATE_FILE" ]] || [[ "$(cat "$STATE_FILE")" == "{}" ]]; then
     echo ""
     echo "── Step 7: Writing module state ──"
-    printf '{\n    "dayz-manager": {\n        "installed": true,\n        "enabled": true,\n        "version": "1.2.0"\n    }\n}\n' \
+    printf '{\n    "dayz-manager": {\n        "installed": true,\n        "enabled": true,\n        "version": "1.3.0"\n    }\n}\n' \
         > "$STATE_FILE"
     success ".module-state.json written."
 fi

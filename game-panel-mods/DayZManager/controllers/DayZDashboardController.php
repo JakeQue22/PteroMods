@@ -30,6 +30,7 @@ final class DayZDashboardController
 
         try {
             $dashboard = $this->service->dashboard($resolved['model'] ?? $resolved['id']);
+            $dashboard['client_id'] = $this->context->clientIdentifier($resolved['model'], $resolved['id']);
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'dashboard', $resolved['id'], $resolved['name']);
         }
