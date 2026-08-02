@@ -54,14 +54,15 @@ success "game-panel-mods copied."
 
 echo ""
 echo "── Step 2: Copying PteroMods src ──"
+mkdir -p "$PANEL_ROOT/pteromods-src"
+cp -r "$REPO_ROOT/src/." "$PANEL_ROOT/pteromods-src/"
+
+# Clean up nested src/ sub-directory left by any previous install that used the
+# pteromods-src/src/ layout, so only the flat layout remains and there are no
+# duplicate class files that would confuse Composer's PSR-4 scanner.
 rm -rf "$PANEL_ROOT/pteromods-src/src"
-mkdir -p "$PANEL_ROOT/pteromods-src/src"
-cp -r "$REPO_ROOT/src/." "$PANEL_ROOT/pteromods-src/src/"
 
-# Clean up previous flat layout copies to avoid duplicate/ambiguous scans.
-rm -rf "$PANEL_ROOT/pteromods-src/Services" "$PANEL_ROOT/pteromods-src/ValueObjects"
-
-success "pteromods-src/src copied and legacy layout cleaned."
+success "pteromods-src copied and legacy layout cleaned."
 
 # ── step 3: patch composer.json autoload ─────────────────────────────────────
 
@@ -80,8 +81,8 @@ if (!is_array(\$c)) { fwrite(STDERR, 'Invalid composer.json'.PHP_EOL); exit(1); 
 \$c['autoload']['psr-4'] = is_array(\$c['autoload']['psr-4'] ?? null) ? \$c['autoload']['psr-4'] : [];
 \$c['autoload']['classmap'] = is_array(\$c['autoload']['classmap'] ?? null) ? \$c['autoload']['classmap'] : [];
 
-if ((\$c['autoload']['psr-4']['PteroMods\\\\\\\\'] ?? null) !== 'pteromods-src/src/') {
-    \$c['autoload']['psr-4']['PteroMods\\\\\\\\'] = 'pteromods-src/src/';
+if ((\$c['autoload']['psr-4']['PteroMods\\\\\\\\'] ?? null) !== 'pteromods-src/') {
+    \$c['autoload']['psr-4']['PteroMods\\\\\\\\'] = 'pteromods-src/';
     \$changed = true;
 }
 

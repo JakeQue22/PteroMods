@@ -22,8 +22,10 @@ final class DayZDashboardController
     {
         $dashboard = $this->service->dashboard($server);
 
-        if (function_exists('response') && function_exists('view')) {
-            return response()->view('game-panel-mods.DayZManager.views.dashboard', $dashboard);
+        if (function_exists('view')) {
+            $viewFile = __DIR__ . '/../views/dashboard.blade.php';
+            $view = view()->file($viewFile, $dashboard);
+            return function_exists('response') ? response($view->render(), 200, ['Content-Type' => 'text/html; charset=utf-8']) : $view;
         }
 
         return $dashboard;
