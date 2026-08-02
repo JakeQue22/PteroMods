@@ -90,8 +90,8 @@ git clone https://github.com/JakeQue22/PteroMods.git /tmp/pteromods
 ```bash
 mkdir -p /var/www/pterodactyl/game-panel-mods
 cp -r /tmp/pteromods/game-panel-mods/* /var/www/pterodactyl/game-panel-mods/
-mkdir -p /var/www/pterodactyl/pteromods-src
-cp -r /tmp/pteromods/src/.          /var/www/pterodactyl/pteromods-src/
+mkdir -p /var/www/pterodactyl/pteromods-src/src
+cp -r /tmp/pteromods/src/.          /var/www/pterodactyl/pteromods-src/src/
 ```
 
 #### 3. Register the autoloader
@@ -103,7 +103,7 @@ Add the PteroMods namespaces to your panel's `composer.json` (under `autoload.ps
 "autoload": {
     "psr-4": {
         "Pterodactyl\\": "app/",
-        "PteroMods\\": "pteromods-src/"   // <-- add this
+        "PteroMods\\": "pteromods-src/src/"   // <-- add this
     },
     "classmap": [
         "game-panel-mods/"               // <-- add this
@@ -486,10 +486,10 @@ Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
 Use this exact mapping in your panel `composer.json`:
 
 ```json
-"PteroMods\\": "pteromods-src/"
+"PteroMods\\": "pteromods-src/src/"
 ```
 
-Do **not** point it to `pteromods-src/src`. If you previously copied files as `pteromods-src/src/...`, move contents up one level so classes live at `pteromods-src/ValueObjects`, `pteromods-src/Services`, etc., then run `composer dump-autoload --optimize` again.
+Do **not** point it to `pteromods-src/` when your classes are under `pteromods-src/src/...`. If you previously copied files to both layouts, keep only `pteromods-src/src/{ValueObjects,Services,...}` and remove duplicated top-level `pteromods-src/ValueObjects` and `pteromods-src/Services`, then run `composer dump-autoload --optimize` again.
 
 **DayZ Manager tabs don't appear**
 Confirm the server egg resolves to one of `dayz`, `dayz-dedicated`, `source-engine-dayz`, `source-engine`, or `source` (for example Nest `Source Engine` + egg `DayZ`), and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.
