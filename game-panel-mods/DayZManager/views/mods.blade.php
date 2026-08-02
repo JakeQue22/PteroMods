@@ -16,13 +16,30 @@
 
 <section class="dz-card">
     <h2>Install Workshop Mod</h2>
-    <p class="dz-sub">Enter a raw Workshop ID (e.g. <code>1559212036</code>) or a full Steam Workshop URL.</p>
-    <div class="dz-form">
-        <input id="ptero-workshop-ref" class="dz-input" type="text" placeholder="Workshop ID or Steam Workshop URL" />
+    <p class="dz-sub">Enter a raw Workshop ID (e.g. <code>1559212036</code>) or a full Steam Workshop URL, or browse the Workshop below.</p>
+    <div class="dz-form dz-input-wrap">
+        <input id="ptero-workshop-ref" class="dz-input" type="text" placeholder="Workshop ID or Steam Workshop URL" autocomplete="off" />
         <button class="dz-btn" onclick="pteroInstallMod()">Install</button>
+        <button class="dz-btn dz-btn-ghost" onclick="pteroOpenBrowseModal()">Browse Workshop</button>
     </div>
     <p id="ptero-install-status" class="dz-status dz-hidden"></p>
 </section>
+
+<div id="ptero-browse-modal" class="dz-modal dz-hidden">
+    <div class="dz-modal-content">
+        <div class="dz-modal-head">
+            <h3>Browse DayZ Workshop</h3>
+            <button type="button" class="dz-btn dz-btn-sm" onclick="pteroCloseBrowseModal()">Close</button>
+        </div>
+        <div class="dz-form">
+            <input id="ptero-browse-search" class="dz-input" type="text" placeholder="Search Workshop mods…"
+                   onkeydown="if (event.key === 'Enter') { pteroBrowseSearch(); }" />
+            <button class="dz-btn" onclick="pteroBrowseSearch()">Search</button>
+        </div>
+        <p id="ptero-browse-message" class="dz-sub"></p>
+        <div id="ptero-browse-grid" class="dz-browse-grid"></div>
+    </div>
+</div>
 
 <section class="dz-card">
     <h2>Installed Mods</h2>

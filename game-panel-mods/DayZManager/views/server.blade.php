@@ -8,7 +8,7 @@
                 <dd class="{{ $live['online'] ? 'dz-text-green' : 'dz-text-red' }}">{{ $live['online'] ? 'Online' : 'Offline' }}</dd>
             </div>
             <div class="dz-stat"><dt>Query Endpoint</dt><dd>{{ $live['endpoint'] ?? 'Unknown' }}</dd></div>
-            <div class="dz-stat"><dt>Players</dt><dd>{{ $live['players'] === null ? 'N/A' : $live['players'] . ' / ' . ($live['max_players'] ?? '?') }}</dd></div>
+            <div class="dz-stat"><dt>Players</dt><dd>{{ $live['player_count'] ?? (($live['players'] ?? 0) . ' / ' . ($live['max_players'] ?? 64)) }}</dd></div>
             <div class="dz-stat"><dt>Version</dt><dd>{{ $live['version'] ?? 'N/A' }}</dd></div>
         </dl>
     @endif

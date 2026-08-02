@@ -242,6 +242,32 @@ final class DayZPanelGateway
     }
 
     /**
+     * Sends a console command to the running server process (equivalent to
+     * typing it into the panel's live console), so queued actions such as a
+     * Workshop install are visible to anyone watching the console.
+     */
+    public function sendCommand(mixed $server, string $command): bool
+    {
+        if ($server === null || $command === '') {
+            return false;
+        }
+
+        $repository = $this->repository('Pterodactyl\\Repositories\\Wings\\DaemonCommandRepository', $server);
+
+        if ($repository !== null && method_exists($repository, 'send')) {
+            try {
+                $repository->send($command);
+
+                return true;
+            } catch (Throwable) {
+                return false;
+            }
+        }
+
+        return $this->daemonRequest($server, 'POST', '/commands', ['commands' => [$command]]) !== null;
+    }
+
+    /**
      * @return array{state: string, is_suspended: bool, utilization: array<string, mixed>}|null
      */
     private function fetchDetails(mixed $server): ?array

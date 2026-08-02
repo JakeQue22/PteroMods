@@ -92,6 +92,45 @@ final class DayZWorkshopController
     }
 
     /**
+     * The persisted install queue for this server, used to restore the
+     * "downloading…" banner on `/mods` after a page reload.
+     *
+     * @return array<string, mixed>
+     */
+    public function queue(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+
+        return $this->service->queue($model);
+    }
+
+    /**
+     * Live preview of a Workshop reference, used to render a thumbnail+name
+     * dropdown under the install search box as the operator types.
+     *
+     * @return array<string, mixed>
+     */
+    public function lookup(mixed $server = null, string $reference = ''): array
+    {
+        $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
+
+        return $this->service->lookup($reference);
+    }
+
+    /**
+     * Browses the DayZ Workshop by search term, for the "Browse Workshop" modal.
+     *
+     * @return array<string, mixed>
+     */
+    public function browse(mixed $server = null, string $term = '', int $page = 1): array
+    {
+        $term = $term !== '' ? $term : $this->context->stringInput('search');
+        $page = $page > 0 ? $page : (int) $this->context->stringInput('page', '1');
+
+        return $this->service->browse($term, max(1, $page));
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function update(mixed $server = null, string $workshopId = ''): array

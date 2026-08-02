@@ -6,6 +6,7 @@ namespace GamePanelMods\DayZManager\Services;
 
 use PteroMods\Services\DayZ\LaunchParameterBuilder;
 use PteroMods\Services\DayZ\ModMetaParser;
+use PteroMods\Services\DayZ\WorkshopBrowseClient;
 use PteroMods\Services\DayZ\WorkshopDependencyPlanner;
 use PteroMods\Services\DayZ\WorkshopInfoClient;
 use PteroMods\Services\DayZ\WorkshopReferenceParser;
@@ -37,6 +38,7 @@ final class DayZWorkshopService
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly ModMetaParser $meta = new ModMetaParser(),
         private readonly WorkshopInfoClient $info = new WorkshopInfoClient(),
+        private readonly WorkshopBrowseClient $browseClient = new WorkshopBrowseClient(),
     ) {
     }
 
@@ -148,6 +150,84 @@ final class DayZWorkshopService
     }
 
     /**
+     * Live preview of a Workshop reference (ID or URL) before it is queued:
+     * the title and thumbnail, so the search box can show what an ID
+     * actually is as the operator types it.
+     *
+     * @return array<string, mixed>
+     */
+    public function lookup(string $reference): array
+    {
+        try {
+            $workshopId = (new WorkshopReferenceParser())->parse($reference);
+        } catch (Throwable) {
+            return ['workshop_id' => '', 'title' => '', 'thumbnail' => '', 'file_size' => '', 'found' => false];
+        }
+
+        $info = $this->workshopInfo($workshopId);
+
+        return [
+            'workshop_id' => $workshopId,
+            'title'       => $info['title'] ?? '',
+            'thumbnail'   => $info['thumbnail'] ?? '',
+            'file_size'   => $info['file_size'] ?? '',
+            'found'       => $info !== [] && ($info['title'] ?? '') !== '',
+        ];
+    }
+
+    /**
+     * Browses the DayZ Workshop by search term (or the current trending
+     * items when the term is blank), so mods can be discovered by name.
+     *
+     * @return array<string, mixed>
+     */
+    public function browse(string $term = '', int $page = 1): array
+    {
+        $apiKey = $this->steamApiKey();
+
+        if ($apiKey === '') {
+            return [
+                'items' => [],
+                'page' => $page,
+                'has_more' => false,
+                'enabled' => false,
+                'message' => 'Set the STEAM_WEB_API_KEY environment variable (a free Steam Web API key) '
+                    . 'on the panel to enable browsing the Workshop.',
+            ];
+        }
+
+        return $this->browseClient->search($term, $page, $apiKey) + ['enabled' => true, 'message' => ''];
+    }
+
+    /**
+     * The Steam Web API key used for Workshop browsing, if one is configured.
+     */
+    private function steamApiKey(): string
+    {
+        foreach (['STEAM_WEB_API_KEY', 'PTEROMODS_STEAM_API_KEY'] as $variable) {
+            $value = getenv($variable);
+
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        if (function_exists('config')) {
+            try {
+                $value = config('services.steam.key');
+
+                if (is_string($value) && $value !== '') {
+                    return $value;
+                }
+            } catch (Throwable) {
+                // Config may be unavailable outside a booted Laravel app.
+            }
+        }
+
+        return '';
+    }
+
+    /**
      * Builds an install plan for a Workshop reference: the dependency-ordered
      * download queue, and the public details (title, thumbnail, size) for
      * every item in it, so the operator sees what each ID actually is right
@@ -167,6 +247,9 @@ final class DayZWorkshopService
         $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $plan);
         $item = current(array_filter($queue, static fn (array $entry): bool => $entry['workshop_id'] === $workshopId)) ?: null;
 
+        $this->persistQueue($server, $queue);
+        $this->announceQueue($server, $queue);
+
         return [
             'workshop_id' => $workshopId,
             'title' => $item['title'] ?? '',
@@ -178,7 +261,8 @@ final class DayZWorkshopService
             'auto_dependency_installation' => true,
             'status' => 'queued',
             'message' => 'Install queued. SteamCMD (or your egg\'s update script) downloads the files; '
-                . 'progress below reflects whether each mod has appeared on the server yet.',
+                . 'progress below reflects whether each mod has appeared on the server yet. '
+                . 'This queue persists across page reloads and appears in the server console.',
         ];
     }
 
@@ -186,19 +270,44 @@ final class DayZWorkshopService
      * Reports the download/installation progress of a Workshop install plan,
      * so the page can poll it after `installPlan()` queued the download.
      *
+     * When no Workshop IDs are supplied, every mod still queued for this
+     * server (per the persisted install queue) is reported instead, so a
+     * page reload can resume watching an install that was already in
+     * progress rather than losing track of it.
+     *
      * @param list<string> $workshopIds
      * @return array<string, mixed>
      */
     public function installStatus(array $workshopIds, mixed $server = null): array
     {
         $server = $this->resolveServer($server);
+
+        if ($workshopIds === []) {
+            $workshopIds = array_column($this->persistedQueue($server), 'workshop_id');
+        }
+
         $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
         $complete = $queue !== [] && !in_array(false, array_column($queue, 'installed'), true);
+
+        $this->persistQueue($server, $queue);
 
         return [
             'queue' => $queue,
             'complete' => $complete,
         ];
+    }
+
+    /**
+     * The persisted install queue for a server, refreshed against the mods
+     * actually found on disk. Used to restore the `/mods` page's "downloading…"
+     * banner after a reload, instead of it disappearing because no in-memory
+     * state survived the request.
+     *
+     * @return array<string, mixed>
+     */
+    public function queue(mixed $server = null): array
+    {
+        return $this->installStatus([], $server);
     }
 
     /**
@@ -219,6 +328,114 @@ final class DayZWorkshopService
             'installed'   => $mod !== null && ($mod['installed'] ?? false),
             'status'      => $mod !== null && ($mod['installed'] ?? false) ? 'installed' : 'downloading',
         ];
+    }
+
+    /**
+     * Writes the install queue to `dayz_mod_install_queue`, so it survives a
+     * page refresh and a fresh request can rebuild the same "downloading…"
+     * banner instead of losing all progress state.
+     *
+     * @param list<array<string, mixed>> $queue
+     */
+    private function persistQueue(mixed $server, array $queue): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_mod_install_queue')) {
+                return;
+            }
+
+            foreach (array_values($queue) as $position => $entry) {
+                $workshopId = (string) ($entry['workshop_id'] ?? '');
+
+                if ($workshopId === '') {
+                    continue;
+                }
+
+                \Illuminate\Support\Facades\DB::table('dayz_mod_install_queue')->updateOrInsert(
+                    ['server_id' => $serverId, 'workshop_id' => $workshopId],
+                    [
+                        'title'      => (string) ($entry['title'] ?? ''),
+                        'thumbnail'  => (string) ($entry['thumbnail'] ?? ''),
+                        'file_size'  => (string) ($entry['file_size'] ?? ''),
+                        'status'     => (string) ($entry['status'] ?? 'queued'),
+                        'position'   => $position,
+                        'updated_at' => date('Y-m-d H:i:s'),
+                        'created_at' => date('Y-m-d H:i:s'),
+                    ],
+                );
+            }
+        } catch (Throwable) {
+            // Persisting the queue is best-effort; the live folder scan is
+            // still authoritative for whether a mod is actually installed.
+        }
+    }
+
+    /**
+     * Rows persisted for this server, oldest queued position first.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function persistedQueue(mixed $server): array
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return [];
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_mod_install_queue')) {
+                return [];
+            }
+
+            return \Illuminate\Support\Facades\DB::table('dayz_mod_install_queue')
+                ->where('server_id', $serverId)
+                ->orderBy('position')
+                ->get()
+                ->map(static fn ($row): array => (array) $row)
+                ->all();
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    private function serverIdentifier(mixed $server): string
+    {
+        return $server === null ? '' : $this->context->attribute($server, ['uuid', 'uuidShort', 'id']);
+    }
+
+    /**
+     * Notifies the server console that mods were queued for install, so an
+     * operator watching the console sees the request immediately instead of
+     * only through the panel UI.
+     *
+     * @param list<array<string, mixed>> $queue
+     */
+    private function announceQueue(mixed $server, array $queue): void
+    {
+        if ($server === null || $queue === []) {
+            return;
+        }
+
+        $labels = array_map(
+            static fn (array $entry): string => ($entry['title'] !== '' ? $entry['title'] : $entry['workshop_id']) . ' (' . $entry['workshop_id'] . ')',
+            $queue,
+        );
+
+        $this->gateway->sendCommand(
+            $server,
+            'say [PteroMods] Workshop install queued: ' . implode(', ', $labels),
+        );
     }
 
     /**

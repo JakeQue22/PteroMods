@@ -13,6 +13,9 @@ namespace GamePanelMods\DayZManager\Services;
  */
 final class DayZDashboardService
 {
+    /** DayZ's default slot count, used when the max player count is unknown. */
+    private const DEFAULT_MAX_PLAYERS = 64;
+
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
@@ -100,19 +103,23 @@ final class DayZDashboardService
     }
 
     /**
+     * Formats the player count as `players / max`, e.g. `12 / 64`.
+     *
+     * When the query fails (server offline, query port unreachable, etc.) the
+     * player count is unknown rather than zero, but the card still needs a
+     * number to show; `0 / 64` communicates "no known players, typical slot
+     * count" instead of an unhelpful "N/A".
+     *
      * @param array{online: bool, players: int|null, max_players: int|null} $live
      */
-    private function formatPlayerCount(array $live): string
+    public function formatPlayerCount(array $live): string
     {
-        if (!$live['online'] || $live['players'] === null) {
-            return 'N/A';
-        }
+        $players = $live['online'] && $live['players'] !== null ? $live['players'] : 0;
+        $maxPlayers = $live['max_players'] !== null && $live['max_players'] > 0
+            ? $live['max_players']
+            : self::DEFAULT_MAX_PLAYERS;
 
-        if ($live['max_players'] === null || $live['max_players'] <= 0) {
-            return (string) $live['players'];
-        }
-
-        return $live['players'] . ' / ' . $live['max_players'];
+        return $players . ' / ' . $maxPlayers;
     }
 
     /**

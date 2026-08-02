@@ -200,6 +200,88 @@ body.dz-body {
 .dz-status { margin-top: 0.6rem; font-size: 0.78rem; }
 .dz-hidden { display: none; }
 
+.dz-input-wrap { position: relative; }
+
+.dz-lookup-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  margin-top: 0.25rem;
+  background: var(--dz-surface, #1b1f27);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  min-width: 16rem;
+}
+
+.dz-lookup-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.dz-lookup-item:hover { background: var(--dz-surface-alt); }
+
+.dz-lookup-item img { width: 2rem; height: 2rem; object-fit: cover; border-radius: 0.35rem; flex-shrink: 0; }
+
+.dz-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 1.5rem;
+}
+
+.dz-modal-content {
+  background: var(--dz-surface, #1b1f27);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-radius);
+  padding: 1.25rem;
+  width: min(60rem, 100%);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.dz-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+.dz-modal-head h3 { margin: 0; }
+
+.dz-browse-grid {
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  margin-top: 1rem;
+}
+
+.dz-browse-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: var(--dz-surface-alt);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-radius);
+  padding: 0.5rem;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  font-size: 0.78rem;
+}
+
+.dz-browse-card:hover { border-color: var(--dz-accent, var(--dz-border)); }
+.dz-browse-card img { width: 100%; height: 7rem; object-fit: cover; border-radius: 0.35rem; }
+.dz-browse-noimg { width: 100%; height: 7rem; border-radius: 0.35rem; background: var(--dz-border); }
+
 .dz-alert {
   border: 1px solid rgba(248, 113, 113, 0.5);
   background: rgba(248, 113, 113, 0.1);

@@ -273,11 +273,15 @@ port is firewalled. The card footnote names the source that was used.
 Private, loopback, and wildcard addresses (for example a node's internal
 `10.2.2.105`) are only used when nothing routable is configured, so the module
 keeps working when the panel and the node run on different machines. The query
-port is taken from a `STEAM_QUERY_PORT`/`QUERY_PORT` egg variable, otherwise from
-an allocation matching the standard DayZ query port, otherwise from the game port
-plus the standard DayZ offset (`2302` → `27016`). Results are cached for 15
-seconds, and mission names such as `dayzOffline.chernarusplus` are shown as
-friendly map names (`Chernarus+`).
+port is resolved most-authoritative first: the `steamQueryPort` set in the
+server's own `serverDZ.cfg` (the actual, operator-controlled Pterodactyl
+setting), then a `STEAM_QUERY_PORT`/`QUERY_PORT` egg variable, then an
+allocation matching the standard DayZ query port, then the game port plus
+DayZ's real default offset (`2302` → `2305`, i.e. `+3`), then the flat `27016`
+Steam default. Results are cached for 15 seconds, and mission names such as
+`dayzOffline.chernarusplus` are shown as friendly map names (`Chernarus+`).
+Player counts default to `0 / 64` (instead of `N/A`) whenever the query cannot
+be answered, so the dashboard and Server pages always show a slot count.
 
 **Rendering.** Module pages are rendered by `DayZPageRenderer` into a
 self-contained, panel-themed HTML document with the module stylesheet inlined,
@@ -308,6 +312,23 @@ each action. Installing or updating a mod downloads files with SteamCMD, which i
 the egg's responsibility, so those actions return the required steps instead of
 silently doing nothing.
 
+**Installing queues a download and persists it.** Queued Workshop installs are
+written to the `dayz_mod_install_queue` table (keyed by server and Workshop ID),
+so the "downloading…" status shown on the page survives a reload instead of
+disappearing; `GET /mods/install/queue` restores it. A `say` console command is
+also sent to the server so operators watching the live console see the request.
+Installing or updating a mod still downloads files with SteamCMD, which is the
+egg's responsibility — the module tracks progress by watching for the mod's
+folder to appear on disk, it does not run SteamCMD itself.
+
+**Browse and search the Workshop.** The mods page has a "Browse Workshop" button
+that lists DayZ Workshop items with thumbnails (`GET /mods/browse`), and the
+install box shows a live thumbnail+name preview dropdown as a Workshop ID or URL
+is typed (`GET /mods/lookup`). Browsing uses Steam's
+`IPublishedFileService/QueryFiles`, which requires a Steam Web API key; set the
+`STEAM_WEB_API_KEY` environment variable on the panel to enable it (the single-item
+lookup used for the preview dropdown needs no key).
+
 Only administrators and the server owner may change the load order, the startup
 command, or configuration files; other subusers keep read-only access.
 
@@ -315,6 +336,10 @@ command, or configuration files; other subusers keep read-only access.
 |---|---|---|
 | List installed mods | GET | `/servers/{server}/dayz/mods` |
 | Install mod | POST | `/api/servers/{server}/dayz/mods/install` |
+| Install progress | GET | `/api/servers/{server}/dayz/mods/install/status` |
+| Persisted install queue | GET | `/api/servers/{server}/dayz/mods/install/queue` |
+| Workshop ID/URL preview | GET | `/api/servers/{server}/dayz/mods/lookup` |
+| Browse Workshop | GET | `/api/servers/{server}/dayz/mods/browse` |
 | Remove mod | POST | `/api/servers/{server}/dayz/mods/remove` |
 | Update mod | POST | `/api/servers/{server}/dayz/mods/update` |
 | Enable mod | POST | `/api/servers/{server}/dayz/mods/enable` |
@@ -626,6 +651,15 @@ Older builds included the mod card component by file path, which Blade cannot re
 
 **Class not found errors**
 Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
+
+**Query Status shows Offline even though the server is running**
+Older builds guessed the Steam query port as `game port + 24714`, an offset that
+does not apply to DayZ and never matches a real server. The query port is now
+read from `steamQueryPort` in the server's own `serverDZ.cfg` first (the
+setting an operator actually controls), then an egg variable, then extra
+allocations, then DayZ's real default offset (`+3`). If the status is still
+offline, confirm the query port is open on the node's firewall and matches what
+`serverDZ.cfg` declares.
 
 **PSR-4 warnings for `PteroMods\\`**
 Use this exact mapping in your panel `composer.json` (note: one backslash in the JSON key, written as `\\` in the JSON file):

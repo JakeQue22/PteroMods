@@ -38,6 +38,9 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dashboard', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/power', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@power'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/install/status', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@installStatus'];
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/install/queue', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@queue'];
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/lookup', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@lookup'];
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/browse', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@browse'];
 }
 
 return $routes;

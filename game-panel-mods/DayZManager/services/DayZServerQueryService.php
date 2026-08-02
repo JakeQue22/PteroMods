@@ -12,15 +12,25 @@ use Throwable;
  * Obtains live DayZ server facts (map, player count, version) by querying the
  * game server over the Steam query protocol.
  *
- * The panel database only stores allocations and egg variables, so the query
- * endpoint is derived from the server's allocations (preferring an explicit
- * query-port egg variable) and the result is cached briefly to keep page loads
- * fast even when a server is offline.
+ * The query endpoint is derived from the server's own configured settings,
+ * most authoritative first: the `steamQueryPort` set in the server's
+ * `serverDZ.cfg` (the setting an operator actually controls), an explicit
+ * query-port egg variable, extra port allocations, and finally the two most
+ * common conventions (`game port + 3` and the flat `27016` default). The
+ * result is cached briefly to keep page loads fast even when a server is
+ * offline.
  */
 final class DayZServerQueryService
 {
-    /** Standard DayZ offset between the game port (2302) and query port (27016). */
-    private const DAYZ_QUERY_PORT_OFFSET = 24714;
+    /**
+     * DayZ's actual default offset between the game port (`-port=`, e.g. 2302)
+     * and the Steam query port: `serverDZ.cfg` defaults `steamQueryPort` to
+     * `gameport + 3` (2305 for the default 2302 game port). Older revisions of
+     * this client guessed `+24714`, an offset that does not apply to DayZ at
+     * all, which made the query silently fail against every real DayZ server
+     * and report "Offline" even while the server was running.
+     */
+    private const DAYZ_QUERY_PORT_OFFSET = 3;
 
     /** Steam's flat default query port, used when a server never changed it. */
     private const DEFAULT_STEAM_QUERY_PORT = 27016;
@@ -30,12 +40,16 @@ final class DayZServerQueryService
         'QUERYPORT', 'DAYZ_QUERY_PORT', 'GAME_QUERY_PORT', 'STEAM_PORT',
     ];
 
+    /** Config file names that may carry an explicit `steamQueryPort` setting. */
+    private const QUERY_PORT_CONFIG_FILES = ['/serverDZ.cfg', '/config/serverDZ.cfg'];
+
     private const CACHE_SECONDS = 15;
 
     public function __construct(
         private readonly SourceQueryClient $client = new SourceQueryClient(),
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly HostAddressResolver $addresses = new HostAddressResolver(),
+        private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
     ) {
     }
 
@@ -45,7 +59,7 @@ final class DayZServerQueryService
      * Several candidate query ports are tried (in order of confidence) because
      * DayZ has no single reliable convention for deriving the Steam query port
      * from the game port: an explicit egg variable, a matching allocation, and
-     * the two most common conventions (`game port + 24714` and the flat
+     * the two most common conventions (`game port + 3` and the flat
      * `27016` default) are all attempted until one actually answers, instead
      * of trusting a single guess and reporting the server offline when it
      * merely guessed the wrong port.
@@ -142,6 +156,15 @@ final class DayZServerQueryService
         }
 
         $ports = [];
+
+        // The most authoritative source: the `steamQueryPort` an operator set
+        // in the server's own `serverDZ.cfg`, which is exactly the setting
+        // Pterodactyl exposes to the operator for this server.
+        $configPort = $this->queryPortConfig($server);
+
+        if ($configPort !== null) {
+            $ports[] = $configPort;
+        }
 
         $variablePort = $this->queryPortVariable($server);
 
@@ -277,6 +300,33 @@ final class DayZServerQueryService
         ));
 
         return $ports;
+    }
+
+    /**
+     * Reads `steamQueryPort` from `serverDZ.cfg` (or its `config/` copy),
+     * whichever the daemon can read first.
+     */
+    private function queryPortConfig(mixed $server): ?int
+    {
+        foreach (self::QUERY_PORT_CONFIG_FILES as $path) {
+            $contents = $this->gateway->readFile($server, $path);
+
+            if ($contents === null || $contents === '') {
+                continue;
+            }
+
+            if (preg_match('/steamQueryPort\s*=\s*(\d+)\s*;/i', $contents, $matches) !== 1) {
+                continue;
+            }
+
+            $port = (int) $matches[1];
+
+            if ($port > 0 && $port <= 65535) {
+                return $port;
+            }
+        }
+
+        return null;
     }
 
     private function queryPortVariable(mixed $server): ?int
