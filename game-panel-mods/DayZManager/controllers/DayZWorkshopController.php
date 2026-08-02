@@ -16,14 +16,33 @@ final class DayZWorkshopController
     }
 
     /**
-     * @return array<string, mixed>
+     * @return mixed
      */
-    public function index(): array
+    public function index(mixed $server = null)
     {
-        return [
-            'settings' => $this->service->settings(),
+        $serverId = '';
+        if (is_string($server) && $server !== '') {
+            $serverId = $server;
+        } elseif (function_exists('request')) {
+            $routeServer = request()->route('server');
+            if (is_string($routeServer)) {
+                $serverId = $routeServer;
+            }
+        }
+
+        $data = [
+            'server_id'     => $serverId,
+            'settings'      => $this->service->settings(),
             'installed_mods' => $this->service->installedMods(),
         ];
+
+        if (function_exists('view')) {
+            $viewFile = __DIR__ . '/../views/mods.blade.php';
+            $view = view()->file($viewFile, $data);
+            return function_exists('response') ? response($view->render(), 200, ['Content-Type' => 'text/html; charset=utf-8']) : $view;
+        }
+
+        return $data;
     }
 
     /**

@@ -483,13 +483,13 @@ If routes are present but the browser still serves a stale 404 page, restart PHP
 Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
 
 **PSR-4 warnings for `PteroMods\\`**
-Use this exact mapping in your panel `composer.json`:
+Use this exact mapping in your panel `composer.json` (note: one backslash in the JSON key, written as `\\` in the JSON file):
 
 ```json
 "PteroMods\\": "pteromods-src/"
 ```
 
-Do **not** point it to `pteromods-src/src/`. If a previous install created a nested `pteromods-src/src/` directory, remove it (`rm -rf pteromods-src/src`) so there are no duplicate class files. Re-run `bin/install.sh` (or manually patch the entry and remove `pteromods-src/src/`) then run `composer dump-autoload --optimize` again.
+If a previous install created a double-backslash key (`"PteroMods\\\\"`) or pointed at `pteromods-src/src/`, fix it by re-running `bin/install.sh`, which now writes the correct single-backslash key. Alternatively, edit `composer.json` manually so the `psr-4` section matches the snippet above, then run `composer dump-autoload --optimize`.
 
 **DayZ Manager tabs don't appear**
 Confirm the server egg resolves to one of `dayz`, `dayz-dedicated`, `source-engine-dayz`, `source-engine`, or `source` (for example Nest `Source Engine` + egg `DayZ`), and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.

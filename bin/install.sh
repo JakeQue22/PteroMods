@@ -72,32 +72,45 @@ echo "── Step 3: Registering autoload entries ──"
 COMPOSER_JSON="$PANEL_ROOT/composer.json"
 [[ -f "$COMPOSER_JSON" ]] || die "composer.json not found in $PANEL_ROOT"
 
-PATCH_STATUS="$(php -r "
-\$c = json_decode(file_get_contents('$COMPOSER_JSON'), true);
-if (!is_array(\$c)) { fwrite(STDERR, 'Invalid composer.json'.PHP_EOL); exit(1); }
-
-\$changed = false;
-\$c['autoload'] = is_array(\$c['autoload'] ?? null) ? \$c['autoload'] : [];
-\$c['autoload']['psr-4'] = is_array(\$c['autoload']['psr-4'] ?? null) ? \$c['autoload']['psr-4'] : [];
-\$c['autoload']['classmap'] = is_array(\$c['autoload']['classmap'] ?? null) ? \$c['autoload']['classmap'] : [];
-
-if ((\$c['autoload']['psr-4']['PteroMods\\\\\\\\'] ?? null) !== 'pteromods-src/') {
-    \$c['autoload']['psr-4']['PteroMods\\\\\\\\'] = 'pteromods-src/';
-    \$changed = true;
+# Write the patcher to a temp file so that backslash characters in PHP string
+# literals are not mangled by bash's double-quote escaping rules.
+# The single-quoted heredoc ('PHPEOF') passes PHP source verbatim.
+cat > /tmp/pteromods-composer-patch.php << 'PHPEOF'
+<?php
+declare(strict_types=1);
+$composerJson = $argv[1] ?? '';
+if ($composerJson === '' || !is_file($composerJson)) {
+    fwrite(STDERR, 'composer.json not found: ' . $composerJson . PHP_EOL);
+    exit(1);
 }
-
-if (!in_array('game-panel-mods/', \$c['autoload']['classmap'], true)) {
-    \$c['autoload']['classmap'][] = 'game-panel-mods/';
-    \$changed = true;
+$c = json_decode(file_get_contents($composerJson), true);
+if (!is_array($c)) {
+    fwrite(STDERR, 'Invalid composer.json' . PHP_EOL);
+    exit(1);
 }
-
-if (\$changed) {
-    file_put_contents('$COMPOSER_JSON', json_encode(\$c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+$changed = false;
+$c['autoload'] = is_array($c['autoload'] ?? null) ? $c['autoload'] : [];
+$c['autoload']['psr-4'] = is_array($c['autoload']['psr-4'] ?? null) ? $c['autoload']['psr-4'] : [];
+$c['autoload']['classmap'] = is_array($c['autoload']['classmap'] ?? null) ? $c['autoload']['classmap'] : [];
+// PSR-4 prefix requires exactly one trailing backslash: 'PteroMods\'
+if (($c['autoload']['psr-4']['PteroMods\\'] ?? null) !== 'pteromods-src/') {
+    $c['autoload']['psr-4']['PteroMods\\'] = 'pteromods-src/';
+    $changed = true;
+}
+if (!in_array('game-panel-mods/', $c['autoload']['classmap'], true)) {
+    $c['autoload']['classmap'][] = 'game-panel-mods/';
+    $changed = true;
+}
+if ($changed) {
+    file_put_contents($composerJson, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
     echo 'patched';
 } else {
     echo 'unchanged';
 }
-")"
+PHPEOF
+
+PATCH_STATUS="$(php /tmp/pteromods-composer-patch.php "$COMPOSER_JSON")"
+rm -f /tmp/pteromods-composer-patch.php
 
 if [[ "$PATCH_STATUS" == "patched" ]]; then
     success "composer.json autoload normalized."

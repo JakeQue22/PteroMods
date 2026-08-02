@@ -18,22 +18,26 @@ final class DayZDashboardService
     {
         $resolved = $this->resolveServerContext($server);
         $name = $this->stringValue($resolved, ['name', 'server_name'], 'DayZ Server');
-        $installedMods = $this->resolveInstalledModCount();
+        $installedMods = $this->resolveInstalledMods();
 
         $cpuLimit = $this->stringValue($resolved, ['cpu', 'cpu_limit']);
         $memoryLimitMb = $this->intValue($resolved, ['memory', 'memory_limit']);
         $diskLimitMb = $this->intValue($resolved, ['disk', 'disk_limit']);
 
         return [
-            'server_name' => $name,
-            'current_map' => $this->stringValue($resolved, ['map', 'current_map'], 'Unknown'),
-            'server_version' => $this->stringValue($resolved, ['version', 'server_version'], 'Unknown'),
-            'installed_mods' => $installedMods,
-            'player_count' => $this->stringValue($resolved, ['player_count'], 'Unknown'),
-            'cpu' => $this->formatCpu($cpuLimit),
-            'ram' => $this->formatMegabytesLimit($memoryLimitMb),
-            'disk' => $this->formatMegabytesLimit($diskLimitMb),
-            'server_status' => $this->resolveStatus($resolved),
+            'server_name'         => $name,
+            'server_id'           => $this->resolveServerIdentifier($server),
+            // Map and player count require live game-server querying (Source Query
+            // Protocol). The panel database does not expose these values.
+            'current_map'         => $this->stringValue($resolved, ['map', 'current_map'], 'N/A'),
+            'server_version'      => $this->stringValue($resolved, ['version', 'server_version'], 'N/A'),
+            'installed_mods'      => $installedMods,
+            'installed_mods_count' => count($installedMods),
+            'player_count'        => $this->stringValue($resolved, ['player_count'], 'N/A'),
+            'cpu'                 => $this->formatCpu($cpuLimit),
+            'ram'                 => $this->formatMegabytesLimit($memoryLimitMb),
+            'disk'                => $this->formatMegabytesLimit($diskLimitMb),
+            'server_status'       => $this->resolveStatus($resolved),
         ];
     }
 
@@ -70,20 +74,53 @@ final class DayZDashboardService
         return $routeServer;
     }
 
-    private function resolveInstalledModCount(): int
+    /**
+     * Returns a stable string identifier for the server suitable for URL generation.
+     */
+    private function resolveServerIdentifier(mixed $server): string
     {
-        if (class_exists('Illuminate\\Support\\Facades\\Schema')
-            && class_exists('Illuminate\\Support\\Facades\\DB')) {
-            try {
-                if (\Illuminate\Support\Facades\Schema::hasTable('dayz_mods')) {
-                    return (int) \Illuminate\Support\Facades\DB::table('dayz_mods')->count();
+        if (is_string($server) && $server !== '') {
+            return $server;
+        }
+
+        if (is_object($server)) {
+            foreach (['uuidShort', 'uuid', 'id'] as $attr) {
+                if (isset($server->{$attr}) && $server->{$attr} !== '') {
+                    return (string) $server->{$attr};
                 }
-            } catch (Throwable) {
-                // Fall back to in-memory fixture data.
             }
         }
 
-        return count((new DayZWorkshopService())->installedMods());
+        if (!function_exists('request')) {
+            return '';
+        }
+
+        $routeServer = request()->route('server');
+
+        return is_string($routeServer) ? $routeServer : '';
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function resolveInstalledMods(): array
+    {
+        try {
+            if (class_exists('Illuminate\\Support\\Facades\\Schema')
+                && class_exists('Illuminate\\Support\\Facades\\DB')) {
+                if (\Illuminate\Support\Facades\Schema::hasTable('dayz_mods')) {
+                    /** @var list<array<string, mixed>> $rows */
+                    $rows = \Illuminate\Support\Facades\DB::table('dayz_mods')->get()->toArray();
+                    if ($rows !== []) {
+                        return array_map(static fn ($row): array => (array) $row, $rows);
+                    }
+                }
+            }
+        } catch (Throwable) {
+            // Fall back to in-memory fixture data.
+        }
+
+        return (new DayZWorkshopService())->installedMods();
     }
 
     private function resolveServerModel(string $identifier): mixed
@@ -145,7 +182,7 @@ final class DayZDashboardService
     private function formatCpu(string $cpuLimit): string
     {
         if ($cpuLimit === '') {
-            return 'Unknown';
+            return 'Unlimited';
         }
 
         if ($cpuLimit === '0') {
@@ -158,14 +195,14 @@ final class DayZDashboardService
     private function formatMegabytesLimit(?int $limitMb): string
     {
         if ($limitMb === null) {
-            return 'Unknown';
+            return 'Unlimited';
         }
 
         if ($limitMb <= 0) {
             return 'Unlimited';
         }
 
-        return sprintf('Unknown / %.1f GB', $limitMb / 1024);
+        return sprintf('%.1f GB', $limitMb / 1024);
     }
 
     private function resolveStatus(mixed $source): string
@@ -173,7 +210,16 @@ final class DayZDashboardService
         foreach (['status', 'state', 'server_status'] as $key) {
             $status = strtolower($this->stringValue($source, [$key]));
             if ($status !== '') {
-                return $status;
+                // Pterodactyl uses 'installing', 'suspended', 'restoring_backup', etc.
+                // Map common values to human-friendly labels.
+                return match ($status) {
+                    'installing'        => 'installing',
+                    'suspended'         => 'suspended',
+                    'restoring_backup'  => 'restoring backup',
+                    'transferring'      => 'transferring',
+                    'install_failed'    => 'install failed',
+                    default             => $status,
+                };
             }
         }
 
@@ -181,7 +227,9 @@ final class DayZDashboardService
             return 'suspended';
         }
 
-        if ($this->truthyValue($source, 'installed')) {
+        // On Pterodactyl a null status means the server is installed and active.
+        // If we resolved any server context at all, treat it as running.
+        if ($source !== null) {
             return 'running';
         }
 
