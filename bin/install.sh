@@ -123,10 +123,59 @@ echo "── Step 4: Regenerating Composer autoloader ──"
 cd "$PANEL_ROOT" && composer dump-autoload --optimize --quiet
 success "Autoloader regenerated."
 
-# ── step 5: run SQL migrations ────────────────────────────────────────────────
+echo ""
+echo "── Step 5: Registering module routes ──"
+
+cat > /tmp/pteromods-routes-patch.php << 'PHPEOF'
+<?php
+declare(strict_types=1);
+$panelRoot = $argv[1] ?? '';
+$candidates = ['routes/base.php', 'routes/web.php'];
+$include = "\nrequire base_path('game-panel-mods/routes-loader.php');\n";
+$patched = [];
+$found = false;
+foreach ($candidates as $candidate) {
+    $file = $panelRoot . '/' . $candidate;
+    if (!is_file($file)) {
+        continue;
+    }
+    $found = true;
+    $contents = (string) file_get_contents($file);
+    if (str_contains($contents, 'game-panel-mods/routes-loader.php')) {
+        continue;
+    }
+    // The panel registers a catch-all route that forwards unknown URIs to the
+    // JavaScript client, so module routes must be registered before it: insert
+    // the loader immediately after the opening PHP tag.
+    $position = strpos($contents, '<?php');
+    if ($position === false) {
+        continue;
+    }
+    $offset = $position + strlen('<?php');
+    $contents = substr($contents, 0, $offset) . $include . substr($contents, $offset);
+    file_put_contents($file, $contents);
+    $patched[] = $candidate;
+}
+if (!$found) {
+    echo 'missing';
+    exit(0);
+}
+echo $patched === [] ? 'unchanged' : implode(',', $patched);
+PHPEOF
+
+ROUTE_STATUS="$(php /tmp/pteromods-routes-patch.php "$PANEL_ROOT")"
+rm -f /tmp/pteromods-routes-patch.php
+
+case "$ROUTE_STATUS" in
+    missing)   warn "No routes/base.php or routes/web.php found – register routes manually (README §5)." ;;
+    unchanged) info "Module routes already registered." ;;
+    *)         success "Module routes registered in: $ROUTE_STATUS" ;;
+esac
+
+# ── step 6: run SQL migrations ────────────────────────────────────────────────
 
 echo ""
-echo "── Step 5: Database migration ──"
+echo "── Step 6: Database migration ──"
 
 if [[ -n "$DB_PASS" ]]; then
     mysql -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$SQL_FILE" \
@@ -139,21 +188,21 @@ else
     echo "    mysql -u $DB_USER -p $DB_NAME < $SQL_FILE"
 fi
 
-# ── step 6: mark module state ────────────────────────────────────────────────
+# ── step 7: mark module state ────────────────────────────────────────────────
 
 STATE_FILE="$PANEL_ROOT/game-panel-mods/.module-state.json"
 if [[ ! -f "$STATE_FILE" ]] || [[ "$(cat "$STATE_FILE")" == "{}" ]]; then
     echo ""
-    echo "── Step 6: Writing module state ──"
-    printf '{\n    "dayz-manager": {\n        "installed": true,\n        "enabled": true,\n        "version": "1.0.0"\n    }\n}\n' \
+    echo "── Step 7: Writing module state ──"
+    printf '{\n    "dayz-manager": {\n        "installed": true,\n        "enabled": true,\n        "version": "1.1.0"\n    }\n}\n' \
         > "$STATE_FILE"
     success ".module-state.json written."
 fi
 
-# ── step 7: clear caches ─────────────────────────────────────────────────────
+# ── step 8: clear caches ─────────────────────────────────────────────────────
 
 echo ""
-echo "── Step 7: Clearing panel caches ──"
+echo "── Step 8: Clearing panel caches ──"
 cd "$PANEL_ROOT"
 php artisan route:clear  --quiet && info "route cache cleared."
 php artisan config:clear --quiet && info "config cache cleared."
@@ -161,10 +210,10 @@ php artisan view:clear   --quiet && info "view cache cleared."
 php artisan cache:clear  --quiet && info "app cache cleared."
 success "All caches cleared."
 
-# ── step 8: permissions ──────────────────────────────────────────────────────
+# ── step 9: permissions ──────────────────────────────────────────────────────
 
 echo ""
-echo "── Step 8: File permissions ──"
+echo "── Step 9: File permissions ──"
 WEB_USER="www-data"
 if id "$WEB_USER" &>/dev/null; then
     chown -R "$WEB_USER:$WEB_USER" "$PANEL_ROOT/game-panel-mods" 2>/dev/null \
@@ -178,10 +227,8 @@ fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  Almost done! One manual step remains:                      ║"
-echo "║                                                              ║"
-echo "║  Register the module routes in your panel's route files.    ║"
-echo "║  See the README §5 for the exact snippet to add.            ║"
+echo "║  Open /server/<server>/dayz on a DayZ server to verify.      ║"
+echo "║  If routes 404, see README §5 (route registration).          ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 success "PteroMods installation complete."

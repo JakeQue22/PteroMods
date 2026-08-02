@@ -17,7 +17,35 @@ final class DayZConfigurationService
      */
     public function files(array $paths): array
     {
+        if ($paths === []) {
+            $paths = $this->defaultPaths();
+        }
+
         return (new ConfigurationCatalog())->categorize($paths);
+    }
+
+    /**
+     * Configuration files a DayZ server is expected to expose.
+     *
+     * The panel cannot list container files from a module route, so the known
+     * DayZ layout is used as the browsing starting point.
+     *
+     * @return list<string>
+     */
+    public function defaultPaths(): array
+    {
+        return [
+            'serverDZ.cfg',
+            'BEServer.cfg',
+            'messages.xml',
+            'priority.txt',
+            'ban.txt',
+            'whitelist.txt',
+            'settings.cfg',
+            'messages.cfg',
+            'admins.xml',
+            'SuperAdmins.txt',
+        ];
     }
 
     /**

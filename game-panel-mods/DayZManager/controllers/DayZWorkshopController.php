@@ -4,15 +4,21 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Controllers;
 
+use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZWorkshopService;
+use Throwable;
 
 /**
  * Produces Workshop management payloads for DayZ mods.
  */
 final class DayZWorkshopController
 {
-    public function __construct(private readonly DayZWorkshopService $service = new DayZWorkshopService())
-    {
+    public function __construct(
+        private readonly DayZWorkshopService $service = new DayZWorkshopService(),
+        private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
+        private readonly DayZServerContext $context = new DayZServerContext(),
+    ) {
     }
 
     /**
@@ -20,78 +26,86 @@ final class DayZWorkshopController
      */
     public function index(mixed $server = null)
     {
-        $serverId = '';
-        if (is_string($server) && $server !== '') {
-            $serverId = $server;
-        } elseif (function_exists('request')) {
-            $routeServer = request()->route('server');
-            if (is_string($routeServer)) {
-                $serverId = $routeServer;
-            }
+        $resolved = $this->context->resolve($server);
+
+        try {
+            $data = [
+                'settings'       => $this->service->settings(),
+                'installed_mods' => $this->service->installedMods(),
+            ];
+        } catch (Throwable $exception) {
+            return $this->renderer->renderError($exception->getMessage(), 'mods', $resolved['id'], $resolved['name']);
         }
 
-        $data = [
-            'server_id'     => $serverId,
-            'settings'      => $this->service->settings(),
-            'installed_mods' => $this->service->installedMods(),
-        ];
-
-        if (function_exists('view')) {
-            $viewFile = __DIR__ . '/../views/mods.blade.php';
-            $view = view()->file($viewFile, $data);
-            return function_exists('response') ? response($view->render(), 200, ['Content-Type' => 'text/html; charset=utf-8']) : $view;
+        if ($this->context->expectsJson()) {
+            return ['server_id' => $resolved['id']] + $data;
         }
 
-        return $data;
+        return $this->renderer->render('mods', $data, 'mods', $resolved['id'], $resolved['name']);
     }
 
     /**
+     * Queues a Workshop install. The Workshop reference is read from the request
+     * body when it is not supplied explicitly.
+     *
      * @param array<string, array{dependencies?: list<string>, requires_cf?: bool}> $metadata
      * @return array<string, mixed>
      */
-    public function install(string $reference, array $metadata = []): array
+    public function install(mixed $server = null, string $reference = '', array $metadata = []): array
     {
+        $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
+
         return $this->service->installPlan($reference, $metadata);
     }
 
     /**
      * @return array<string, string>
      */
-    public function update(string $workshopId): array
+    public function update(mixed $server = null, string $workshopId = ''): array
     {
-        return $this->service->update($workshopId);
+        return $this->service->update($this->workshopId($workshopId));
     }
 
     /**
      * @return array<string, string>
      */
-    public function remove(string $workshopId): array
+    public function remove(mixed $server = null, string $workshopId = ''): array
     {
-        return $this->service->remove($workshopId);
+        return $this->service->remove($this->workshopId($workshopId));
     }
 
     /**
      * @return array<string, string>
      */
-    public function enable(string $workshopId): array
+    public function enable(mixed $server = null, string $workshopId = ''): array
     {
-        return $this->service->toggle($workshopId, true);
+        return $this->service->toggle($this->workshopId($workshopId), true);
     }
 
     /**
      * @return array<string, string>
      */
-    public function disable(string $workshopId): array
+    public function disable(mixed $server = null, string $workshopId = ''): array
     {
-        return $this->service->toggle($workshopId, false);
+        return $this->service->toggle($this->workshopId($workshopId), false);
     }
 
     /**
      * @param list<string> $orderedWorkshopIds  Workshop IDs in the desired load order.
      * @return array<string, mixed>
      */
-    public function reorder(array $orderedWorkshopIds): array
+    public function reorder(mixed $server = null, array $orderedWorkshopIds = []): array
     {
+        if ($orderedWorkshopIds === []) {
+            $input = $this->context->input('ordered_ids', []);
+            $orderedWorkshopIds = is_array($input) ? array_values($input) : [];
+        }
+
         return $this->service->reorder($orderedWorkshopIds);
+    }
+
+    private function workshopId(string $workshopId): string
+    {
+        return $workshopId !== '' ? $workshopId : $this->context->stringInput('workshop_id');
     }
 }

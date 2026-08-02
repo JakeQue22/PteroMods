@@ -15,15 +15,25 @@ use PteroMods\ValueObjects\DayZInstalledMod;
 final class DayZWorkshopService
 {
     /**
+     * Ordered folder names of every enabled mod.
+     *
+     * @return list<string>
+     */
+    public function enabledFolders(): array
+    {
+        $folders = array_map(
+            static fn (array $mod): string => ($mod['enabled'] ?? false) ? (string) ($mod['folder_name'] ?? '') : '',
+            $this->installedMods(),
+        );
+
+        return array_values(array_filter($folders, static fn (string $folder): bool => $folder !== ''));
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function settings(): array
     {
-        $folders = array_map(
-            static fn (array $mod): string => $mod['enabled'] ? $mod['folder_name'] : '',
-            $this->installedMods(),
-        );
-
         return [
             'automatic_updates' => true,
             'automatic_dependency_installation' => true,
@@ -32,7 +42,7 @@ final class DayZWorkshopService
             'workshop_download_path' => '/home/container/steamapps/workshop/content/221100',
             'mod_cache' => '/home/container/.cache/dayz-mods',
             'cleanup_old_versions' => true,
-            'launch_parameters' => (new LaunchParameterBuilder())->build(array_values(array_filter($folders))),
+            'launch_parameters' => (new LaunchParameterBuilder())->build($this->enabledFolders()),
         ];
     }
 

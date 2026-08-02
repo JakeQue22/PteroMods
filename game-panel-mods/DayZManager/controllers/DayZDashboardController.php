@@ -5,14 +5,20 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZDashboardService;
+use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZServerContext;
+use Throwable;
 
 /**
  * Produces the DayZ dashboard payload for supported servers.
  */
 final class DayZDashboardController
 {
-    public function __construct(private readonly DayZDashboardService $service = new DayZDashboardService())
-    {
+    public function __construct(
+        private readonly DayZDashboardService $service = new DayZDashboardService(),
+        private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
+        private readonly DayZServerContext $context = new DayZServerContext(),
+    ) {
     }
 
     /**
@@ -20,14 +26,24 @@ final class DayZDashboardController
      */
     public function show(mixed $server = null)
     {
-        $dashboard = $this->service->dashboard($server);
+        $resolved = $this->context->resolve($server);
 
-        if (function_exists('view')) {
-            $viewFile = __DIR__ . '/../views/dashboard.blade.php';
-            $view = view()->file($viewFile, $dashboard);
-            return function_exists('response') ? response($view->render(), 200, ['Content-Type' => 'text/html; charset=utf-8']) : $view;
+        try {
+            $dashboard = $this->service->dashboard($resolved['model'] ?? $resolved['id']);
+        } catch (Throwable $exception) {
+            return $this->renderer->renderError($exception->getMessage(), 'dashboard', $resolved['id'], $resolved['name']);
         }
 
-        return $dashboard;
+        if ($this->context->expectsJson()) {
+            return $dashboard;
+        }
+
+        return $this->renderer->render(
+            'dashboard',
+            $dashboard,
+            'dashboard',
+            $resolved['id'],
+            $dashboard['server_name'] ?? $resolved['name'],
+        );
     }
 }
