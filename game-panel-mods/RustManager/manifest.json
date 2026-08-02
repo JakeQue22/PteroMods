@@ -1,0 +1,9 @@
+{
+  "name": "Rust Manager",
+  "slug": "rust-manager",
+  "version": "1.0.0",
+  "author": "JakeQue22",
+  "description": "Rust Manager module scaffold with installable manifest, routes, permissions, and server tab metadata.",
+  "supports": ["rust"],
+  "tabs": ["Rust Manager"]
+}

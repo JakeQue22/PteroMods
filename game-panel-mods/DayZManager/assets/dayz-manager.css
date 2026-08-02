@@ -1,0 +1,11 @@
+.dayz-mod-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.dayz-progress-bar {
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #22c55e 0%, #38bdf8 100%);
+}

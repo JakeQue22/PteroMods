@@ -1,0 +1,9 @@
+{
+  "name": "Minecraft Manager",
+  "slug": "minecraft-manager",
+  "version": "1.0.0",
+  "author": "JakeQue22",
+  "description": "Minecraft Manager module scaffold with installable manifest, routes, permissions, and server tab metadata.",
+  "supports": ["minecraft"],
+  "tabs": ["Minecraft Manager"]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "jakeque22/pteromods",
+  "description": "Modular Game Panel Mods framework scaffolding for Pterodactyl Panel.",
+  "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": "^8.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "PteroMods\\": "src/"
+    },
+    "classmap": [
+      "game-panel-mods/"
+    ]
+  }
+}
