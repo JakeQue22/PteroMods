@@ -54,6 +54,11 @@ success "game-panel-mods copied."
 
 echo ""
 echo "── Step 2: Copying PteroMods src ──"
+if [[ -d "$PANEL_ROOT/pteromods-src/src" ]]; then
+    rm -rf "$PANEL_ROOT/pteromods-src/src"
+    info "Removed legacy nested pteromods-src/src directory."
+fi
+mkdir -p "$PANEL_ROOT/pteromods-src"
 cp -r "$REPO_ROOT/src/." "$PANEL_ROOT/pteromods-src/"
 success "pteromods-src copied."
 

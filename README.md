@@ -90,7 +90,8 @@ git clone https://github.com/JakeQue22/PteroMods.git /tmp/pteromods
 ```bash
 mkdir -p /var/www/pterodactyl/game-panel-mods
 cp -r /tmp/pteromods/game-panel-mods/* /var/www/pterodactyl/game-panel-mods/
-cp -r /tmp/pteromods/src            /var/www/pterodactyl/pteromods-src
+mkdir -p /var/www/pterodactyl/pteromods-src
+cp -r /tmp/pteromods/src/.          /var/www/pterodactyl/pteromods-src/
 ```
 
 #### 3. Register the autoloader
