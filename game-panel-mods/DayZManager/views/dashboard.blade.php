@@ -51,7 +51,7 @@
     <h2>Workshop Mods</h2>
     <p class="dz-sub">
         {{ $installed_mods_count }} mod(s) detected on this server ({{ $enabled_mods_count }} in the
-        load order). Manage them in detail on the <a href="{{ $base_url }}/mods">Workshop Mods</a> page.
+        load order). Manage them in detail on the <a href="{{ $base_url }}/mods" target="_blank" rel="noopener noreferrer">Workshop Mods</a> page.
     </p>
 
     <div class="dz-form">

@@ -12,14 +12,14 @@
         <h2>{{ $group['label'] }}</h2>
         <p class="dz-sub">
             <code>{{ $group['path'] }}</code> ·
-            <a href="{{ $group['browse_url'] }}">Open directory</a> ·
+            <a href="{{ $group['browse_url'] }}" target="_blank" rel="noopener noreferrer">Open directory</a> ·
             {{ count($group['entries']) }} file(s)
         </p>
         <ul class="dz-list">
             @forelse ($group['entries'] as $entry)
                 <li>
                     <span>
-                        <a href="{{ $entry['edit_url'] }}">{{ $entry['name'] }}</a>
+                        <a href="{{ $entry['edit_url'] }}" target="_blank" rel="noopener noreferrer">{{ $entry['name'] }}</a>
                         <span class="dz-text-muted"> · {{ $entry['path'] }}</span>
                     </span>
                     <span class="dz-text-muted">

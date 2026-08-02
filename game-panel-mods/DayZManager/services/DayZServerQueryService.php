@@ -22,7 +22,13 @@ final class DayZServerQueryService
     /** Standard DayZ offset between the game port (2302) and query port (27016). */
     private const DAYZ_QUERY_PORT_OFFSET = 24714;
 
-    private const QUERY_PORT_VARIABLES = ['STEAM_QUERY_PORT', 'QUERY_PORT', 'STEAMQUERYPORT', 'SERVER_QUERY_PORT'];
+    /** Steam's flat default query port, used when a server never changed it. */
+    private const DEFAULT_STEAM_QUERY_PORT = 27016;
+
+    private const QUERY_PORT_VARIABLES = [
+        'STEAM_QUERY_PORT', 'QUERY_PORT', 'STEAMQUERYPORT', 'SERVER_QUERY_PORT',
+        'QUERYPORT', 'DAYZ_QUERY_PORT', 'GAME_QUERY_PORT', 'STEAM_PORT',
+    ];
 
     private const CACHE_SECONDS = 15;
 
@@ -36,39 +42,56 @@ final class DayZServerQueryService
     /**
      * Queries the game server.
      *
+     * Several candidate query ports are tried (in order of confidence) because
+     * DayZ has no single reliable convention for deriving the Steam query port
+     * from the game port: an explicit egg variable, a matching allocation, and
+     * the two most common conventions (`game port + 24714` and the flat
+     * `27016` default) are all attempted until one actually answers, instead
+     * of trusting a single guess and reporting the server offline when it
+     * merely guessed the wrong port.
+     *
      * @return array{online: bool, map: string|null, players: int|null, max_players: int|null, version: string|null, name: string|null, endpoint: string|null}
      */
     public function query(mixed $server): array
     {
-        $endpoint = $this->resolveEndpoint($server);
+        $candidates = $this->resolveEndpointCandidates($server);
 
-        if ($endpoint === null) {
+        if ($candidates === []) {
             return $this->offline(null);
         }
 
-        [$host, $port] = $endpoint;
-        $endpointLabel = $host . ':' . $port;
-
-        $cacheKey = 'pteromods.dayz.query.' . md5($endpointLabel);
+        $cacheKey = 'pteromods.dayz.query.' . md5(implode(',', array_map(
+            static fn (array $candidate): string => $candidate[0] . ':' . $candidate[1],
+            $candidates,
+        )));
         $cached = $this->fromCache($cacheKey);
 
         if (is_array($cached)) {
             return $cached;
         }
 
-        $info = $this->client->info($host, $port);
+        $result = null;
 
-        $result = $info === null
-            ? $this->offline($endpointLabel)
-            : [
-                'online'      => true,
-                'map'         => $info['map'] !== '' ? $info['map'] : null,
-                'players'     => $info['players'],
-                'max_players' => $info['max_players'],
-                'version'     => $info['version'] !== '' ? $info['version'] : null,
-                'name'        => $info['name'] !== '' ? $info['name'] : null,
-                'endpoint'    => $endpointLabel,
-            ];
+        foreach ($candidates as [$host, $port]) {
+            $endpointLabel = $host . ':' . $port;
+            $info = $this->client->info($host, $port);
+
+            if ($info !== null) {
+                $result = [
+                    'online'      => true,
+                    'map'         => $info['map'] !== '' ? $info['map'] : null,
+                    'players'     => $info['players'],
+                    'max_players' => $info['max_players'],
+                    'version'     => $info['version'] !== '' ? $info['version'] : null,
+                    'name'        => $info['name'] !== '' ? $info['name'] : null,
+                    'endpoint'    => $endpointLabel,
+                ];
+
+                break;
+            }
+        }
+
+        $result ??= $this->offline($candidates[0][0] . ':' . $candidates[0][1]);
 
         $this->toCache($cacheKey, $result);
 
@@ -82,14 +105,25 @@ final class DayZServerQueryService
      */
     public function resolveEndpoint(mixed $server): ?array
     {
+        return $this->resolveEndpointCandidates($server)[0] ?? null;
+    }
+
+    /**
+     * Every plausible host/query-port combination for a server, most likely
+     * first.
+     *
+     * @return list<array{0: string, 1: int}>
+     */
+    public function resolveEndpointCandidates(mixed $server): array
+    {
         if ($server === null) {
-            return null;
+            return [];
         }
 
         $allocation = $this->primaryAllocation($server);
 
         if ($allocation === null) {
-            return null;
+            return [];
         }
 
         $gamePort = (int) ($this->context->rawAttribute($allocation, 'port') ?? 0);
@@ -104,18 +138,32 @@ final class DayZServerQueryService
         ]);
 
         if ($host === '' || $gamePort <= 0) {
-            return null;
+            return [];
         }
 
-        $queryPort = $this->queryPortVariable($server)
-            ?? $this->allocatedQueryPort($server, $gamePort)
-            ?? $gamePort + self::DAYZ_QUERY_PORT_OFFSET;
+        $ports = [];
 
-        if ($queryPort < 1 || $queryPort > 65535) {
-            return null;
+        $variablePort = $this->queryPortVariable($server);
+
+        if ($variablePort !== null) {
+            $ports[] = $variablePort;
         }
 
-        return [$host, $queryPort];
+        foreach ($this->allocationPorts($server) as $allocationPort) {
+            if ($allocationPort !== $gamePort) {
+                $ports[] = $allocationPort;
+            }
+        }
+
+        $ports[] = $gamePort + self::DAYZ_QUERY_PORT_OFFSET;
+        $ports[] = self::DEFAULT_STEAM_QUERY_PORT;
+
+        $ports = array_values(array_unique(array_filter(
+            $ports,
+            static fn (int $port): bool => $port >= 1 && $port <= 65535,
+        )));
+
+        return array_map(static fn (int $port): array => [$host, $port], $ports);
     }
 
     /**
@@ -195,21 +243,40 @@ final class DayZServerQueryService
     }
 
     /**
-     * Looks for an allocation that matches a well-known DayZ query port.
+     * Other ports allocated to the server, most likely query port first.
+     *
+     * Extra allocations beyond the primary game port are frequently the
+     * Steam query port a host assigned manually, so every one of them is a
+     * plausible candidate, not just the one matching a guessed offset.
+     *
+     * @return list<int>
      */
-    private function allocatedQueryPort(mixed $server, int $gamePort): ?int
+    private function allocationPorts(mixed $server): array
     {
-        $expected = $gamePort + self::DAYZ_QUERY_PORT_OFFSET;
+        $expected = 0;
+        $primary = $this->primaryAllocation($server);
+
+        if ($primary !== null) {
+            $expected = (int) ($this->context->rawAttribute($primary, 'port') ?? 0) + self::DAYZ_QUERY_PORT_OFFSET;
+        }
+
+        $ports = [];
 
         foreach ($this->allocations($server) as $allocation) {
             $port = (int) ($this->context->rawAttribute($allocation, 'port') ?? 0);
 
-            if ($port === $expected || $port === 27016) {
-                return $port;
+            if ($port > 0) {
+                $ports[] = $port;
             }
         }
 
-        return null;
+        // Ports matching a well-known convention are tried before the rest.
+        usort($ports, static fn (int $a, int $b): int => (
+            (int) ($b === $expected || $b === self::DEFAULT_STEAM_QUERY_PORT)
+            <=> (int) ($a === $expected || $a === self::DEFAULT_STEAM_QUERY_PORT)
+        ));
+
+        return $ports;
     }
 
     private function queryPortVariable(mixed $server): ?int

@@ -54,11 +54,41 @@ final class DayZWorkshopController
      */
     public function install(mixed $server = null, string $reference = '', array $metadata = []): array
     {
-        $this->manage($server);
+        $model = $this->manage($server);
 
         $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
 
-        return $this->service->installPlan($reference, $metadata);
+        return $this->service->installPlan($reference, $metadata, $model);
+    }
+
+    /**
+     * Reports install/download progress for a previously queued plan, so the
+     * page can poll it until every mod in the plan has appeared on the server.
+     *
+     * @param list<string> $workshopIds
+     * @return array<string, mixed>
+     */
+    public function installStatus(mixed $server = null, array $workshopIds = []): array
+    {
+        $model = $this->context->resolve($server)['model'];
+
+        if ($workshopIds === []) {
+            $input = $this->context->input('workshop_ids', []);
+
+            if (is_string($input) && $input !== '') {
+                $decoded = json_decode($input, true);
+                $input = is_array($decoded) ? $decoded : [];
+            }
+
+            $workshopIds = is_array($input) ? array_values(array_map('strval', $input)) : [];
+        }
+
+        if ($workshopIds === []) {
+            $single = $this->context->stringInput('workshop_id');
+            $workshopIds = $single === '' ? [] : [$single];
+        }
+
+        return $this->service->installStatus($workshopIds, $model);
     }
 
     /**

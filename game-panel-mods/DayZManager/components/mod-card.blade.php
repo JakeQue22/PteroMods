@@ -69,7 +69,7 @@
             @endif
             <button class="dz-btn dz-btn-sm dz-btn-red" onclick="pteroModAction('{{ $workshopId !== '' ? $workshopId : ($mod['folder_name'] ?? '') }}', 'remove')">Remove</button>
             @if (!empty($server_id) && $installed)
-                <a class="dz-btn dz-btn-sm dz-btn-ghost"
+                <a class="dz-btn dz-btn-sm dz-btn-ghost" target="_blank" rel="noopener noreferrer"
                    href="/server/{{ rawurlencode($server_id) }}/files#/{{ rawurlencode((string) ($mod['folder_name'] ?? '')) }}">Files</a>
             @endif
         </div>

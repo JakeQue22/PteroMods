@@ -209,9 +209,26 @@ final class DayZPanelGateway
             return false;
         }
 
+        // Wings exposes power actions through `DaemonPowerRepository::send()`,
+        // not `DaemonServerRepository` (which has no `power` method at all);
+        // calling the wrong repository silently fails, so it is tried first.
+        $repository = $this->powerRepository($server);
+
+        if ($repository !== null && method_exists($repository, 'send')) {
+            try {
+                $repository->send($signal);
+
+                return true;
+            } catch (Throwable) {
+                return false;
+            }
+        }
+
+        // Fall back to a generic `power()` method for panel forks that expose
+        // the action differently.
         $repository = $this->serverRepository($server);
 
-        if ($repository !== null) {
+        if ($repository !== null && method_exists($repository, 'power')) {
             try {
                 $repository->power($signal);
 
@@ -346,6 +363,11 @@ final class DayZPanelGateway
     private function serverRepository(mixed $server): ?object
     {
         return $this->repository('Pterodactyl\\Repositories\\Wings\\DaemonServerRepository', $server);
+    }
+
+    private function powerRepository(mixed $server): ?object
+    {
+        return $this->repository('Pterodactyl\\Repositories\\Wings\\DaemonPowerRepository', $server);
     }
 
     private function fileRepository(mixed $server): ?object

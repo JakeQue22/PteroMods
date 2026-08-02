@@ -7,6 +7,7 @@ namespace GamePanelMods\DayZManager\Services;
 use PteroMods\Services\DayZ\LaunchParameterBuilder;
 use PteroMods\Services\DayZ\ModMetaParser;
 use PteroMods\Services\DayZ\WorkshopDependencyPlanner;
+use PteroMods\Services\DayZ\WorkshopInfoClient;
 use PteroMods\Services\DayZ\WorkshopReferenceParser;
 use Throwable;
 
@@ -24,6 +25,9 @@ final class DayZWorkshopService
     /** Upper bound on scanned mod folders, to keep page loads predictable. */
     private const MAX_MODS = 60;
 
+    /** How long a fetched Workshop item description is cached for. */
+    private const INFO_CACHE_SECONDS = 3600;
+
     /** @var array<string, list<array<string, mixed>>> Per-request mod cache. */
     private array $memo = [];
 
@@ -32,6 +36,7 @@ final class DayZWorkshopService
         private readonly DayZStartupService $startup = new DayZStartupService(),
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly ModMetaParser $meta = new ModMetaParser(),
+        private readonly WorkshopInfoClient $info = new WorkshopInfoClient(),
     ) {
     }
 
@@ -143,22 +148,101 @@ final class DayZWorkshopService
     }
 
     /**
+     * Builds an install plan for a Workshop reference: the dependency-ordered
+     * download queue, and the public details (title, thumbnail, size) for
+     * every item in it, so the operator sees what each ID actually is right
+     * away instead of a bare number.
+     *
      * @param array<string, array{dependencies?: list<string>, requires_cf?: bool}> $metadata
      * @return array<string, mixed>
      */
-    public function installPlan(string $reference, array $metadata = []): array
+    public function installPlan(string $reference, array $metadata = [], mixed $server = null): array
     {
         $workshopId = (new WorkshopReferenceParser())->parse($reference);
         $plan = (new WorkshopDependencyPlanner())->buildPlan($workshopId, $metadata + [
             $workshopId => $metadata[$workshopId] ?? ['dependencies' => [], 'requires_cf' => true],
         ]);
 
+        $server = $this->resolveServer($server);
+        $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $plan);
+        $item = current(array_filter($queue, static fn (array $entry): bool => $entry['workshop_id'] === $workshopId)) ?: null;
+
         return [
             'workshop_id' => $workshopId,
+            'title' => $item['title'] ?? '',
+            'thumbnail' => $item['thumbnail'] ?? '',
+            'file_size' => $item['file_size'] ?? '',
             'install_order' => $plan,
+            'queue' => $queue,
             'restart_after_update' => true,
             'auto_dependency_installation' => true,
+            'status' => 'queued',
+            'message' => 'Install queued. SteamCMD (or your egg\'s update script) downloads the files; '
+                . 'progress below reflects whether each mod has appeared on the server yet.',
         ];
+    }
+
+    /**
+     * Reports the download/installation progress of a Workshop install plan,
+     * so the page can poll it after `installPlan()` queued the download.
+     *
+     * @param list<string> $workshopIds
+     * @return array<string, mixed>
+     */
+    public function installStatus(array $workshopIds, mixed $server = null): array
+    {
+        $server = $this->resolveServer($server);
+        $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
+        $complete = $queue !== [] && !in_array(false, array_column($queue, 'installed'), true);
+
+        return [
+            'queue' => $queue,
+            'complete' => $complete,
+        ];
+    }
+
+    /**
+     * Public Workshop details plus on-server install state for one item.
+     *
+     * @return array<string, mixed>
+     */
+    private function queueEntry(string $workshopId, mixed $server): array
+    {
+        $mod = $server === null ? null : $this->findMod($workshopId, $server);
+        $info = $this->workshopInfo($workshopId);
+
+        return [
+            'workshop_id' => $workshopId,
+            'title'       => $mod['title'] ?? $info['title'] ?? '',
+            'thumbnail'   => $info['thumbnail'] ?? '',
+            'file_size'   => $info['file_size'] ?? 0,
+            'installed'   => $mod !== null && ($mod['installed'] ?? false),
+            'status'      => $mod !== null && ($mod['installed'] ?? false) ? 'installed' : 'downloading',
+        ];
+    }
+
+    /**
+     * Public Workshop item details, cached because the Steam API is called
+     * over the network and the same ID is looked up repeatedly while a
+     * download is in progress.
+     *
+     * @return array<string, mixed>
+     */
+    private function workshopInfo(string $workshopId): array
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return $this->info->fetch($workshopId) ?? [];
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Cache::remember(
+                'pteromods.dayz.workshop_info.' . $workshopId,
+                self::INFO_CACHE_SECONDS,
+                fn (): array => $this->info->fetch($workshopId) ?? [],
+            );
+        } catch (Throwable) {
+            return $this->info->fetch($workshopId) ?? [];
+        }
     }
 
     /**
