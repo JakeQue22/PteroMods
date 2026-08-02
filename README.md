@@ -226,6 +226,8 @@ Module state is stored in `game-panel-mods/.module-state.json`. The `ModuleLifec
 
 ## DayZ Manager
 
+> Route style note: every DayZ endpoint documented with `/servers/{server}` also has a singular alias using `/server/{server}` (including API routes under `/api/server/{server}/...`).
+
 ### Dashboard
 
 URL: `GET /servers/{server}/dayz`
@@ -334,6 +336,8 @@ Every save is backed up to the `dayz_configuration_backups` table before the new
 ### API endpoints
 
 Full reference:
+
+> For panels that use singular server paths, replace `/servers/{server}` with `/server/{server}` and `/api/servers/{server}` with `/api/server/{server}`. Both route styles are registered by DayZ Manager.
 
 | Method | URI | Controller action |
 |---|---|---|
