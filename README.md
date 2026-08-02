@@ -147,39 +147,36 @@ Replace `pterodactyl`, `panel`, and the file path to match your setup. The file 
 
 #### 5. Register module routes
 
-Add the PteroMods routes to your panel's route loading bootstrap.
+PteroMods ships a route loader that registers the page routes (`routes.php`) and
+JSON endpoints (`api/routes.php`) of every **enabled** module behind the panel's
+`auth` middleware.
 
-- If your panel has `routes/web.php` and `routes/api.php`, append the snippets there.
-- On newer panels where those files do not exist (for example only `routes/base.php`, `routes/api-application.php`, `routes/api-client.php`, `routes/api-remote.php`), append:
-  - the **web snippet** to `routes/base.php`
-  - the **API snippet** to each API route file you want modules to extend (typically `routes/api-application.php` and `routes/api-client.php`)
-
-```php
-// routes/web.php – add near the bottom
-foreach (glob(base_path('game-panel-mods/*/routes.php')) as $moduleRoutes) {
-    $routes = require $moduleRoutes;
-    foreach ($routes as $r) {
-        Route::{strtolower($r['method'])}($r['uri'], $r['action']);
-    }
-}
-```
+Add this single line to your panel's web route file — `routes/base.php` on
+current Pterodactyl versions, `routes/web.php` on older ones — **immediately
+after the opening `<?php` tag**:
 
 ```php
-// routes/api.php – add near the bottom
-foreach (glob(base_path('game-panel-mods/*/api/routes.php')) as $moduleApiRoutes) {
-    $routes = require $moduleApiRoutes;
-    foreach ($routes as $r) {
-        Route::{strtolower($r['method'])}($r['uri'], $r['action']);
-    }
-}
+require base_path('game-panel-mods/routes-loader.php');
 ```
 
-Then clear the route cache:
+> The loader must run *before* the panel's catch-all route (the one that
+> forwards every unknown URI to the JavaScript client). If it is appended at the
+> bottom of the file instead, the client application answers `/server/{id}/dayz`
+> first and the module pages appear as 404s.
+
+`bin/install.sh` performs this patch automatically (step 5) and skips it when the
+line is already present.
+
+Then rebuild the route cache:
 
 ```bash
 php artisan route:clear
 php artisan route:cache
 ```
+
+Verify with `php artisan route:list | grep dayz` — you should see both the
+`/server/{server}/dayz*` page routes and the `/api/server/{server}/dayz/*`
+endpoints.
 
 #### 6. Mark the module as installed and enabled
 
@@ -190,7 +187,7 @@ Edit `game-panel-mods/.module-state.json`:
     "dayz-manager": {
         "installed": true,
         "enabled": true,
-        "version": "1.1.0"
+        "version": "1.2.0"
     }
 }
 ```
@@ -233,6 +230,21 @@ Module state is stored in `game-panel-mods/.module-state.json`. The `ModuleLifec
 URL: `GET /servers/{server}/dayz`
 
 Displays a card grid with: server name, current map, server version, installed mod count, player count, CPU, RAM, disk usage, and server status.
+
+**Live values.** Current map, player count, and server version are read from the
+game server itself over the Steam query protocol (A2S_INFO) by
+`SourceQueryClient` and `DayZServerQueryService`:
+
+- the query host comes from the server's primary allocation (falling back to the node FQDN when the allocation is bound to `0.0.0.0`);
+- the query port is taken from a `STEAM_QUERY_PORT`/`QUERY_PORT` egg variable, otherwise from an allocation matching the standard DayZ query port, otherwise from the game port plus the standard DayZ offset (`2302` → `27016`);
+- results are cached for 15 seconds, and mission names such as `dayzOffline.chernarusplus` are shown as friendly map names (`Chernarus+`);
+- when the server does not answer, those cards show `N/A` and the status card reads `offline`.
+
+**Rendering.** Module pages are rendered by `DayZPageRenderer` into a
+self-contained, panel-themed HTML document with the module stylesheet inlined,
+so they display correctly regardless of which assets the panel front end
+exposes. Every page shares the same tab navigation and a link back to the
+server.
 
 ### Workshop mod management
 
@@ -361,6 +373,13 @@ Full reference:
 | POST | `/api/servers/{server}/dayz/server/restart` | `DayZServerController@restart` |
 | GET | `/api/servers/{server}/dayz/server/launch-parameters` | `DayZServerController@launchParameters` |
 
+### Access control
+
+Module pages and endpoints are registered behind the panel's `auth` middleware,
+and `DayZServerContext` additionally verifies that the authenticated user is an
+administrator, the server owner, or a subuser of the requested server before any
+server data is rendered. Everyone else receives a `403`.
+
 ### Permissions
 
 Assign these permission keys to panel roles as required:
@@ -426,7 +445,7 @@ CREATE TABLE dayz_player_lists (
 
 | Folder | Purpose |
 |---|---|
-| `src/` | Framework-agnostic, strongly typed services for module discovery, lifecycle state, and DayZ domain logic |
+| `src/` | Framework-agnostic, strongly typed services for module discovery, lifecycle state, DayZ domain logic, and the Steam A2S query client |
 | `game-panel-mods/Shared` | Shared administration metadata |
 | `game-panel-mods/DayZManager` | DayZ management module: dashboard, workshop, mod reorder, player lists, server control, configuration |
 | `game-panel-mods/ArkManager` | ARK manager shell |
@@ -473,11 +492,18 @@ database/migrations/
 ## Troubleshooting
 
 **Routes return 404 after install**
+Make sure `require base_path('game-panel-mods/routes-loader.php');` sits at the *top* of `routes/base.php` (or `routes/web.php`). The panel's catch-all route forwards unknown URIs to the JavaScript client, so module routes registered after it never match and every DayZ page renders the client's 404 screen.
 Clear the route cache: `php artisan route:clear && php artisan route:cache`.
 If your panel uses singular server paths (`/server/{server}`), ensure you are on a version of PteroMods that includes singular route aliases in addition to `/servers/{server}`.
 Confirm the routes are actually registered: `php artisan route:list | grep dayz` (you should see both `/servers/{server}/dayz` and `/server/{server}/dayz` entries).
 If `route:list` does not show DayZ routes, re-check Step 5 and make sure the route loader snippet was added to the correct files for your panel version (`routes/web.php` + `routes/api.php`, or `routes/base.php` + relevant API route files), then rebuild the route cache again.
 If routes are present but the browser still serves a stale 404 page, restart PHP-FPM/web server after clearing caches to flush opcode/cache layers.
+
+**Module pages are unstyled (white page, single column)**
+That happens when a page is served without the module layout. Re-copy `game-panel-mods/` (or re-run `bin/install.sh`), then run `php artisan view:clear`: pages are rendered by `DayZPageRenderer`, which inlines `assets/dayz-manager.css` into `views/layout.blade.php`.
+
+**`/dayz/mods` returns a 500 error**
+Older builds included the mod card component by file path, which Blade cannot resolve. Update to this version (components are rendered through the `$component(...)` callable) and clear the view cache with `php artisan view:clear`.
 
 **Class not found errors**
 Regenerate the Composer autoloader: `composer dump-autoload --optimize`.

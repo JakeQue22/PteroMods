@@ -44,6 +44,8 @@ final class DayZServerContext
 
         $name = $this->attribute($model, ['name', 'server_name']);
 
+        $this->authorize($model);
+
         return [
             'id'    => $identifier,
             'name'  => $name !== '' ? $name : ($identifier !== '' ? $identifier : 'DayZ Server'),
@@ -197,6 +199,72 @@ final class DayZServerContext
     private function identifierFrom(mixed $server): string
     {
         return $this->attribute($server, ['uuidShort', 'uuid_short', 'uuid', 'id']);
+    }
+
+    /**
+     * Aborts the request when the authenticated user may not access the server.
+     *
+     * The panel's own server-access middleware relies on route model binding,
+     * which module routes do not use, so ownership is verified here instead:
+     * administrators, the owner, and subusers are allowed through.
+     */
+    private function authorize(mixed $model): void
+    {
+        if ($model === null
+            || !function_exists('abort')
+            || !class_exists('Illuminate\\Support\\Facades\\Auth')) {
+            return;
+        }
+
+        try {
+            $user = \Illuminate\Support\Facades\Auth::user();
+        } catch (Throwable) {
+            return;
+        }
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        if ((bool) ($this->rawAttribute($user, 'root_admin') ?? false)) {
+            return;
+        }
+
+        $userId = (int) ($this->rawAttribute($user, 'id') ?? 0);
+        $ownerId = (int) ($this->rawAttribute($model, 'owner_id') ?? 0);
+
+        if ($userId > 0 && $userId === $ownerId) {
+            return;
+        }
+
+        if (!$this->isSubuser($model, $userId)) {
+            abort(403);
+        }
+    }
+
+    private function isSubuser(mixed $model, int $userId): bool
+    {
+        $serverId = (int) ($this->rawAttribute($model, 'id') ?? 0);
+
+        if ($userId <= 0
+            || $serverId <= 0
+            || !class_exists('Illuminate\\Support\\Facades\\DB')
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')) {
+            return false;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('subusers')) {
+                return false;
+            }
+
+            return \Illuminate\Support\Facades\DB::table('subusers')
+                ->where('server_id', $serverId)
+                ->where('user_id', $userId)
+                ->exists();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     private function findServer(string $identifier): mixed

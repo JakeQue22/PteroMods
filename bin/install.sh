@@ -194,7 +194,7 @@ STATE_FILE="$PANEL_ROOT/game-panel-mods/.module-state.json"
 if [[ ! -f "$STATE_FILE" ]] || [[ "$(cat "$STATE_FILE")" == "{}" ]]; then
     echo ""
     echo "── Step 7: Writing module state ──"
-    printf '{\n    "dayz-manager": {\n        "installed": true,\n        "enabled": true,\n        "version": "1.1.0"\n    }\n}\n' \
+    printf '{\n    "dayz-manager": {\n        "installed": true,\n        "enabled": true,\n        "version": "1.2.0"\n    }\n}\n' \
         > "$STATE_FILE"
     success ".module-state.json written."
 fi
