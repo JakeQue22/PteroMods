@@ -204,7 +204,7 @@ php artisan cache:clear
 chown -R www-data:www-data /var/www/pterodactyl/game-panel-mods
 ```
 
-The DayZ Manager tabs will now be available to any server whose egg supports the `dayz` game type.
+The DayZ Manager tabs will now be available to any server whose egg resolves to one of the supported DayZ identifiers: `dayz`, `dayz-dedicated`, `source-engine-dayz`, `source-engine`, or `source`.
 
 ---
 
@@ -475,7 +475,7 @@ Clear the route cache: `php artisan route:clear && php artisan route:cache`.
 Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
 
 **DayZ Manager tabs don't appear**
-Confirm the server egg includes `dayz` in its supported games and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.
+Confirm the server egg resolves to one of `dayz`, `dayz-dedicated`, `source-engine-dayz`, `source-engine`, or `source` (for example Nest `Source Engine` + egg `DayZ`), and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.
 
 **`.module-state.json` is not writable**
 Ensure the web server user has write access: `chown www-data:www-data game-panel-mods/.module-state.json`.
