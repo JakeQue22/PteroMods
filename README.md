@@ -471,12 +471,17 @@ database/migrations/
 **Routes return 404 after install**
 Clear the route cache: `php artisan route:clear && php artisan route:cache`.
 If your panel uses singular server paths (`/server/{server}`), ensure you are on a version of PteroMods that includes singular route aliases in addition to `/servers/{server}`.
+Confirm the routes are actually registered: `php artisan route:list | grep dayz` (you should see both `/servers/{server}/dayz` and `/server/{server}/dayz` entries).
+If `route:list` does not show DayZ routes, re-check Step 5 and make sure the route loader snippet was added to the correct files for your panel version (`routes/web.php` + `routes/api.php`, or `routes/base.php` + relevant API route files), then rebuild the route cache again.
+If routes are present but the browser still serves a stale 404 page, restart PHP-FPM/web server after clearing caches to flush opcode/cache layers.
 
 **Class not found errors**
 Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
 
 **DayZ Manager tabs don't appear**
 Confirm the server egg resolves to one of `dayz`, `dayz-dedicated`, `source-engine-dayz`, `source-engine`, or `source` (for example Nest `Source Engine` + egg `DayZ`), and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.
+For custom eggs, also check the egg's short identifier/slug used by the panel API (not just the display name in the admin UI) and make sure it maps to one of the supported values above.
+From your DayZ server page specifically, test both URL variants directly: `/servers/{server}/dayz` and `/server/{server}/dayz`; if one works and the other 404s, your panel route style and registered aliases are out of sync.
 
 **`.module-state.json` is not writable**
 Ensure the web server user has write access: `chown www-data:www-data game-panel-mods/.module-state.json`.
