@@ -211,6 +211,12 @@ body.dz-body {
 
 code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05rem 0.3rem; font-size: 0.78rem; color: var(--dz-green); }
 
+.dz-mod-wrap { display: flex; }
+.dz-mod-wrap > .dz-mod-card { flex: 1; }
+.dz-list li a { color: var(--dz-accent); text-decoration: none; }
+.dz-list li a:hover { text-decoration: underline; }
+#dz-mod-filter { margin-top: 0.6rem; max-width: 24rem; }
+
 @media (max-width: 640px) {
   .dz-shell { padding: 1.25rem 0.9rem 3rem; }
   .dz-card { padding: 1rem; }

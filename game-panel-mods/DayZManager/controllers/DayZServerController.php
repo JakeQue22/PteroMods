@@ -32,7 +32,19 @@ final class DayZServerController
     {
         $reason = $reason !== '' ? $reason : $this->context->stringInput('reason');
 
-        return $this->service->restart($reason);
+        return $this->service->restart($reason, $this->context->resolve($server)['model']);
+    }
+
+    /**
+     * Sends an arbitrary power signal (`start`, `stop`, `restart`, `kill`).
+     *
+     * @return array<string, mixed>
+     */
+    public function power(mixed $server = null, string $signal = ''): array
+    {
+        $signal = $signal !== '' ? $signal : $this->context->stringInput('signal');
+
+        return $this->service->power($this->context->resolve($server)['model'], $signal);
     }
 
     /**
@@ -46,8 +58,8 @@ final class DayZServerController
         $resolved = $this->context->resolve($server);
 
         try {
-            $folders = $enabledFolders !== [] ? $enabledFolders : $this->workshop->enabledFolders();
-            $payload = $this->service->launchParameters($folders);
+            $folders = $enabledFolders !== [] ? $enabledFolders : $this->workshop->enabledFolders($resolved['model']);
+            $payload = $this->service->launchParameters($resolved['model'], $folders);
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'server', $resolved['id'], $resolved['name']);
         }

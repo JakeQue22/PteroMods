@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Services;
 
+use PteroMods\Services\DayZ\HostAddressResolver;
 use PteroMods\Services\DayZ\SourceQueryClient;
 use Throwable;
 
@@ -28,6 +29,7 @@ final class DayZServerQueryService
     public function __construct(
         private readonly SourceQueryClient $client = new SourceQueryClient(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly HostAddressResolver $addresses = new HostAddressResolver(),
     ) {
     }
 
@@ -90,16 +92,19 @@ final class DayZServerQueryService
             return null;
         }
 
-        $host = $this->attributeString($allocation, ['ip_alias', 'ip']);
         $gamePort = (int) ($this->context->rawAttribute($allocation, 'port') ?? 0);
+
+        // Allocations usually hold the node's *internal* address, which the
+        // panel cannot reach when the node runs on a different machine, so the
+        // public alias and the node FQDN are preferred over it.
+        $host = $this->addresses->resolve([
+            $this->attributeString($allocation, ['ip_alias']),
+            $this->nodeHost($server),
+            $this->attributeString($allocation, ['ip']),
+        ]);
 
         if ($host === '' || $gamePort <= 0) {
             return null;
-        }
-
-        if (in_array($host, ['0.0.0.0', '::'], true)) {
-            $nodeHost = $this->nodeHost($server);
-            $host = $nodeHost !== '' ? $nodeHost : $host;
         }
 
         $queryPort = $this->queryPortVariable($server)
@@ -111,6 +116,31 @@ final class DayZServerQueryService
         }
 
         return [$host, $queryPort];
+    }
+
+    /**
+     * The address players connect to (public alias/FQDN plus the game port).
+     */
+    public function connectionAddress(mixed $server): ?string
+    {
+        if ($server === null) {
+            return null;
+        }
+
+        $allocation = $this->primaryAllocation($server);
+
+        if ($allocation === null) {
+            return null;
+        }
+
+        $port = (int) ($this->context->rawAttribute($allocation, 'port') ?? 0);
+        $host = $this->addresses->resolve([
+            $this->attributeString($allocation, ['ip_alias']),
+            $this->nodeHost($server),
+            $this->attributeString($allocation, ['ip']),
+        ]);
+
+        return $host === '' || $port <= 0 ? null : $host . ':' . $port;
     }
 
     /**
@@ -220,7 +250,7 @@ final class DayZServerQueryService
     {
         $node = $this->context->rawAttribute($server, 'node');
 
-        return $node === null ? '' : $this->attributeString($node, ['fqdn', 'name']);
+        return $node === null ? '' : $this->attributeString($node, ['fqdn']);
     }
 
     /**

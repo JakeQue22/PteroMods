@@ -1,16 +1,41 @@
 <section class="dz-card">
-    <h2>Configuration</h2>
-    <p class="dz-sub">Browse DayZ configuration files with structured categories and editor capabilities.</p>
+    <h2>Configuration Files</h2>
+    <p class="dz-sub">
+        Every file below is read from the server itself and links straight to its location in the
+        panel file manager. Text files open in the text editor, structured files (<code>.cfg</code>,
+        <code>.xml</code>, <code>.json</code>) open in the code editor with matching syntax highlighting.
+    </p>
 </section>
 
-@foreach ($files as $category => $entries)
+@foreach ($groups as $group)
     <section class="dz-card">
-        <h2>{{ $category }}</h2>
+        <h2>{{ $group['label'] }}</h2>
+        <p class="dz-sub">
+            <code>{{ $group['path'] }}</code> ·
+            <a href="{{ $group['browse_url'] }}">Open directory</a> ·
+            {{ count($group['entries']) }} file(s)
+        </p>
         <ul class="dz-list">
-            @forelse ($entries as $entry)
-                <li><span>{{ $entry }}</span></li>
+            @forelse ($group['entries'] as $entry)
+                <li>
+                    <span>
+                        <a href="{{ $entry['edit_url'] }}">{{ $entry['name'] }}</a>
+                        <span class="dz-text-muted"> · {{ $entry['path'] }}</span>
+                    </span>
+                    <span class="dz-text-muted">
+                        {{ $entry['category'] }} · {{ $entry['editor'] }}
+                        @if ($entry['language'] !== 'plaintext')
+                            ({{ $entry['language'] }})
+                        @endif
+                        @if ($entry['exists'])
+                            · {{ $entry['size'] }}
+                        @else
+                            · not found
+                        @endif
+                    </span>
+                </li>
             @empty
-                <li class="dz-empty">No files matched this category.</li>
+                <li class="dz-empty">No configuration files in this directory.</li>
             @endforelse
         </ul>
     </section>

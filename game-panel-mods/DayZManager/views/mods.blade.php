@@ -1,6 +1,9 @@
 <section class="dz-card">
     <h2>Workshop Mod Manager</h2>
-    <p class="dz-sub">Search, install, update, remove, and reorder DayZ mods with automatic dependency planning.</p>
+    <p class="dz-sub">
+        Mods are read from this server: every <code>@</code> folder in the server directory is inspected,
+        and the load order comes from the <code>-mod=</code> launch parameter Pterodactyl boots the server with.
+    </p>
     <dl class="dz-grid">
         @foreach ($settings as $key => $value)
             <div class="dz-stat">
@@ -23,16 +26,35 @@
 
 <section class="dz-card">
     <h2>Installed Mods</h2>
-    <p class="dz-sub">{{ count($installed_mods) }} mod(s) installed.</p>
+    <p class="dz-sub">
+        {{ count($installed_mods) }} mod(s) detected.
+        <input id="dz-mod-filter" class="dz-input" type="search" placeholder="Filter by name, folder, or Workshop ID"
+               oninput="pteroFilterMods(this.value)" />
+    </p>
     @if (count($installed_mods) > 0)
-        <div class="dz-mod-grid">
+        <div class="dz-mod-grid" id="dz-mod-grid">
             @foreach ($installed_mods as $mod)
-                {!! $component('mod-card', ['mod' => $mod]) !!}
+                <div class="dz-mod-wrap" data-search="{{ strtolower(($mod['title'] ?? '') . ' ' . ($mod['folder_name'] ?? '') . ' ' . ($mod['workshop_id'] ?? '')) }}">
+                    {!! $component('mod-card', ['mod' => $mod, 'server_id' => $server_id]) !!}
+                </div>
             @endforeach
         </div>
     @else
-        <p class="dz-sub">No mods installed yet.</p>
+        <p class="dz-sub">
+            No mods found. Either none are installed, or the Pterodactyl daemon for this node could not
+            be reached — check the node status if you expect mods here.
+        </p>
     @endif
 </section>
+
+<script>
+window.pteroFilterMods = function (term) {
+    const needle = (term || '').trim().toLowerCase();
+    document.querySelectorAll('#dz-mod-grid .dz-mod-wrap').forEach(function (wrap) {
+        const haystack = wrap.getAttribute('data-search') || '';
+        wrap.style.display = needle === '' || haystack.indexOf(needle) !== -1 ? '' : 'none';
+    });
+};
+</script>
 
 {!! $component('mod-actions', ['server_id' => $server_id]) !!}

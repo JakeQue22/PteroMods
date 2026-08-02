@@ -32,7 +32,11 @@ final class DayZConfigurationController
         $resolved = $this->context->resolve($server);
 
         try {
+            $groups = $this->service->groups($resolved['model'], $resolved['id']);
+            $paths = $paths !== [] ? $paths : $this->pathsIn($groups);
+
             $data = [
+                'groups'          => $groups,
                 'files'           => $this->service->files($paths),
                 'editor_features' => $this->service->editorFeatures(),
             ];
@@ -55,6 +59,25 @@ final class DayZConfigurationController
         $path = $path !== '' ? $path : $this->context->stringInput('path');
         $content = $content !== '' ? $content : (string) $this->context->input('content', '');
 
-        return $this->service->save($path, $content);
+        return $this->service->save($path, $content, $this->context->resolve($server)['model']);
+    }
+
+    /**
+     * Flattens discovered groups into a plain list of file paths.
+     *
+     * @param list<array{entries: list<array<string, mixed>>}> $groups
+     * @return list<string>
+     */
+    private function pathsIn(array $groups): array
+    {
+        $paths = [];
+
+        foreach ($groups as $group) {
+            foreach ($group['entries'] as $entry) {
+                $paths[] = (string) $entry['path'];
+            }
+        }
+
+        return $paths;
     }
 }

@@ -1,8 +1,12 @@
 @php
     $enabled = (bool) ($mod['enabled'] ?? false);
+    $installed = (bool) ($mod['installed'] ?? true);
+    $serverOnly = (bool) ($mod['server_only'] ?? false);
     $current = (string) ($mod['current_version'] ?? $mod['version'] ?? '');
     $latest = (string) ($mod['latest_version'] ?? '');
     $updateAvailable = $latest !== '' && $latest !== $current;
+    $workshopId = (string) ($mod['workshop_id'] ?? '');
+    $workshopUrl = (string) ($mod['workshop_url'] ?? '');
     $dependencies = $mod['dependencies'] ?? [];
     $dependencies = is_array($dependencies) ? $dependencies : array_filter(explode(',', (string) $dependencies));
 @endphp
@@ -14,15 +18,21 @@
         <div class="dz-mod-head">
             <div>
                 <h3>{{ $mod['title'] ?? 'Unknown mod' }}</h3>
-                <p>ID: {{ $mod['workshop_id'] ?? '—' }}</p>
+                <p>
+                    @if ($workshopUrl !== '')
+                        ID: <a href="{{ $workshopUrl }}" target="_blank" rel="noopener noreferrer">{{ $workshopId }}</a>
+                    @else
+                        ID: {{ $workshopId !== '' ? $workshopId : 'unknown' }}
+                    @endif
+                </p>
             </div>
-            <span class="dz-badge {{ $enabled ? 'dz-badge-on' : 'dz-badge-off' }}">{{ $enabled ? 'Enabled' : 'Disabled' }}</span>
+            <span class="dz-badge {{ $enabled ? 'dz-badge-on' : 'dz-badge-off' }}">{{ $enabled ? 'In load order' : 'Not loaded' }}</span>
         </div>
 
         <dl class="dz-mod-meta">
             <div><dt>Folder</dt><dd>{{ $mod['folder_name'] ?? '—' }}</dd></div>
-            <div><dt>Author</dt><dd>{{ $mod['author'] ?? '—' }}</dd></div>
-            <div><dt>Size</dt><dd>{{ $mod['file_size'] ?? '—' }}</dd></div>
+            <div><dt>Author</dt><dd>{{ ($mod['author'] ?? '') !== '' ? $mod['author'] : '—' }}</dd></div>
+            <div><dt>Size</dt><dd>{{ ($mod['file_size'] ?? '') !== '' ? $mod['file_size'] : '—' }}</dd></div>
             <div>
                 <dt>Version</dt>
                 <dd>
@@ -32,19 +42,36 @@
                     @endif
                 </dd>
             </div>
-            <div><dt>Dependencies</dt><dd>{{ count($dependencies) > 0 ? implode(', ', $dependencies) : 'None' }}</dd></div>
+            <div>
+                <dt>Load position</dt>
+                <dd>{{ isset($mod['position']) ? ((int) $mod['position'] + 1) : '—' }}</dd>
+            </div>
+            <div>
+                <dt>On disk</dt>
+                <dd class="{{ $installed ? '' : 'dz-text-red' }}">{{ $installed ? 'Yes' : 'Missing' }}</dd>
+            </div>
+            @if ($serverOnly)
+                <div><dt>Scope</dt><dd>Server-only (-serverMod)</dd></div>
+            @endif
+            @if (count($dependencies) > 0)
+                <div><dt>Dependencies</dt><dd>{{ implode(', ', $dependencies) }}</dd></div>
+            @endif
         </dl>
 
         <div class="dz-mod-actions">
             @if ($enabled)
-                <button class="dz-btn dz-btn-sm dz-btn-amber" onclick="pteroModAction('{{ $mod['workshop_id'] ?? '' }}', 'disable')">Disable</button>
+                <button class="dz-btn dz-btn-sm dz-btn-amber" onclick="pteroModAction('{{ $workshopId !== '' ? $workshopId : ($mod['folder_name'] ?? '') }}', 'disable')">Disable</button>
             @else
-                <button class="dz-btn dz-btn-sm dz-btn-green" onclick="pteroModAction('{{ $mod['workshop_id'] ?? '' }}', 'enable')">Enable</button>
+                <button class="dz-btn dz-btn-sm dz-btn-green" onclick="pteroModAction('{{ $workshopId !== '' ? $workshopId : ($mod['folder_name'] ?? '') }}', 'enable')">Enable</button>
             @endif
             @if ($updateAvailable)
-                <button class="dz-btn dz-btn-sm" onclick="pteroModAction('{{ $mod['workshop_id'] ?? '' }}', 'update')">Update</button>
+                <button class="dz-btn dz-btn-sm" onclick="pteroModAction('{{ $workshopId }}', 'update')">Update</button>
             @endif
-            <button class="dz-btn dz-btn-sm dz-btn-red" onclick="pteroModAction('{{ $mod['workshop_id'] ?? '' }}', 'remove')">Remove</button>
+            <button class="dz-btn dz-btn-sm dz-btn-red" onclick="pteroModAction('{{ $workshopId !== '' ? $workshopId : ($mod['folder_name'] ?? '') }}', 'remove')">Remove</button>
+            @if (!empty($server_id) && $installed)
+                <a class="dz-btn dz-btn-sm dz-btn-ghost"
+                   href="/server/{{ rawurlencode($server_id) }}/files#/{{ rawurlencode((string) ($mod['folder_name'] ?? '')) }}">Files</a>
+            @endif
         </div>
     </div>
 </article>

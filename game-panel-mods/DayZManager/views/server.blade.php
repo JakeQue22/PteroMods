@@ -1,6 +1,6 @@
 <section class="dz-card">
     <h2>Server Control</h2>
-    <p class="dz-sub">Restart the server and review the active launch parameters.</p>
+    <p class="dz-sub">Power the server and review the launch parameters Pterodactyl actually starts it with.</p>
     @if (!empty($live))
         <dl class="dz-grid">
             <div class="dz-stat">
@@ -16,20 +16,61 @@
 
 <section class="dz-card">
     <h2>Current Launch Parameters</h2>
-    @if ($launch_parameters)
-        <pre class="dz-pre">{{ $launch_parameters }}</pre>
-        <p class="dz-sub">{{ $mod_count }} enabled mod(s) included.</p>
+    @if ($startup_source === 'pterodactyl')
+        <p class="dz-sub">Loaded from the Pterodactyl startup command and this server's egg variables.</p>
+        <pre class="dz-pre">{{ $startup_rendered !== '' ? $startup_rendered : $startup_raw }}</pre>
+
+        @if (count($startup_parameters) > 0)
+            <ul class="dz-tags">
+                @foreach ($startup_parameters as $parameter)
+                    <li>{{ $parameter }}</li>
+                @endforeach
+            </ul>
+        @endif
+
+        <dl class="dz-grid">
+            <div class="dz-stat">
+                <dt>Mod Parameter</dt>
+                <dd>{{ $launch_parameters !== '' ? $launch_parameters : '—' }}</dd>
+            </div>
+            <div class="dz-stat"><dt>Client Mods</dt><dd>{{ $mod_count }}</dd></div>
+            <div class="dz-stat">
+                <dt>Server-only Mods</dt>
+                <dd>{{ count($server_mods) > 0 ? implode(', ', $server_mods) : '—' }}</dd>
+            </div>
+        </dl>
     @else
-        <p class="dz-sub">No mods enabled — launch parameters are empty.</p>
+        <p class="dz-sub">
+            The startup command could not be read from Pterodactyl. Check that the module can reach the
+            panel database and that the server still exists.
+        </p>
     @endif
 </section>
 
+@if (count($startup_variables) > 0)
+    <section class="dz-card">
+        <h2>Startup Variables</h2>
+        <p class="dz-sub">Egg variables resolved for this server, in the order they are substituted.</p>
+        <ul class="dz-list">
+            @foreach ($startup_variables as $name => $value)
+                <li>
+                    <span>{{ $name }}</span>
+                    <span class="dz-text-muted">{{ $value === '' ? '—' : $value }}</span>
+                </li>
+            @endforeach
+        </ul>
+    </section>
+@endif
+
 <section class="dz-card">
-    <h2>Restart Server</h2>
-    <p class="dz-sub">Queues a graceful restart. Active players will be notified before the server goes offline.</p>
+    <h2>Power Controls</h2>
+    <p class="dz-sub">Signals are sent to the Pterodactyl daemon that runs this server.</p>
     <div class="dz-form">
         <input id="dz-restart-reason" class="dz-input" type="text" placeholder="Reason (optional), e.g. Mod update applied" />
-        <button class="dz-btn dz-btn-red" onclick="pteroRestartServer()">Restart Now</button>
+        <button class="dz-btn dz-btn-green" onclick="pteroPowerSignal('start')">Start</button>
+        <button class="dz-btn" onclick="pteroPowerSignal('restart')">Restart</button>
+        <button class="dz-btn dz-btn-amber" onclick="pteroPowerSignal('stop')">Stop</button>
+        <button class="dz-btn dz-btn-red" onclick="pteroPowerSignal('kill')">Kill</button>
     </div>
     <p id="dz-restart-status" class="dz-status dz-hidden"></p>
 </section>
@@ -38,17 +79,19 @@
 (function () {
     const SERVER_ID = @json($server_id);
 
-    window.pteroRestartServer = async function () {
+    window.pteroPowerSignal = async function (signal) {
         const status = document.getElementById('dz-restart-status');
         const reason = document.getElementById('dz-restart-reason');
         const meta = document.querySelector('meta[name="csrf-token"]');
-        if (!confirm('Queue a server restart?')) {
+        if (!confirm('Send "' + signal + '" to this server?')) {
             return;
         }
-        status.textContent = 'Queuing restart…';
+        status.classList.remove('dz-hidden');
+        status.textContent = 'Sending ' + signal + '…';
         status.className = 'dz-status dz-text-muted';
+        const endpoint = signal === 'restart' ? 'restart' : 'power';
         try {
-            const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/restart', {
+            const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/' + endpoint, {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: {
@@ -56,19 +99,24 @@
                     'X-CSRF-TOKEN': meta ? meta.content : '',
                     'Accept': 'application/json',
                 },
-                body: JSON.stringify({ reason: reason ? reason.value : '' }),
+                body: JSON.stringify({ signal: signal, reason: reason ? reason.value : '' }),
             });
-            if (res.ok) {
-                status.textContent = '✓ Restart queued.';
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.status !== 'failed' && data.status !== 'rejected') {
+                status.textContent = '✓ ' + (data.message || 'Signal sent.');
                 status.className = 'dz-status dz-text-green';
             } else {
-                status.textContent = '✗ Restart request failed (' + res.status + ').';
+                status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
                 status.className = 'dz-status dz-text-red';
             }
         } catch (err) {
             status.textContent = '✗ Network error: ' + err.message;
             status.className = 'dz-status dz-text-red';
         }
+    };
+
+    window.pteroRestartServer = function () {
+        return window.pteroPowerSignal('restart');
     };
 }());
 </script>

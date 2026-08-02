@@ -30,8 +30,8 @@ final class DayZWorkshopController
 
         try {
             $data = [
-                'settings'       => $this->service->settings(),
-                'installed_mods' => $this->service->installedMods(),
+                'settings'       => $this->service->settings($resolved['model']),
+                'installed_mods' => $this->service->installedMods($resolved['model']),
             ];
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'mods', $resolved['id'], $resolved['name']);
@@ -101,7 +101,7 @@ final class DayZWorkshopController
             $orderedWorkshopIds = is_array($input) ? array_values($input) : [];
         }
 
-        return $this->service->reorder($orderedWorkshopIds);
+        return $this->service->reorder($orderedWorkshopIds, $this->context->resolve($server)['model']);
     }
 
     private function workshopId(string $workshopId): string

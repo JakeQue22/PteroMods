@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Services;
 
-use Throwable;
-
 /**
  * Builds DayZ dashboard card data.
+ *
+ * Facts come from three sources: the panel database (limits, names), the Wings
+ * daemon (power state and live resource usage), and the game server itself over
+ * the Steam query protocol (map, players, version).
  */
 final class DayZDashboardService
 {
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
+        private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+        private readonly DayZWorkshopService $workshop = new DayZWorkshopService(),
     ) {
     }
 
@@ -24,12 +28,15 @@ final class DayZDashboardService
     {
         $resolved = $this->context->resolve($server);
         $model = $resolved['model'];
-        $installedMods = $this->resolveInstalledMods();
+        $installedMods = $this->workshop->installedMods($model);
         $live = $this->query->query($model);
+        $details = $this->gateway->details($model);
+        $usage = is_array($details['utilization'] ?? null) ? $details['utilization'] : [];
 
         $cpuLimit = $this->context->attribute($model, ['cpu', 'cpu_limit']);
         $memoryLimitMb = $this->intValue($model, ['memory', 'memory_limit']);
         $diskLimitMb = $this->intValue($model, ['disk', 'disk_limit']);
+        $status = $this->resolveStatus($model, $live, $details);
 
         return [
             'server_name'          => $live['name'] ?? $resolved['name'],
@@ -38,37 +45,18 @@ final class DayZDashboardService
             'server_version'       => $live['version'] ?? $this->fallback($this->context->attribute($model, ['version', 'server_version'])),
             'installed_mods'       => $installedMods,
             'installed_mods_count' => count($installedMods),
+            'enabled_mods_count'   => count(array_filter($installedMods, static fn (array $mod): bool => (bool) ($mod['enabled'] ?? false))),
             'player_count'         => $this->formatPlayerCount($live),
-            'cpu'                  => $this->formatCpu($cpuLimit),
-            'ram'                  => $this->formatMegabytesLimit($memoryLimitMb),
-            'disk'                 => $this->formatMegabytesLimit($diskLimitMb),
-            'server_status'        => $this->resolveStatus($model, $live),
+            'cpu'                  => $this->formatCpu($cpuLimit, $usage),
+            'ram'                  => $this->formatMemory($memoryLimitMb, $usage),
+            'disk'                 => $this->formatDisk($diskLimitMb, $usage),
+            'uptime'               => $this->formatUptime($usage),
+            'server_status'        => $status,
+            'status_source'        => $this->statusSource($model, $live, $details),
+            'connection_address'   => $this->query->connectionAddress($model) ?? 'Unknown',
             'query_endpoint'       => $live['endpoint'] ?? 'Unknown',
             'query_online'         => $live['online'],
         ];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function resolveInstalledMods(): array
-    {
-        try {
-            if (class_exists('Illuminate\\Support\\Facades\\Schema')
-                && class_exists('Illuminate\\Support\\Facades\\DB')) {
-                if (\Illuminate\Support\Facades\Schema::hasTable('dayz_mods')) {
-                    /** @var list<array<string, mixed>> $rows */
-                    $rows = \Illuminate\Support\Facades\DB::table('dayz_mods')->get()->toArray();
-                    if ($rows !== []) {
-                        return array_map(static fn ($row): array => (array) $row, $rows);
-                    }
-                }
-            }
-        } catch (Throwable) {
-            // Fall back to in-memory fixture data.
-        }
-
-        return (new DayZWorkshopService())->installedMods();
     }
 
     /**
@@ -127,13 +115,70 @@ final class DayZDashboardService
         return $live['players'] . ' / ' . $live['max_players'];
     }
 
-    private function formatCpu(string $cpuLimit): string
+    /**
+     * @param array<string, mixed> $usage
+     */
+    private function formatCpu(string $cpuLimit, array $usage): string
     {
-        if ($cpuLimit === '' || $cpuLimit === '0') {
-            return 'Unlimited';
+        $limit = $cpuLimit === '' || $cpuLimit === '0' ? 'Unlimited' : rtrim($cpuLimit, '%') . '%';
+        $current = $usage['cpu_absolute'] ?? null;
+
+        if (!is_numeric($current)) {
+            return $limit;
         }
 
-        return rtrim($cpuLimit, '%') . '%';
+        return sprintf('%.1f%% of %s', (float) $current, $limit);
+    }
+
+    /**
+     * @param array<string, mixed> $usage
+     */
+    private function formatMemory(?int $limitMb, array $usage): string
+    {
+        return $this->formatUsage($limitMb, $usage['memory_bytes'] ?? null);
+    }
+
+    /**
+     * @param array<string, mixed> $usage
+     */
+    private function formatDisk(?int $limitMb, array $usage): string
+    {
+        return $this->formatUsage($limitMb, $usage['disk_bytes'] ?? null);
+    }
+
+    private function formatUsage(?int $limitMb, mixed $usedBytes): string
+    {
+        $limit = $this->formatMegabytesLimit($limitMb);
+
+        if (!is_numeric($usedBytes)) {
+            return $limit;
+        }
+
+        return sprintf('%.1f GB of %s', ((float) $usedBytes) / 1073741824, $limit);
+    }
+
+    /**
+     * @param array<string, mixed> $usage
+     */
+    private function formatUptime(array $usage): string
+    {
+        $uptime = $usage['uptime'] ?? null;
+
+        if (!is_numeric($uptime) || (float) $uptime <= 0) {
+            return 'N/A';
+        }
+
+        // Wings reports uptime in milliseconds.
+        $seconds = (int) ((float) $uptime / 1000);
+        $days = intdiv($seconds, 86400);
+        $hours = intdiv($seconds % 86400, 3600);
+        $minutes = intdiv($seconds % 3600, 60);
+
+        if ($days > 0) {
+            return sprintf('%dd %dh %dm', $days, $hours, $minutes);
+        }
+
+        return $hours > 0 ? sprintf('%dh %dm', $hours, $minutes) : sprintf('%dm', max($minutes, 1));
     }
 
     private function formatMegabytesLimit(?int $limitMb): string
@@ -146,31 +191,83 @@ final class DayZDashboardService
     }
 
     /**
-     * @param array{online: bool} $live
+     * Resolves the status shown on the dashboard.
+     *
+     * The `servers.status` column only describes installation/transfer states
+     * and is null for a healthy server, so the live power state reported by
+     * Wings takes precedence; the Steam query result is the last resort.
+     *
+     * @param array{online: bool}                                              $live
+     * @param array{state: string, is_suspended: bool, utilization: array}|null $details
      */
-    private function resolveStatus(mixed $model, array $live): string
+    private function resolveStatus(mixed $model, array $live, ?array $details): string
     {
-        foreach (['status', 'state', 'server_status'] as $key) {
-            $status = strtolower($this->context->attribute($model, [$key]));
+        $installState = $this->installState($model);
 
-            if ($status !== '') {
-                return match ($status) {
-                    'restoring_backup' => 'restoring backup',
-                    'install_failed'   => 'install failed',
-                    default            => $status,
-                };
-            }
+        if ($installState !== '') {
+            return $installState;
         }
 
-        if ($this->truthy($model, 'suspended')) {
-            return 'suspended';
+        $state = $details['state'] ?? '';
+
+        if (is_string($state) && $state !== '') {
+            return $state;
         }
 
         if ($live['online']) {
             return 'running';
         }
 
+        if ($this->truthy($model, 'suspended') || (bool) ($details['is_suspended'] ?? false)) {
+            return 'suspended';
+        }
+
         return $model === null ? 'unknown' : 'offline';
+    }
+
+    /**
+     * Installation, transfer, and suspension states stored in the panel.
+     */
+    private function installState(mixed $model): string
+    {
+        if ($this->truthy($model, 'suspended')) {
+            return 'suspended';
+        }
+
+        foreach (['status', 'server_status'] as $key) {
+            $status = strtolower($this->context->attribute($model, [$key]));
+
+            if ($status === '') {
+                continue;
+            }
+
+            return match ($status) {
+                'restoring_backup' => 'restoring backup',
+                'install_failed'   => 'install failed',
+                default            => $status,
+            };
+        }
+
+        return '';
+    }
+
+    /**
+     * Explains where the status card value came from, for the page footnote.
+     *
+     * @param array{online: bool}                                              $live
+     * @param array{state: string, is_suspended: bool, utilization: array}|null $details
+     */
+    private function statusSource(mixed $model, array $live, ?array $details): string
+    {
+        if ($this->installState($model) !== '') {
+            return 'panel';
+        }
+
+        if (is_string($details['state'] ?? null) && $details['state'] !== '') {
+            return 'daemon';
+        }
+
+        return $live['online'] ? 'steam query' : 'unavailable';
     }
 
     private function truthy(mixed $source, string $key): bool
