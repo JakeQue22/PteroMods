@@ -147,7 +147,12 @@ Replace `pterodactyl`, `panel`, and the file path to match your setup. The file 
 
 #### 5. Register module routes
 
-Add the PteroMods routes to your panel's route loading bootstrap. Append the following snippet to `routes/web.php` and `routes/api.php`:
+Add the PteroMods routes to your panel's route loading bootstrap.
+
+- If your panel has `routes/web.php` and `routes/api.php`, append the snippets there.
+- On newer panels where those files do not exist (for example only `routes/base.php`, `routes/api-application.php`, `routes/api-client.php`, `routes/api-remote.php`), append:
+  - the **web snippet** to `routes/base.php`
+  - the **API snippet** to each API route file you want modules to extend (typically `routes/api-application.php` and `routes/api-client.php`)
 
 ```php
 // routes/web.php – add near the bottom
