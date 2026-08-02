@@ -470,6 +470,7 @@ database/migrations/
 
 **Routes return 404 after install**
 Clear the route cache: `php artisan route:clear && php artisan route:cache`.
+If your panel uses singular server paths (`/server/{server}`), ensure you are on a version of PteroMods that includes singular route aliases in addition to `/servers/{server}`.
 
 **Class not found errors**
 Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
