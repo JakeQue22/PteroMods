@@ -70,18 +70,37 @@ echo "── Step 3: Registering autoload entries ──"
 COMPOSER_JSON="$PANEL_ROOT/composer.json"
 [[ -f "$COMPOSER_JSON" ]] || die "composer.json not found in $PANEL_ROOT"
 
-# Only patch if the entries aren't already there
-if grep -q '"PteroMods\\\\"' "$COMPOSER_JSON"; then
-    warn "PteroMods autoload entry already present – skipping composer.json patch."
-else
-    php -r "
+PATCH_STATUS="$(php -r "
 \$c = json_decode(file_get_contents('$COMPOSER_JSON'), true);
-\$c['autoload']['psr-4']['PteroMods\\\\\\\\'] = 'pteromods-src/';
-\$c['autoload']['classmap'][] = 'game-panel-mods/';
-\$c['autoload']['classmap'] = array_unique(\$c['autoload']['classmap']);
-file_put_contents('$COMPOSER_JSON', json_encode(\$c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
-"
-    success "composer.json updated."
+if (!is_array(\$c)) { fwrite(STDERR, 'Invalid composer.json'.PHP_EOL); exit(1); }
+
+\$changed = false;
+\$c['autoload'] = is_array(\$c['autoload'] ?? null) ? \$c['autoload'] : [];
+\$c['autoload']['psr-4'] = is_array(\$c['autoload']['psr-4'] ?? null) ? \$c['autoload']['psr-4'] : [];
+\$c['autoload']['classmap'] = is_array(\$c['autoload']['classmap'] ?? null) ? \$c['autoload']['classmap'] : [];
+
+if ((\$c['autoload']['psr-4']['PteroMods\\\\\\\\'] ?? null) !== 'pteromods-src/') {
+    \$c['autoload']['psr-4']['PteroMods\\\\\\\\'] = 'pteromods-src/';
+    \$changed = true;
+}
+
+if (!in_array('game-panel-mods/', \$c['autoload']['classmap'], true)) {
+    \$c['autoload']['classmap'][] = 'game-panel-mods/';
+    \$changed = true;
+}
+
+if (\$changed) {
+    file_put_contents('$COMPOSER_JSON', json_encode(\$c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . PHP_EOL);
+    echo 'patched';
+} else {
+    echo 'unchanged';
+}
+")"
+
+if [[ "$PATCH_STATUS" == "patched" ]]; then
+    success "composer.json autoload normalized."
+else
+    info "composer.json autoload already normalized."
 fi
 
 echo ""

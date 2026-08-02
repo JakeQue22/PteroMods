@@ -482,6 +482,15 @@ If routes are present but the browser still serves a stale 404 page, restart PHP
 **Class not found errors**
 Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
 
+**PSR-4 warnings for `PteroMods\\`**
+Use this exact mapping in your panel `composer.json`:
+
+```json
+"PteroMods\\": "pteromods-src/"
+```
+
+Do **not** point it to `pteromods-src/src`. If you previously copied files as `pteromods-src/src/...`, move contents up one level so classes live at `pteromods-src/ValueObjects`, `pteromods-src/Services`, etc., then run `composer dump-autoload --optimize` again.
+
 **DayZ Manager tabs don't appear**
 Confirm the server egg resolves to one of `dayz`, `dayz-dedicated`, `source-engine-dayz`, `source-engine`, or `source` (for example Nest `Source Engine` + egg `DayZ`), and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.
 For custom eggs, also check the egg's short identifier/slug used by the panel API (not just the display name in the admin UI) and make sure it maps to one of the supported values above.

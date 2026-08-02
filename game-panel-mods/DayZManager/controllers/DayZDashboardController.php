@@ -16,10 +16,16 @@ final class DayZDashboardController
     }
 
     /**
-     * @return array<string, mixed>
+     * @return mixed
      */
-    public function show(): array
+    public function show(string $server = '')
     {
-        return $this->service->dashboard();
+        $dashboard = $this->service->dashboard();
+
+        if (function_exists('view')) {
+            return view('game-panel-mods.DayZManager.views.dashboard', $dashboard);
+        }
+
+        return $dashboard;
     }
 }
