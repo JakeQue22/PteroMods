@@ -20,9 +20,9 @@ final class DayZDashboardController
     /**
      * @return mixed
      */
-    public function show(string $server = '')
+    public function show(mixed $server = null)
     {
-        $dashboard = $this->service->dashboard();
+        $dashboard = $this->service->dashboard($server);
         $viewPath = dirname(__DIR__) . '/views/dashboard.blade.php';
 
         if (class_exists(Blade::class) && is_file($viewPath) && function_exists('response')) {
