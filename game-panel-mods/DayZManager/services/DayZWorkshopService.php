@@ -130,4 +130,37 @@ final class DayZWorkshopService
             'workshop_id' => $workshopId,
         ];
     }
+
+    /**
+     * Persists a new position ordering for installed mods.
+     *
+     * @param list<string> $orderedWorkshopIds  Workshop IDs in the desired load order.
+     * @return array<string, mixed>
+     */
+    public function reorder(array $orderedWorkshopIds): array
+    {
+        $orderedWorkshopIds = array_values(array_filter(
+            array_map('strval', $orderedWorkshopIds),
+            static fn (string $id): bool => $id !== '',
+        ));
+
+        return [
+            'status'       => 'queued',
+            'action'       => 'reorder',
+            'ordered_ids'  => $orderedWorkshopIds,
+            'launch_parameters' => (new LaunchParameterBuilder())->build(
+                array_map(
+                    function (string $workshopId): string {
+                        foreach ($this->installedMods() as $mod) {
+                            if ($mod['workshop_id'] === $workshopId && $mod['enabled']) {
+                                return $mod['folder_name'];
+                            }
+                        }
+                        return '';
+                    },
+                    $orderedWorkshopIds,
+                ),
+            ),
+        ];
+    }
 }

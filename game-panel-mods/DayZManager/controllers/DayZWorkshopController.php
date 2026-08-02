@@ -66,4 +66,13 @@ final class DayZWorkshopController
     {
         return $this->service->toggle($workshopId, false);
     }
+
+    /**
+     * @param list<string> $orderedWorkshopIds  Workshop IDs in the desired load order.
+     * @return array<string, mixed>
+     */
+    public function reorder(array $orderedWorkshopIds): array
+    {
+        return $this->service->reorder($orderedWorkshopIds);
+    }
 }

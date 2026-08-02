@@ -13,6 +13,8 @@ PteroMods is a modular "Game Panel Mods" framework scaffold for Pterodactyl-styl
 5. [DayZ Manager](#dayz-manager)
    - [Dashboard](#dashboard)
    - [Workshop mod management](#workshop-mod-management)
+   - [Player list management](#player-list-management)
+   - [Server control](#server-control)
    - [Configuration editor](#configuration-editor)
    - [API endpoints](#api-endpoints)
    - [Permissions](#permissions)
@@ -39,12 +41,17 @@ PteroMods is a modular "Game Panel Mods" framework scaffold for Pterodactyl-styl
 ## Features
 
 - **Modular architecture** – scan, install, enable, and disable independent game-server modules without touching panel core files.
-- **DayZ Manager** – dashboard, Steam Workshop mod tooling, dependency-aware install planning, launch parameter generation, and configuration file editing from the panel.
+- **DayZ Manager** – dashboard, Steam Workshop mod tooling, dependency-aware install planning, mod reordering, player list management, server restart controls, and configuration file editing from the panel.
 - **Workshop dependency planner** – automatically resolves mod load order and injects CommunityFramework (CF, ID `1559212036`) when a mod requires it.
-- **Launch parameter builder** – generates the correct `-mod=` string from your ordered, enabled mod list.
-- **Configuration catalogue** – groups DayZ config files (`serverDZ.cfg`, `BEServer.cfg`, admin files, message files, etc.) into operator-facing categories.
-- **Configuration backups** – the database migration creates a `dayz_configuration_backups` table so every save is versioned.
-- **Extensible** – `ArkManager`, `RustManager`, and `MinecraftManager` module shells are included and follow the same installable contract.
+- **Launch parameter builder** – generates the correct `-mod=` string from your ordered, enabled mod list; preview endpoint keeps operators informed.
+- **Mod reorder** – drag-and-drop position management persists to `dayz_mods.position` and immediately rebuilds the `-mod=` launch string.
+- **Player list management** – ban, whitelist, and priority queue management by Steam64 ID or GUID, backed by the `dayz_player_lists` database table.
+- **Server restart** – schedule a graceful server restart with an optional reason, directly from the panel.
+- **Configuration catalogue** – groups DayZ config files (`serverDZ.cfg`, `BEServer.cfg`, admin files, message files, etc.) into operator-facing categories with per-save backups.
+- **Configuration backups** – every config save is versioned to the `dayz_configuration_backups` table.
+- **Easy SQL install** – a single `install.sql` file covers the complete MySQL schema. Run it in one command; no Tinker, no copy-pasting.
+- **Automated install script** – `bin/install.sh` handles file copying, autoloader patching, SQL import, cache clearing, and permissions in one shot.
+- **Extensible** – `ArkManager`, `RustManager`, and `MinecraftManager` module shells follow the same installable contract.
 
 ---
 
@@ -54,26 +61,39 @@ These steps assume your panel is already running at `/var/www/pterodactyl`. Adju
 
 > **Tip:** Run all commands as the user that owns the panel files (often `www-data` or a dedicated `pterodactyl` user). Prefix with `sudo -u www-data` if needed.
 
-### 1. Download or clone PteroMods
+### Option A — Automated install script (recommended)
+
+The `bin/install.sh` script handles steps 1–7 in one command. Pass the panel root and your MySQL credentials:
 
 ```bash
-cd /var/www/pterodactyl
-git clone https://github.com/JakeQue22/PteroMods.git game-panel-mods-src
+# Clone PteroMods somewhere temporary
+git clone https://github.com/JakeQue22/PteroMods.git /tmp/pteromods
+
+# Run the installer (panel root, DB user, DB password, DB name)
+bash /tmp/pteromods/bin/install.sh /var/www/pterodactyl pterodactyl mypassword panel
 ```
 
-Or download and extract a release archive instead.
+The script copies files, patches `composer.json`, runs `composer dump-autoload`, imports the SQL schema, writes `.module-state.json`, and clears all panel caches. After it finishes, complete **Step 5** (route registration) from the manual steps below.
 
-### 2. Copy the module files into the panel
+---
 
-Create a `game-panel-mods` directory inside your panel root and copy the modules into it:
+### Option B — Manual steps
+
+#### 1. Download or clone PteroMods
+
+```bash
+git clone https://github.com/JakeQue22/PteroMods.git /tmp/pteromods
+```
+
+#### 2. Copy the module files into the panel
 
 ```bash
 mkdir -p /var/www/pterodactyl/game-panel-mods
-cp -r game-panel-mods-src/game-panel-mods/* /var/www/pterodactyl/game-panel-mods/
-cp -r game-panel-mods-src/src /var/www/pterodactyl/pteromods-src
+cp -r /tmp/pteromods/game-panel-mods/* /var/www/pterodactyl/game-panel-mods/
+cp -r /tmp/pteromods/src            /var/www/pterodactyl/pteromods-src
 ```
 
-### 3. Register the autoloader
+#### 3. Register the autoloader
 
 Add the PteroMods namespaces to your panel's `composer.json` (under `autoload.psr-4` and `autoload.classmap`):
 
@@ -93,45 +113,40 @@ Add the PteroMods namespaces to your panel's `composer.json` (under `autoload.ps
 Then regenerate the autoloader:
 
 ```bash
+cd /var/www/pterodactyl
 composer dump-autoload --optimize
 ```
 
-### 4. Run the database migrations
+#### 4. Run the database migrations
 
-PteroMods ships plain SQL migration files instead of Laravel Migration classes. Execute the `up` statements for each module you want to install. For DayZ Manager:
+PteroMods ships a ready-to-run MySQL SQL file. Import it directly — no Tinker, no copy-pasting:
 
 ```bash
-php artisan tinker
+mysql -u pterodactyl -p panel \
+  < /tmp/pteromods/game-panel-mods/DayZManager/database/install.sql
 ```
 
-Inside Tinker, paste and run the two statements from `game-panel-mods/DayZManager/database/migrations/2026_08_02_000001_create_dayz_manager_tables.php`:
+Replace `pterodactyl`, `panel`, and the file path to match your setup. The file creates all three tables (`dayz_mods`, `dayz_configuration_backups`, `dayz_player_lists`) with `IF NOT EXISTS` guards so it is safe to re-run.
 
-```sql
-CREATE TABLE IF NOT EXISTS dayz_mods (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    workshop_id VARCHAR(32) NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    folder_name VARCHAR(255) NOT NULL,
-    enabled TINYINT(1) NOT NULL DEFAULT 1,
-    version VARCHAR(64) NOT NULL,
-    latest_version VARCHAR(64) NOT NULL,
-    dependencies TEXT NOT NULL,
-    position INTEGER NOT NULL DEFAULT 0
-);
+> **Existing installs** that already ran the v1.0 PHP migration only need the player-lists table. Run the incremental migration instead:
+>
+> ```bash
+> mysql -u pterodactyl -p panel -e "
+> CREATE TABLE IF NOT EXISTS \`dayz_player_lists\` (
+>     \`id\`         INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+>     \`list_type\`  ENUM('ban','whitelist','priority') NOT NULL,
+>     \`player_id\`  VARCHAR(64)   NOT NULL,
+>     \`note\`       VARCHAR(255)  NOT NULL DEFAULT '',
+>     \`added_by\`   VARCHAR(64)   NOT NULL DEFAULT '',
+>     \`created_at\` TIMESTAMP     NULL DEFAULT NULL,
+>     PRIMARY KEY (\`id\`),
+>     UNIQUE KEY \`uq_dayz_player_lists_type_player\` (\`list_type\`, \`player_id\`)
+> ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+> ```
 
-CREATE TABLE IF NOT EXISTS dayz_configuration_backups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    path VARCHAR(255) NOT NULL,
-    content MEDIUMTEXT NOT NULL,
-    created_at TIMESTAMP NULL
-);
-```
+#### 5. Register module routes
 
-> For MySQL/MariaDB panels replace `INTEGER PRIMARY KEY AUTOINCREMENT` with `INT UNSIGNED AUTO_INCREMENT PRIMARY KEY` and wrap each statement in `DB::statement(...)` or run them via your database client directly.
-
-### 5. Register module routes
-
-Add the PteroMods routes to your panel's route loading bootstrap. A simple approach is to append an include to `routes/web.php` and `routes/api.php`:
+Add the PteroMods routes to your panel's route loading bootstrap. Append the following snippet to `routes/web.php` and `routes/api.php`:
 
 ```php
 // routes/web.php – add near the bottom
@@ -160,21 +175,21 @@ php artisan route:clear
 php artisan route:cache
 ```
 
-### 6. Mark the module as installed and enabled
+#### 6. Mark the module as installed and enabled
 
-Use `ModuleLifecycleManager` or edit `game-panel-mods/.module-state.json` directly:
+Edit `game-panel-mods/.module-state.json`:
 
 ```json
 {
     "dayz-manager": {
         "installed": true,
         "enabled": true,
-        "version": "1.0.0"
+        "version": "1.1.0"
     }
 }
 ```
 
-### 7. Clear caches and set permissions
+#### 7. Clear caches and set permissions
 
 ```bash
 php artisan config:clear
@@ -223,6 +238,7 @@ URL: `GET /servers/{server}/dayz/mods`
 | Update mod | POST | `/api/servers/{server}/dayz/mods/update` |
 | Enable mod | POST | `/api/servers/{server}/dayz/mods/enable` |
 | Disable mod | POST | `/api/servers/{server}/dayz/mods/disable` |
+| Reorder mods | POST | `/api/servers/{server}/dayz/mods/reorder` |
 
 **Install payload** — pass either a raw Workshop ID or a full Steam Workshop URL:
 
@@ -236,6 +252,59 @@ URL: `GET /servers/{server}/dayz/mods`
 ```
 
 The `WorkshopReferenceParser` normalises both numeric IDs and `?id=` query-string URLs. The `WorkshopDependencyPlanner` resolves the full load order including transitive dependencies and auto-injects CommunityFramework (ID `1559212036`) for any mod that declares `"requires_cf": true`.
+
+**Reorder payload** — pass Workshop IDs in the desired load order:
+
+```json
+{
+    "ordered_workshop_ids": ["1559212036", "2545327648", "1564026768"]
+}
+```
+
+The response includes the updated `-mod=` launch parameter string built from enabled mods in that order.
+
+### Player list management
+
+URL: `GET /servers/{server}/dayz/players`
+
+Manage the DayZ ban list, whitelist, and priority queue by Steam64 ID or GUID. All changes are persisted to the `dayz_player_lists` database table.
+
+| Action | Method | Endpoint |
+|---|---|---|
+| List entries | GET | `/api/servers/{server}/dayz/players/{list_type}` |
+| Add entry | POST | `/api/servers/{server}/dayz/players/{list_type}` |
+| Remove entry | DELETE | `/api/servers/{server}/dayz/players/{list_type}/{id}` |
+
+`{list_type}` must be one of `ban`, `whitelist`, or `priority`.
+
+**Add payload:**
+
+```json
+{
+    "player_id": "76561198012345678",
+    "note": "Cheating",
+    "added_by": "admin"
+}
+```
+
+### Server control
+
+URL: `GET /servers/{server}/dayz/server`
+
+Displays the current active launch parameters and provides a restart form.
+
+| Action | Method | Endpoint |
+|---|---|---|
+| Get launch parameters | GET | `/api/servers/{server}/dayz/server/launch-parameters` |
+| Restart server | POST | `/api/servers/{server}/dayz/server/restart` |
+
+**Restart payload** (optional):
+
+```json
+{
+    "reason": "Mod update applied"
+}
+```
 
 ### Configuration editor
 
@@ -265,14 +334,22 @@ Full reference:
 | GET | `/servers/{server}/dayz` | `DayZDashboardController@show` |
 | GET | `/servers/{server}/dayz/mods` | `DayZWorkshopController@index` |
 | GET | `/servers/{server}/dayz/configuration` | `DayZConfigurationController@index` |
+| GET | `/servers/{server}/dayz/players` | `DayZPlayerController@index` |
+| GET | `/servers/{server}/dayz/server` | `DayZServerController@launchParameters` |
 | GET | `/api/servers/{server}/dayz/mods` | `DayZWorkshopController@index` |
 | POST | `/api/servers/{server}/dayz/mods/install` | `DayZWorkshopController@install` |
 | POST | `/api/servers/{server}/dayz/mods/remove` | `DayZWorkshopController@remove` |
 | POST | `/api/servers/{server}/dayz/mods/update` | `DayZWorkshopController@update` |
 | POST | `/api/servers/{server}/dayz/mods/enable` | `DayZWorkshopController@enable` |
 | POST | `/api/servers/{server}/dayz/mods/disable` | `DayZWorkshopController@disable` |
+| POST | `/api/servers/{server}/dayz/mods/reorder` | `DayZWorkshopController@reorder` |
 | GET | `/api/servers/{server}/dayz/configuration` | `DayZConfigurationController@index` |
 | PUT | `/api/servers/{server}/dayz/configuration` | `DayZConfigurationController@save` |
+| GET | `/api/servers/{server}/dayz/players/{list_type}` | `DayZPlayerController@index` |
+| POST | `/api/servers/{server}/dayz/players/{list_type}` | `DayZPlayerController@add` |
+| DELETE | `/api/servers/{server}/dayz/players/{list_type}/{id}` | `DayZPlayerController@remove` |
+| POST | `/api/servers/{server}/dayz/server/restart` | `DayZServerController@restart` |
+| GET | `/api/servers/{server}/dayz/server/launch-parameters` | `DayZServerController@launchParameters` |
 
 ### Permissions
 
@@ -287,8 +364,14 @@ Assign these permission keys to panel roles as required:
 | `dayz.config.edit` | Edit DayZ configuration files |
 | `dayz.config.view` | View DayZ configuration files |
 | `dayz.admin.manage` | Manage DayZ administration tooling and settings |
+| `dayz.players.ban` | Add and remove entries from the ban list |
+| `dayz.players.whitelist` | Add and remove entries from the whitelist |
+| `dayz.players.priority` | Add and remove entries from the priority queue |
+| `dayz.server.restart` | Schedule a server restart |
 
 ### Database schema
+
+The full schema is in `game-panel-mods/DayZManager/database/install.sql`. Summary:
 
 ```sql
 -- Installed mod catalogue
@@ -301,7 +384,8 @@ CREATE TABLE dayz_mods (
     version        VARCHAR(64)  NOT NULL,
     latest_version VARCHAR(64)  NOT NULL,
     dependencies   TEXT         NOT NULL,
-    position       INT          NOT NULL DEFAULT 0
+    position       INT          NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_dayz_mods_workshop_id (workshop_id)
 );
 
 -- Configuration file backups
@@ -310,6 +394,17 @@ CREATE TABLE dayz_configuration_backups (
     path       VARCHAR(255) NOT NULL,
     content    MEDIUMTEXT   NOT NULL,
     created_at TIMESTAMP    NULL
+);
+
+-- Ban list, whitelist, and priority queue
+CREATE TABLE dayz_player_lists (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    list_type  ENUM('ban','whitelist','priority') NOT NULL,
+    player_id  VARCHAR(64)  NOT NULL COMMENT 'Steam64 ID or GUID',
+    note       VARCHAR(255) NOT NULL DEFAULT '',
+    added_by   VARCHAR(64)  NOT NULL DEFAULT '',
+    created_at TIMESTAMP    NULL,
+    UNIQUE KEY uq_dayz_player_lists_type_player (list_type, player_id)
 );
 ```
 
@@ -323,7 +418,7 @@ CREATE TABLE dayz_configuration_backups (
 |---|---|
 | `src/` | Framework-agnostic, strongly typed services for module discovery, lifecycle state, and DayZ domain logic |
 | `game-panel-mods/Shared` | Shared administration metadata |
-| `game-panel-mods/DayZManager` | DayZ management module: dashboard, workshop, configuration |
+| `game-panel-mods/DayZManager` | DayZ management module: dashboard, workshop, mod reorder, player lists, server control, configuration |
 | `game-panel-mods/ArkManager` | ARK manager shell |
 | `game-panel-mods/RustManager` | Rust manager shell |
 | `game-panel-mods/MinecraftManager` | Minecraft manager shell |
@@ -376,14 +471,17 @@ Regenerate the Composer autoloader: `composer dump-autoload --optimize`.
 **DayZ Manager tabs don't appear**
 Confirm the server egg includes `dayz` in its supported games and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.
 
-**Migration errors on MySQL**
-The migration file uses SQLite syntax (`AUTOINCREMENT`). For MySQL replace `INTEGER PRIMARY KEY AUTOINCREMENT` with `INT UNSIGNED AUTO_INCREMENT PRIMARY KEY` when running the statements.
-
 **`.module-state.json` is not writable**
 Ensure the web server user has write access: `chown www-data:www-data game-panel-mods/.module-state.json`.
 
 **Workshop URL not recognised**
 `WorkshopReferenceParser` accepts a bare numeric ID (e.g. `1559212036`) or a full URL containing `?id=` or `&id=`. Any other format throws `InvalidArgumentException`.
+
+**Player list type rejected**
+`DayZPlayerService` only accepts `ban`, `whitelist`, or `priority` as the list type. Any other value throws `InvalidArgumentException`.
+
+**SQL import errors**
+The `install.sql` file targets MySQL 5.7+ / MariaDB 10.3+. If you are on an older version, remove the `COLLATE=utf8mb4_unicode_ci` clause or use `utf8_general_ci`.
 
 ---
 

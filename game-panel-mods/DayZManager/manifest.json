@@ -1,9 +1,9 @@
 {
   "name": "DayZ Manager",
   "slug": "dayz-manager",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "JakeQue22",
-  "description": "DayZ server management with dashboard, workshop mod tooling, configuration editing, and API contracts.",
+  "description": "DayZ server management with dashboard, workshop mod tooling, player list management, server controls, configuration editing, and API contracts.",
   "supports": ["dayz"],
-  "tabs": ["DayZ Manager", "Configuration"]
+  "tabs": ["DayZ Manager", "Workshop Mods", "Player Lists", "Server", "Configuration"]
 }
