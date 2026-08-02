@@ -65,6 +65,41 @@ final class DayZServerContext
     }
 
     /**
+     * Aborts unless the authenticated user may change server settings.
+     *
+     * Read-only pages are available to subusers, but everything that rewrites
+     * the mod load order or the startup command is limited to administrators
+     * and the server owner, mirroring the panel's own startup permissions.
+     */
+    public function authorizeManage(mixed $model): void
+    {
+        if (!function_exists('abort') || !class_exists('Illuminate\\Support\\Facades\\Auth')) {
+            return;
+        }
+
+        try {
+            $user = \Illuminate\Support\Facades\Auth::user();
+        } catch (Throwable) {
+            return;
+        }
+
+        if ($user === null) {
+            abort(403);
+        }
+
+        if ((bool) ($this->rawAttribute($user, 'root_admin') ?? false)) {
+            return;
+        }
+
+        $userId = (int) ($this->rawAttribute($user, 'id') ?? 0);
+        $ownerId = (int) ($this->rawAttribute($model, 'owner_id') ?? 0);
+
+        if ($userId <= 0 || $userId !== $ownerId) {
+            abort(403);
+        }
+    }
+
+    /**
      * Reads the `server` route parameter as a string when a request is available.
      */
     public function routeServerParameter(): string

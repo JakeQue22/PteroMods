@@ -50,15 +50,20 @@
     };
 
     window.pteroModAction = async function (workshopId, action) {
-        if (action === 'remove' && !confirm('Remove mod ' + workshopId + '?')) {
+        if (action === 'remove' && !confirm('Remove ' + workshopId + '? This drops it from the load order and deletes its folder from the server.')) {
             return;
         }
         try {
             const res = await apiPost(action, { workshop_id: workshopId });
-            if (res.ok) {
-                location.reload();
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.status !== 'failed') {
+                if (data.message) {
+                    alert(data.message);
+                }
+                if (data.status !== 'manual') {
+                    location.reload();
+                }
             } else {
-                const data = await res.json().catch(() => ({}));
                 alert('Action failed: ' + (data.message || res.status));
             }
         } catch (err) {

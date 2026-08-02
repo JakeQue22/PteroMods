@@ -1,7 +1,7 @@
 <section class="dz-card">
     <h2>Workshop Mod Manager</h2>
     <p class="dz-sub">
-        Mods are read from this server: every <code>@</code> folder in the server directory is inspected,
+        Mods are read from this server: every <code>{{ '@' }}</code> folder in the server directory is inspected,
         and the load order comes from the <code>-mod=</code> launch parameter Pterodactyl boots the server with.
     </p>
     <dl class="dz-grid">

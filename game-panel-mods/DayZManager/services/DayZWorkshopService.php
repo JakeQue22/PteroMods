@@ -162,70 +162,166 @@ final class DayZWorkshopService
     }
 
     /**
+     * Queues an update for a mod. Updating downloads new files, which requires
+     * SteamCMD on the node, so the module reports the required steps instead of
+     * pretending the files changed.
+     *
      * @return array<string, string>
      */
     public function update(string $workshopId): array
     {
-        return ['status' => 'queued', 'action' => 'update', 'workshop_id' => $workshopId];
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function remove(string $workshopId): array
-    {
-        return ['status' => 'queued', 'action' => 'remove', 'workshop_id' => $workshopId];
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    public function toggle(string $workshopId, bool $enabled): array
-    {
         return [
-            'status' => 'queued',
-            'action' => $enabled ? 'enable' : 'disable',
+            'status'      => 'manual',
+            'action'      => 'update',
             'workshop_id' => $workshopId,
+            'message'     => 'Re-download the mod with SteamCMD (or your egg\'s update script) and restart the server.',
         ];
     }
 
     /**
-     * Builds the launch parameters for a new load order.
+     * Removes a mod: it is dropped from the load order and its folder is
+     * deleted from the server when the daemon is reachable.
      *
-     * @param list<string> $orderedWorkshopIds  Workshop IDs in the desired load order.
+     * @return array<string, mixed>
+     */
+    public function remove(string $reference, mixed $server = null, bool $deleteFiles = true): array
+    {
+        $server = $this->resolveServer($server);
+        $mod = $this->findMod($reference, $server);
+
+        if ($mod === null) {
+            return ['status' => 'failed', 'action' => 'remove', 'reference' => $reference, 'message' => 'That mod is not installed on this server.'];
+        }
+
+        $folder = (string) $mod['folder_name'];
+        $result = $this->toggle($reference, false, $server);
+        $filesDeleted = false;
+
+        if ($deleteFiles && ($mod['installed'] ?? false)) {
+            $filesDeleted = $this->gateway->deletePath($server, '/' . $folder);
+            $this->memo = [];
+        }
+
+        $result['action'] = 'remove';
+        $result['files_deleted'] = $filesDeleted;
+        $result['message'] = $filesDeleted
+            ? sprintf('Removed %s from the load order and deleted its files.', $folder)
+            : sprintf('Removed %s from the load order. Delete the folder in the file manager to free the disk space.', $folder);
+
+        return $result;
+    }
+
+    /**
+     * Enables or disables a mod by rewriting the `-mod=` load order.
+     *
+     * @return array<string, mixed>
+     */
+    public function toggle(string $reference, bool $enabled, mixed $server = null): array
+    {
+        $server = $this->resolveServer($server);
+        $mod = $this->findMod($reference, $server);
+
+        if ($mod === null) {
+            return ['status' => 'failed', 'action' => $enabled ? 'enable' : 'disable', 'reference' => $reference, 'message' => 'That mod is not installed on this server.'];
+        }
+
+        $folder = (string) $mod['folder_name'];
+        $order = $this->enabledFolders($server);
+        $order = array_values(array_filter($order, static fn (string $entry): bool => strcasecmp($entry, $folder) !== 0));
+
+        if ($enabled) {
+            $order[] = $folder;
+        }
+
+        return $this->persistOrder($server, $order, $enabled ? 'enable' : 'disable') + ['folder_name' => $folder];
+    }
+
+    /**
+     * Persists a new load order.
+     *
+     * @param list<string> $orderedWorkshopIds Workshop IDs or folder names, in the desired order.
      * @return array<string, mixed>
      */
     public function reorder(array $orderedWorkshopIds, mixed $server = null): array
     {
+        $server = $this->resolveServer($server);
+
         $orderedWorkshopIds = array_values(array_filter(
             array_map('strval', $orderedWorkshopIds),
             static fn (string $id): bool => $id !== '',
         ));
 
-        $installed = $this->installedMods($server);
+        $enabled = $this->enabledFolders($server);
+        $order = [];
+
+        foreach ($orderedWorkshopIds as $reference) {
+            $mod = $this->findMod($reference, $server);
+
+            if ($mod === null) {
+                continue;
+            }
+
+            $folder = (string) $mod['folder_name'];
+
+            if (!in_array($folder, $order, true)) {
+                $order[] = $folder;
+            }
+        }
+
+        // Enabled mods the caller did not mention keep their relative order at
+        // the end of the list, so a partial reorder never disables anything.
+        foreach ($enabled as $folder) {
+            if (!in_array($folder, $order, true)) {
+                $order[] = $folder;
+            }
+        }
+
+        return $this->persistOrder($server, $order, 'reorder') + ['ordered_ids' => $orderedWorkshopIds];
+    }
+
+    /**
+     * Writes a load order back to Pterodactyl and reports the outcome.
+     *
+     * @param list<string> $order
+     * @return array<string, mixed>
+     */
+    private function persistOrder(mixed $server, array $order, string $action): array
+    {
+        $result = $this->startup->saveModList($server, $order);
+        $this->memo = [];
 
         return [
-            'status'       => 'queued',
-            'action'       => 'reorder',
-            'ordered_ids'  => $orderedWorkshopIds,
-            'launch_parameters' => (new LaunchParameterBuilder())->build(
-                array_map(
-                    static function (string $workshopId) use ($installed): string {
-                        foreach ($installed as $mod) {
-                            $matches = (string) $mod['workshop_id'] === $workshopId
-                                || (string) $mod['folder_name'] === $workshopId;
-
-                            if ($matches && $mod['enabled']) {
-                                return (string) $mod['folder_name'];
-                            }
-                        }
-
-                        return '';
-                    },
-                    $orderedWorkshopIds,
-                ),
-            ),
+            'status'            => $result['saved'] ? 'applied' : 'failed',
+            'action'            => $action,
+            'target'            => $result['target'],
+            'message'           => $result['message'] . ($result['saved'] ? ' Restart the server to apply it.' : ''),
+            'load_order'        => $order,
+            'launch_parameters' => (new LaunchParameterBuilder())->build($order),
         ];
+    }
+
+    /**
+     * Finds an installed mod by workshop ID or folder name.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function findMod(string $reference, mixed $server): ?array
+    {
+        $reference = ltrim(trim($reference), '@');
+
+        if ($reference === '') {
+            return null;
+        }
+
+        foreach ($this->installedMods($server) as $mod) {
+            $folder = ltrim((string) ($mod['folder_name'] ?? ''), '@');
+
+            if ((string) ($mod['workshop_id'] ?? '') === $reference || strcasecmp($folder, $reference) === 0) {
+                return $mod;
+            }
+        }
+
+        return null;
     }
 
     /**

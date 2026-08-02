@@ -61,7 +61,10 @@ final class DayZConfigurationController
         $path = $path !== '' ? $path : $this->context->stringInput('path');
         $content = $content !== '' ? $content : (string) $this->context->input('content', '');
 
-        return $this->service->save($path, $content, $this->context->resolve($server)['model']);
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->service->save($path, $content, $model);
     }
 
     /**

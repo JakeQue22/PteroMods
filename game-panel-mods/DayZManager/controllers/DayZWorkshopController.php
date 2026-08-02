@@ -54,41 +54,51 @@ final class DayZWorkshopController
      */
     public function install(mixed $server = null, string $reference = '', array $metadata = []): array
     {
+        $this->manage($server);
+
         $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
 
         return $this->service->installPlan($reference, $metadata);
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     public function update(mixed $server = null, string $workshopId = ''): array
     {
+        $this->manage($server);
+
         return $this->service->update($this->workshopId($workshopId));
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     public function remove(mixed $server = null, string $workshopId = ''): array
     {
-        return $this->service->remove($this->workshopId($workshopId));
+        $model = $this->manage($server);
+
+        return $this->service->remove($this->workshopId($workshopId), $model);
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     public function enable(mixed $server = null, string $workshopId = ''): array
     {
-        return $this->service->toggle($this->workshopId($workshopId), true);
+        $model = $this->manage($server);
+
+        return $this->service->toggle($this->workshopId($workshopId), true, $model);
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     public function disable(mixed $server = null, string $workshopId = ''): array
     {
-        return $this->service->toggle($this->workshopId($workshopId), false);
+        $model = $this->manage($server);
+
+        return $this->service->toggle($this->workshopId($workshopId), false, $model);
     }
 
     /**
@@ -97,12 +107,25 @@ final class DayZWorkshopController
      */
     public function reorder(mixed $server = null, array $orderedWorkshopIds = []): array
     {
+        $model = $this->manage($server);
+
         if ($orderedWorkshopIds === []) {
             $input = $this->context->input('ordered_ids', []);
             $orderedWorkshopIds = is_array($input) ? array_values($input) : [];
         }
 
-        return $this->service->reorder($orderedWorkshopIds, $this->context->resolve($server)['model']);
+        return $this->service->reorder($orderedWorkshopIds, $model);
+    }
+
+    /**
+     * Resolves the server and ensures the caller may change its load order.
+     */
+    private function manage(mixed $server): mixed
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $model;
     }
 
     private function workshopId(string $workshopId): string

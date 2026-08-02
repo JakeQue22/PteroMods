@@ -16,6 +16,7 @@ PteroMods is a modular "Game Panel Mods" framework scaffold for Pterodactyl-styl
    - [Player list management](#player-list-management)
    - [Server control](#server-control)
    - [Configuration editor](#configuration-editor)
+   - [Navigation tab](#navigation-tab)
    - [API endpoints](#api-endpoints)
    - [Permissions](#permissions)
    - [Database schema](#database-schema)
@@ -41,13 +42,15 @@ PteroMods is a modular "Game Panel Mods" framework scaffold for Pterodactyl-styl
 ## Features
 
 - **Modular architecture** – scan, install, enable, and disable independent game-server modules without touching panel core files.
-- **DayZ Manager** – dashboard, Steam Workshop mod tooling, dependency-aware install planning, mod reordering, player list management, server restart controls, and configuration file editing from the panel.
+- **DayZ Manager** – dashboard, Steam Workshop mod tooling, dependency-aware install planning, mod reordering, player list management, power controls, and configuration file editing from the panel.
+- **Live data from Pterodactyl** – installed mods, power state, resource usage, launch parameters, and configuration files are read from the panel database and the Wings daemon, never from sample data.
+- **Navigation tab** – a "DayZ Manager" entry is injected into the client server navigation (`/server/{id}`) and the admin server tabs (`/admin/servers/view/{id}`) of DayZ servers.
 - **Workshop dependency planner** – automatically resolves mod load order and injects CommunityFramework (CF, ID `1559212036`) when a mod requires it.
 - **Launch parameter builder** – generates the correct `-mod=` string from your ordered, enabled mod list; preview endpoint keeps operators informed.
 - **Mod reorder** – drag-and-drop position management persists to `dayz_mods.position` and immediately rebuilds the `-mod=` launch string.
 - **Player list management** – ban, whitelist, and priority queue management by Steam64 ID or GUID, backed by the `dayz_player_lists` database table.
-- **Server restart** – schedule a graceful server restart with an optional reason, directly from the panel.
-- **Configuration catalogue** – groups DayZ config files (`serverDZ.cfg`, `BEServer.cfg`, admin files, message files, etc.) into operator-facing categories with per-save backups.
+- **Power controls** – start, restart, stop, and kill the server through the Pterodactyl daemon, with an optional reason.
+- **Configuration catalogue** – lists the configuration files that actually exist on the server (server root, `config/`, mission folders, BattlEye, profiles) and deep-links each one to the panel file editor, with the syntax mode matching its extension.
 - **Configuration backups** – every config save is versioned to the `dayz_configuration_backups` table.
 - **Easy SQL install** – a single `install.sql` file covers the complete MySQL schema. Run it in one command; no Tinker, no copy-pasting.
 - **Automated install script** – `bin/install.sh` handles file copying, autoloader patching, SQL import, cache clearing, and permissions in one shot.
@@ -178,6 +181,21 @@ Verify with `php artisan route:list | grep dayz` — you should see both the
 `/server/{server}/dayz*` page routes and the `/api/server/{server}/dayz/*`
 endpoints.
 
+#### 5b. Register the navigation tab script
+
+To show a **DayZ Manager** entry in the panel navigation, load the module's small
+tab script from both panel layouts. Add this line immediately before `</body>`:
+
+- `resources/views/templates/wrapper.blade.php` (client area)
+- `resources/views/layouts/admin.blade.php` (admin area)
+
+```html
+<script src="/game-panel-mods/dayz-manager/tab.js"></script>
+```
+
+`bin/install.sh` performs this patch automatically (step 5b) and skips it when
+the line is already present.
+
 #### 6. Mark the module as installed and enabled
 
 Edit `game-panel-mods/.module-state.json`:
@@ -187,7 +205,7 @@ Edit `game-panel-mods/.module-state.json`:
     "dayz-manager": {
         "installed": true,
         "enabled": true,
-        "version": "1.2.0"
+        "version": "1.3.0"
     }
 }
 ```
@@ -231,14 +249,35 @@ URL: `GET /servers/{server}/dayz`
 
 Displays a card grid with: server name, current map, server version, installed mod count, player count, CPU, RAM, disk usage, and server status.
 
-**Live values.** Current map, player count, and server version are read from the
-game server itself over the Steam query protocol (A2S_INFO) by
-`SourceQueryClient` and `DayZServerQueryService`:
+**Live values.** The dashboard combines three sources:
 
-- the query host comes from the server's primary allocation (falling back to the node FQDN when the allocation is bound to `0.0.0.0`);
-- the query port is taken from a `STEAM_QUERY_PORT`/`QUERY_PORT` egg variable, otherwise from an allocation matching the standard DayZ query port, otherwise from the game port plus the standard DayZ offset (`2302` → `27016`);
-- results are cached for 15 seconds, and mission names such as `dayzOffline.chernarusplus` are shown as friendly map names (`Chernarus+`);
-- when the server does not answer, those cards show `N/A` and the status card reads `offline`.
+| Source | Values |
+|---|---|
+| Panel database | server name, CPU/RAM/disk limits, installation and suspension state |
+| Wings daemon (`DayZPanelGateway`) | power state (`running`, `starting`, `stopping`, `offline`), CPU/RAM/disk usage, uptime |
+| Steam query (`SourceQueryClient`) | current map, player count, server version |
+
+**Server status** is taken from the daemon first, because `servers.status` in the
+panel database only describes installation/transfer states and is `null` for a
+healthy server. The Steam query result is used only when the daemon cannot be
+reached, so an online server is never reported as offline just because its query
+port is firewalled. The card footnote names the source that was used.
+
+**Addressing.** The query host and the advertised connect address are resolved by
+`HostAddressResolver`, in this order:
+
+1. the allocation's public alias (`ip_alias`);
+2. the node FQDN from Pterodactyl;
+3. the raw allocation IP.
+
+Private, loopback, and wildcard addresses (for example a node's internal
+`10.2.2.105`) are only used when nothing routable is configured, so the module
+keeps working when the panel and the node run on different machines. The query
+port is taken from a `STEAM_QUERY_PORT`/`QUERY_PORT` egg variable, otherwise from
+an allocation matching the standard DayZ query port, otherwise from the game port
+plus the standard DayZ offset (`2302` → `27016`). Results are cached for 15
+seconds, and mission names such as `dayzOffline.chernarusplus` are shown as
+friendly map names (`Chernarus+`).
 
 **Rendering.** Module pages are rendered by `DayZPageRenderer` into a
 self-contained, panel-themed HTML document with the module stylesheet inlined,
@@ -249,6 +288,28 @@ server.
 ### Workshop mod management
 
 URL: `GET /servers/{server}/dayz/mods`
+
+**Mods are discovered from the server itself.** `DayZWorkshopService` lists the
+server root through the Pterodactyl daemon, treats every `@Folder` as a mod, and
+reads the Workshop ID, title, author, and version from that folder's `meta.cpp`
+and `mod.cpp`. The load order and the enabled flag come from the `-mod=` (and
+`-serverMod=`) launch parameter Pterodactyl boots the server with, so the page
+mirrors the real installation. Mods listed in the startup command but missing on
+disk are shown as *Missing*. If the daemon cannot be reached, the `dayz_mods`
+table is used as a fallback.
+
+**Enable, disable, reorder, and remove write back to Pterodactyl.** The load
+order is stored where the panel reads it from: when the startup command uses a
+placeholder for `-mod=` (for example `{{MOD_LIST}}`), the matching server
+variable is updated; otherwise the `-mod=` value inside the server's startup
+command itself is rewritten. Removing a mod also deletes its `@Folder` through
+the daemon. Changes apply on the next server restart, which the page states after
+each action. Installing or updating a mod downloads files with SteamCMD, which is
+the egg's responsibility, so those actions return the required steps instead of
+silently doing nothing.
+
+Only administrators and the server owner may change the load order, the startup
+command, or configuration files; other subusers keep read-only access.
 
 | Action | Method | Endpoint |
 |---|---|---|
@@ -311,12 +372,21 @@ Manage the DayZ ban list, whitelist, and priority queue by Steam64 ID or GUID. A
 
 URL: `GET /servers/{server}/dayz/server`
 
-Displays the current active launch parameters and provides a restart form.
+Shows the launch parameters Pterodactyl actually starts the server with and
+provides power controls.
+
+**Launch parameters** are loaded from the panel: `DayZStartupService` reads the
+startup command stored on the server (falling back to the egg's command), merges
+the egg variable defaults with the values configured for the server, and
+`StartupCommandRenderer` substitutes every `{{VARIABLE}}` placeholder. The page
+lists the rendered command, its individual parameters, the resolved variables,
+and the detected client/server mod lists.
 
 | Action | Method | Endpoint |
 |---|---|---|
 | Get launch parameters | GET | `/api/servers/{server}/dayz/server/launch-parameters` |
 | Restart server | POST | `/api/servers/{server}/dayz/server/restart` |
+| Send a power signal | POST | `/api/servers/{server}/dayz/server/power` |
 
 **Restart payload** (optional):
 
@@ -325,6 +395,17 @@ Displays the current active launch parameters and provides a restart form.
     "reason": "Mod update applied"
 }
 ```
+
+**Power payload** — `start`, `stop`, `restart`, or `kill`:
+
+```json
+{
+    "signal": "restart"
+}
+```
+
+Power signals are forwarded to the Wings daemon, so they behave exactly like the
+console buttons in the panel.
 
 ### Configuration editor
 
@@ -335,6 +416,17 @@ URL: `GET /servers/{server}/dayz/configuration`
 | List config files | GET | `/api/servers/{server}/dayz/configuration` |
 | Save config file | PUT | `/api/servers/{server}/dayz/configuration` |
 
+Configuration files are discovered on the server through the Pterodactyl daemon.
+The server root, `config/`, `profiles/`, `battleye/`, and every mission folder in
+`mpmissions/` (including its `db/` directory) are scanned, and each file is
+listed with its real path, size, and a deep link into the panel file manager:
+
+| File type | Opens in |
+|---|---|
+| `.cfg`, `.xml`, `.json`, `.ini`, `.conf`, `.c`, `.bat`, `.sh` | panel code editor with matching syntax highlighting |
+| `.txt`, `.log`, `.md` | panel text editor |
+| anything else | file browser (download) |
+
 The `ConfigurationCatalog` service groups files into three operator-facing categories:
 
 | Category | Files |
@@ -343,7 +435,24 @@ The `ConfigurationCatalog` service groups files into three operator-facing categ
 | **Server Messages** | `Messages.bat`, `messages.cfg`, `settings.cfg` |
 | **Admin Tools** | `credentials.txt`, `SuperAdmins.txt`, `admins.xml` |
 
-Every save is backed up to the `dayz_configuration_backups` table before the new content is written.
+Saving through the API writes the file back to the container through the daemon,
+and the previous contents are stored in `dayz_configuration_backups` first.
+
+### Navigation tab
+
+The script served at `/game-panel-mods/dayz-manager/tab.js` adds a **DayZ
+Manager** entry to the panel navigation:
+
+| Area | Where the link appears | Target |
+|---|---|---|
+| Client | server sub-navigation on `/server/{id}` | `/server/{id}/dayz` |
+| Admin | server tabs on `/admin/servers/view/{id}` | `/admin/servers/view/{id}/dayz` |
+
+The script asks `/api/server/{id}/dayz/tab` whether the server is a DayZ server
+(`DayZEggDetector` inspects the egg name, docker image, and startup command)
+and only injects the link when it is. Existing navigation entries are cloned, so
+the link always matches the active panel theme, and it is re-injected whenever
+the client application re-renders its navigation.
 
 ### API endpoints
 
@@ -371,7 +480,14 @@ Full reference:
 | POST | `/api/servers/{server}/dayz/players/{list_type}` | `DayZPlayerController@add` |
 | DELETE | `/api/servers/{server}/dayz/players/{list_type}/{id}` | `DayZPlayerController@remove` |
 | POST | `/api/servers/{server}/dayz/server/restart` | `DayZServerController@restart` |
+| POST | `/api/servers/{server}/dayz/server/power` | `DayZServerController@power` |
 | GET | `/api/servers/{server}/dayz/server/launch-parameters` | `DayZServerController@launchParameters` |
+| GET | `/api/servers/{server}/dayz/dashboard` | `DayZDashboardController@show` |
+| GET | `/api/servers/{server}/dayz/tab` | `DayZTabController@status` |
+| GET | `/game-panel-mods/dayz-manager/tab.js` | `DayZTabController@script` |
+
+Every page route is also registered under `/admin/servers/view/{server}/dayz…`
+so the module can be opened from the admin area with the numeric server id.
 
 ### Access control
 
@@ -486,6 +602,9 @@ database/migrations/
 - `ModuleScanner` scans `game-panel-mods/*/manifest.json`, validates all required paths, and returns sorted results.
 - `ModuleLifecycleManager` applies install/enable/disable/update/uninstall transitions and persists them to `game-panel-mods/.module-state.json` via `ModuleStateStore`.
 - `AdminCatalogBuilder` composes scanner results with lifecycle state for display in an admin catalogue view.
+- `DayZPanelGateway` talks to Wings for power state, resource usage, and container files. It prefers the panel's own `DaemonServerRepository`/`DaemonFileRepository`, and falls back to a direct daemon call using the node token. Every call degrades gracefully (`null`/`[]`) so pages still render when a node is unreachable; details are cached for 5 seconds and file listings for 30 seconds.
+- `DayZStartupService` resolves the real startup command and egg variables; `StartupCommandRenderer` substitutes `{{VARIABLE}}` placeholders and `ModMetaParser` extracts mod folders from `-mod=`/`-serverMod=` and mod metadata from `meta.cpp`/`mod.cpp`.
+- `HostAddressResolver` keeps private node addresses out of query endpoints and connect strings.
 
 ---
 
@@ -518,9 +637,34 @@ Use this exact mapping in your panel `composer.json` (note: one backslash in the
 If a previous install created a double-backslash key (`"PteroMods\\\\"`) or pointed at `pteromods-src/src/`, fix it by re-running `bin/install.sh`, which now writes the correct single-backslash key. Alternatively, edit `composer.json` manually so the `psr-4` section matches the snippet above, then run `composer dump-autoload --optimize`.
 
 **DayZ Manager tabs don't appear**
+Confirm the tab script is loaded from both panel layouts (see step 5b) and that
+`/game-panel-mods/dayz-manager/tab.js` returns JavaScript when opened in the
+browser. The link only appears when `/api/server/{id}/dayz/tab` reports
+`"supported": true`, which requires the egg name, docker image, or startup command
+to mention DayZ.
 Confirm the server egg resolves to one of `dayz`, `dayz-dedicated`, `source-engine-dayz`, `source-engine`, or `source` (for example Nest `Source Engine` + egg `DayZ`), and that the module state in `game-panel-mods/.module-state.json` has `"enabled": true` for `dayz-manager`.
 For custom eggs, also check the egg's short identifier/slug used by the panel API (not just the display name in the admin UI) and make sure it maps to one of the supported values above.
 From your DayZ server page specifically, test both URL variants directly: `/servers/{server}/dayz` and `/server/{server}/dayz`; if one works and the other 404s, your panel route style and registered aliases are out of sync.
+
+**Server status shows "offline" while the server is running**
+The status card prefers the daemon state, so this means the panel could not reach
+Wings. Check the node status in the admin area, and confirm the panel can call the
+daemon (`https://{node-fqdn}:8080`). If the daemon is unreachable the module falls
+back to a Steam query, which also fails when the query port is firewalled.
+
+**Query endpoint shows an internal IP (for example `10.2.2.105:27032`)**
+Set a public **IP alias** on the server's allocation, or a publicly resolvable
+**FQDN** on the node, in the panel admin area. The module only falls back to the
+raw allocation IP when neither is routable.
+
+**No mods are listed although mods are installed**
+Mods are read from the container, so the daemon must be reachable. Verify the mod
+folders exist in the server root (they must start with `@`), and that the startup
+command contains the `-mod=` parameter that defines the load order.
+
+**No configuration files are listed**
+Same cause: the file listing comes from the daemon. When it is unreachable the
+page falls back to the standard DayZ file names, which are marked *not found*.
 
 **`.module-state.json` is not writable**
 Ensure the web server user has write access: `chown www-data:www-data game-panel-mods/.module-state.json`.

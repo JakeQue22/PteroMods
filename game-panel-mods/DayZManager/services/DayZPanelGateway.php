@@ -156,6 +156,51 @@ final class DayZPanelGateway
     }
 
     /**
+     * Deletes a file or directory inside the server container.
+     */
+    public function deletePath(mixed $server, string $path): bool
+    {
+        if ($server === null) {
+            return false;
+        }
+
+        $path = $this->normalizePath($path);
+
+        if ($path === '/' || $path === '') {
+            return false;
+        }
+
+        $root = rtrim(substr($path, 0, (int) strrpos($path, '/')), '/');
+        $root = $root === '' ? '/' : $root;
+        $name = substr($path, (int) strrpos($path, '/') + 1);
+
+        if ($name === '' || $name === '.' || $name === '..') {
+            return false;
+        }
+
+        $repository = $this->fileRepository($server);
+
+        if ($repository !== null && method_exists($repository, 'deleteFiles')) {
+            try {
+                $repository->deleteFiles($root, [$name]);
+                $this->forget($this->cacheKey('files', $server, $root));
+
+                return true;
+            } catch (Throwable) {
+                return false;
+            }
+        }
+
+        $deleted = $this->daemonRequest($server, 'POST', '/files/delete', ['root' => $root, 'files' => [$name]]) !== null;
+
+        if ($deleted) {
+            $this->forget($this->cacheKey('files', $server, $root));
+        }
+
+        return $deleted;
+    }
+
+    /**
      * Sends a power signal (`start`, `stop`, `restart`, `kill`) to the server.
      */
     public function power(mixed $server, string $signal): bool
@@ -332,7 +377,7 @@ final class DayZPanelGateway
     /**
      * Direct Wings call used when the panel repositories are unavailable.
      *
-     * @param array<string, string> $payload
+     * @param array<string, mixed> $payload
      * @return mixed Decoded JSON (or the raw body when $json is false), null on failure.
      */
     private function daemonRequest(

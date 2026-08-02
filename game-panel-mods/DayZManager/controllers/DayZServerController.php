@@ -32,7 +32,10 @@ final class DayZServerController
     {
         $reason = $reason !== '' ? $reason : $this->context->stringInput('reason');
 
-        return $this->service->restart($reason, $this->context->resolve($server)['model']);
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->service->restart($reason, $model);
     }
 
     /**
@@ -44,7 +47,10 @@ final class DayZServerController
     {
         $signal = $signal !== '' ? $signal : $this->context->stringInput('signal');
 
-        return $this->service->power($this->context->resolve($server)['model'], $signal);
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->service->power($model, $signal);
     }
 
     /**

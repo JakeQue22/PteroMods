@@ -151,6 +151,136 @@ final class DayZStartupService
     }
 
     /**
+     * Persists a new mod load order for a server.
+     *
+     * The list is written to the egg variable the startup command uses for
+     * `-mod=` when there is one, because that is what the panel sends to Wings
+     * on the next boot. Servers whose startup command contains a literal list
+     * get the command itself rewritten instead.
+     *
+     * @param list<string> $folders
+     * @return array{saved: bool, target: string, message: string}
+     */
+    public function saveModList(mixed $server, array $folders, string $parameter = 'mod'): array
+    {
+        $folders = array_values(array_filter(array_map(
+            static fn (mixed $folder): string => trim((string) $folder),
+            $folders,
+        ), static fn (string $folder): bool => $folder !== ''));
+
+        $value = implode(';', $folders);
+        $raw = $this->rawStartup($server);
+        $serverId = (int) ($this->context->rawAttribute($server, 'id') ?? 0);
+
+        if ($serverId <= 0 || $raw === '') {
+            return ['saved' => false, 'target' => 'none', 'message' => 'The startup command for this server is not available.'];
+        }
+
+        $current = $this->rawParameterValue($raw, $parameter);
+        $variable = $current === null ? null : $this->placeholderName($current);
+
+        if ($variable !== null && $this->writeServerVariable($server, $variable, $value)) {
+            return ['saved' => true, 'target' => 'variable:' . $variable, 'message' => sprintf('Saved the load order to the %s startup variable.', $variable)];
+        }
+
+        if ($this->writeStartupCommand($serverId, $raw, $parameter, $value)) {
+            return ['saved' => true, 'target' => 'startup', 'message' => 'Saved the load order to the startup command.'];
+        }
+
+        return ['saved' => false, 'target' => 'none', 'message' => 'The load order could not be written back to Pterodactyl.'];
+    }
+
+    /**
+     * The unexpanded value of a startup parameter, for example `{{MOD_LIST}}`.
+     */
+    private function rawParameterValue(string $raw, string $parameter): ?string
+    {
+        $pattern = '/-' . preg_quote($parameter, '/') . '=("[^"]*"|\'[^\']*\'|[^\s"\']*)/i';
+
+        if (preg_match($pattern, $raw, $matches) !== 1) {
+            return null;
+        }
+
+        return trim($matches[1], "\"'");
+    }
+
+    /**
+     * The variable name when a value is a single `{{VARIABLE}}` placeholder.
+     */
+    private function placeholderName(string $value): ?string
+    {
+        if (preg_match('/^\{\{\s*(?:env\.)?([A-Za-z0-9_]+)\s*\}\}$/', trim($value), $matches) !== 1) {
+            return null;
+        }
+
+        return strtoupper($matches[1]);
+    }
+
+    /**
+     * Writes a value to `server_variables`, creating the row when needed.
+     */
+    private function writeServerVariable(mixed $server, string $variable, string $value): bool
+    {
+        $serverId = (int) ($this->context->rawAttribute($server, 'id') ?? 0);
+        $eggId = (int) ($this->context->rawAttribute($server, 'egg_id') ?? 0);
+
+        if ($serverId <= 0 || $eggId <= 0 || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return false;
+        }
+
+        try {
+            $variableId = \Illuminate\Support\Facades\DB::table('egg_variables')
+                ->where('egg_id', $eggId)
+                ->whereRaw('UPPER(env_variable) = ?', [$variable])
+                ->value('id');
+
+            if ($variableId === null) {
+                return false;
+            }
+
+            \Illuminate\Support\Facades\DB::table('server_variables')->updateOrInsert(
+                ['server_id' => $serverId, 'variable_id' => (int) $variableId],
+                ['variable_value' => $value],
+            );
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Rewrites the `-mod=` parameter inside the stored startup command.
+     */
+    private function writeStartupCommand(int $serverId, string $raw, string $parameter, string $value): bool
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return false;
+        }
+
+        $replacement = '-' . $parameter . '="' . $value . '"';
+        $pattern = '/"?-' . preg_quote($parameter, '/') . '=("[^"]*"|\'[^\']*\'|[^\s"\']*)"?/i';
+
+        if (preg_match($pattern, $raw) === 1) {
+            $startup = (string) preg_replace($pattern, $replacement, $raw, 1);
+        } elseif ($value === '') {
+            return true;
+        } else {
+            $startup = rtrim($raw) . ' ' . $replacement;
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table('servers')
+                ->where('id', $serverId)
+                ->update(['startup' => $startup]);
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
      * Mod folders taken from the rendered startup command, falling back to the
      * egg variable that holds the list.
      *
