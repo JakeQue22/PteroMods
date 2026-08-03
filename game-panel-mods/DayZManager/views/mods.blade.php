@@ -84,4 +84,10 @@ window.pteroFilterMods = function (term) {
 };
 </script>
 
-{!! $component('mod-actions', ['server_id' => $server_id]) !!}
+{!! $component('mod-actions', [
+    'server_id' => $server_id,
+    'installed_workshop_ids' => array_values(array_filter(array_map(
+        static fn (array $mod): string => trim((string) ($mod['workshop_id'] ?? '')),
+        $installed_mods,
+    ))),
+]) !!}

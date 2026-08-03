@@ -41,6 +41,41 @@ final class DayZConfigurationService
     }
 
     /**
+     * Copies a mod's `Extras/types.xml` into the active mission's `Types_Extra`
+     * folder and registers it in `cfgeconomycore.xml`.
+     */
+    public function syncTypesExtraForMod(mixed $server, string $folderName, string $title = ''): bool
+    {
+        $folderName = trim($folderName);
+
+        if ($folderName === '') {
+            return false;
+        }
+
+        $sourcePath = '/' . ltrim($folderName, '/') . '/Extras/types.xml';
+        $typesXml = $this->gateway->readFile($server, $sourcePath);
+
+        if ($typesXml === null || trim($typesXml) === '') {
+            return false;
+        }
+
+        $missionPath = $this->activeMissionPath($server);
+
+        if ($missionPath === '') {
+            return false;
+        }
+
+        $modName = $this->sanitizeModName($title !== '' ? $title : ltrim($folderName, '@'));
+        $destinationPath = $missionPath . '/Types_Extra/' . $modName . '.xml';
+
+        if (!$this->gateway->writeFile($server, $destinationPath, $typesXml)) {
+            return false;
+        }
+
+        return $this->appendMissionTypeEntry($server, $missionPath, $modName);
+    }
+
+    /**
      * Configuration files grouped by the directory they live in.
      *
      * @return list<array{label: string, path: string, browse_url: string, entries: list<array<string, mixed>>}>
@@ -286,5 +321,63 @@ final class DayZConfigurationService
         $power = min((int) floor(log((float) $bytes, 1024)), count($units) - 1);
 
         return sprintf('%.1f %s', $bytes / (1024 ** $power), $units[$power]);
+    }
+
+    private function sanitizeModName(string $value): string
+    {
+        $value = preg_replace('/[^A-Za-z0-9]+/', '', trim($value)) ?? '';
+
+        return $value !== '' ? $value : 'WorkshopMod';
+    }
+
+    private function activeMissionPath(mixed $server): string
+    {
+        $missions = array_filter(
+            array_map(
+                static fn (array $entry): string => $entry['directory'] ? (string) ($entry['name'] ?? '') : '',
+                $this->gateway->listDirectory($server, '/mpmissions'),
+            ),
+            static fn (string $name): bool => $name !== '',
+        );
+
+        if ($missions === []) {
+            return '';
+        }
+
+        foreach ($missions as $mission) {
+            if (str_starts_with(strtolower($mission), 'dayzoffline.')) {
+                return '/mpmissions/' . $mission;
+            }
+        }
+
+        return '/mpmissions/' . array_values($missions)[0];
+    }
+
+    private function appendMissionTypeEntry(mixed $server, string $missionPath, string $modName): bool
+    {
+        $cfgPath = $missionPath . '/cfgeconomycore.xml';
+        $cfg = $this->gateway->readFile($server, $cfgPath);
+
+        if ($cfg === null || trim($cfg) === '') {
+            return false;
+        }
+
+        $line = sprintf('<file name="Types_Extra/%s.xml" type="types" />', $modName);
+
+        if (str_contains($cfg, $line)) {
+            return true;
+        }
+
+        $replacement = $line . "\n";
+
+        if (preg_match('/(<!--\s*Modded Types\s*-->)/i', $cfg) === 1) {
+            $updated = (string) preg_replace('/(<!--\s*Modded Types\s*-->)/i', "$1\n" . $replacement, $cfg, 1);
+        } elseif (str_contains($cfg, '</economycore>')) {
+            $updated = str_replace('</economycore>', $replacement . '</economycore>', $cfg);
+        } else {
+            $updated = rtrim($cfg) . "\n" . $replacement;
+        }
+
+        return $this->gateway->writeFile($server, $cfgPath, $updated);
     }
 }

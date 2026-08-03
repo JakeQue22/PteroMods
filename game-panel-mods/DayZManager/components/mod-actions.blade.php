@@ -3,6 +3,7 @@
     const SERVER_ID = @json($server_id);
     const ENDPOINT_BASE = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/mods/';
     const queuedWorkshopIds = new Set();
+    const installedWorkshopIds = new Set(@json($installed_workshop_ids ?? []));
 
     function csrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
@@ -70,6 +71,9 @@
             if (workshopId !== '' && !done) {
                 queuedWorkshopIds.add(workshopId);
             }
+            if (workshopId !== '' && done) {
+                installedWorkshopIds.add(workshopId);
+            }
             const row = document.createElement('div');
             row.className = 'dz-queue-item';
             row.innerHTML = (entry.thumbnail
@@ -78,9 +82,7 @@
                 + '<span class="dz-queue-label">' + label + '</span>'
                 + '<span class="dz-queue-status ' + (done ? 'dz-text-green' : 'dz-text-amber') + '">'
                 + (done ? '✓ Installed' : '⧗ Queued') + '</span>'
-                + (!done
-                    ? '<button type="button" class="dz-btn dz-btn-sm dz-btn-red" data-queue-remove="' + workshopId + '">Remove</button>'
-                    : '');
+                + '<button type="button" class="dz-btn dz-btn-sm dz-btn-red" data-queue-remove="' + workshopId + '">✕</button>';
             container.appendChild(row);
 
             const removeBtn = row.querySelector('[data-queue-remove]');
@@ -164,19 +166,21 @@
         }
         const workshopId = normalizeWorkshopId(info.workshop_id);
         const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
+        const alreadyInstalled = workshopId !== '' && installedWorkshopIds.has(workshopId);
+        const disabled = alreadyQueued || alreadyInstalled;
         const dropdown = document.createElement('div');
         dropdown.id = 'ptero-workshop-lookup';
         dropdown.className = 'dz-lookup-dropdown';
-        dropdown.innerHTML = '<button type="button" class="dz-lookup-item' + (alreadyQueued ? ' is-disabled' : '') + '"'
-            + (alreadyQueued ? ' disabled' : '')
+        dropdown.innerHTML = '<button type="button" class="dz-lookup-item' + (disabled ? ' is-disabled' : '') + '"'
+            + (disabled ? ' disabled' : '')
             + '>'
             + (info.thumbnail ? '<img src="' + info.thumbnail + '" alt="" loading="lazy" />' : '')
             + '<span>' + (info.title || ('Workshop ' + info.workshop_id)) + ' <small>(' + info.workshop_id + ')</small></span>'
             + '<span class="dz-text-muted" style="font-size:0.72rem;margin-left:auto;">'
-            + (alreadyQueued ? 'Already queued' : 'Click to queue')
+            + (alreadyInstalled ? 'Already installed' : (alreadyQueued ? 'Already queued' : 'Click to queue'))
             + '</span>'
             + '</button>';
-        if (!alreadyQueued) {
+        if (!disabled) {
             dropdown.querySelector('.dz-lookup-item').addEventListener('click', function () {
                 input.value = info.workshop_id;
                 closeLookupDropdown();
@@ -265,15 +269,17 @@
             data.items.forEach(function (item) {
                 const workshopId = normalizeWorkshopId(item.workshop_id);
                 const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
+                const alreadyInstalled = (workshopId !== '' && installedWorkshopIds.has(workshopId)) || !!item.installed;
+                const disabled = alreadyQueued || alreadyInstalled;
                 const card = document.createElement('button');
                 card.type = 'button';
-                card.className = 'dz-browse-card' + (alreadyQueued ? ' is-disabled' : '');
-                if (alreadyQueued) {
+                card.className = 'dz-browse-card' + (disabled ? ' is-disabled' : '');
+                if (disabled) {
                     card.disabled = true;
                 }
                 card.innerHTML = (item.thumbnail ? '<img src="' + item.thumbnail + '" alt="" loading="lazy" />' : '<div class="dz-browse-noimg"></div>')
-                    + '<span>' + item.title + (alreadyQueued ? ' (already queued)' : '') + '</span>';
-                if (!alreadyQueued) {
+                    + '<span>' + item.title + (alreadyInstalled ? ' (already installed)' : (alreadyQueued ? ' (already queued)' : '')) + '</span>';
+                if (!disabled) {
                     card.addEventListener('click', function () {
                         const input = document.getElementById('ptero-workshop-ref');
                         if (input) {
@@ -364,13 +370,15 @@
                     status.textContent = data.message || '⧗ Install queued.';
                     status.className = 'dz-status dz-text-muted';
                 }
-                if (Array.isArray(data.queue) && data.queue.length > 0) {
-                    renderQueueList(data.queue, false);
+                if (Array.isArray(data.queue)) {
+                    renderQueueList(data.queue, data.complete);
                 }
                 const ids = Array.isArray(data.install_order) && data.install_order.length > 0
                     ? data.install_order
                     : [data.workshop_id || ref];
-                pollInstallStatus(ids, 90);
+                if (ids.length > 0) {
+                    pollInstallStatus(ids, 90);
+                }
             } else {
                 if (status) {
                     status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
@@ -464,12 +472,27 @@
     };
 
     window.pteroModAction = async function (workshopId, action) {
+        let payload = { workshop_id: workshopId };
         if (action === 'remove' && !confirm('Remove ' + workshopId + '? This drops it from the load order and deletes its folder from the server.')) {
             return;
         }
         try {
-            const res = await apiPost(action, { workshop_id: workshopId });
-            const data = await res.json().catch(() => ({}));
+            let res = await apiPost(action, payload);
+            let data = await res.json().catch(() => ({}));
+
+            if (action === 'remove' && res.ok && data.status === 'dependency_prompt') {
+                const choice = prompt(
+                    'Other mods depend on this one.\nType:\n- cancel\n- remove_single\n- remove_all',
+                    'cancel'
+                );
+                const normalized = (choice || 'cancel').trim().toLowerCase();
+                if (normalized === 'cancel' || normalized === '') {
+                    return;
+                }
+                payload = { workshop_id: workshopId, dependency_action: normalized };
+                res = await apiPost(action, payload);
+                data = await res.json().catch(() => ({}));
+            }
             if (res.ok && data.status !== 'failed') {
                 if (data.message) {
                     alert(data.message);

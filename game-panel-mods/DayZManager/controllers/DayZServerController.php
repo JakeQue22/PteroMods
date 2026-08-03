@@ -72,6 +72,35 @@ final class DayZServerController
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function saveRestartSchedule(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        $enabled = filter_var(
+            $this->context->input('enabled', true),
+            FILTER_VALIDATE_BOOL,
+            FILTER_NULL_ON_FAILURE,
+        ) ?? false;
+        $intervalHours = (int) $this->context->stringInput('interval_hours', '6');
+
+        return $this->service->saveRestartSchedule($model, max(1, $intervalHours) * 60, $enabled);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function tickRestartSchedule(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->service->tickRestartSchedule($model);
+    }
+
+    /**
      * Renders the server control page, or returns launch parameters for API requests.
      *
      * @param list<string> $enabledFolders

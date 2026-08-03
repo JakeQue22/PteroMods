@@ -26,7 +26,7 @@
                     @endif
                 </p>
             </div>
-            <span class="dz-badge {{ $enabled ? 'dz-badge-on' : 'dz-badge-off' }}">{{ $enabled ? 'In load order' : 'Not loaded' }}</span>
+            <span class="dz-badge {{ $enabled ? 'dz-badge-on' : 'dz-badge-off' }}">{{ $enabled ? 'Loaded' : 'Disabled' }}</span>
         </div>
 
         <dl class="dz-mod-meta">

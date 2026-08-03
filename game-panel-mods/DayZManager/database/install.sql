@@ -52,3 +52,16 @@ CREATE TABLE IF NOT EXISTS `dayz_player_lists` (
     UNIQUE KEY `uq_dayz_player_lists_type_player` (`list_type`, `player_id`),
     KEY `idx_dayz_player_lists_type` (`list_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dayz_restart_schedules` (
+    `id`               INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`        VARCHAR(64)   NOT NULL,
+    `enabled`          TINYINT(1)    NOT NULL DEFAULT 0,
+    `interval_minutes` INT           NOT NULL DEFAULT 360,
+    `next_restart_at`  TIMESTAMP     NULL DEFAULT NULL,
+    `warnings_sent`    VARCHAR(255)  NOT NULL DEFAULT '',
+    `created_at`       TIMESTAMP     NULL DEFAULT NULL,
+    `updated_at`       TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_dayz_restart_schedules_server` (`server_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

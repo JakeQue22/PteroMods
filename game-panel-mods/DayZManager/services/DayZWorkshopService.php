@@ -36,6 +36,7 @@ final class DayZWorkshopService
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZStartupService $startup = new DayZStartupService(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZConfigurationService $configuration = new DayZConfigurationService(),
         private readonly ModMetaParser $meta = new ModMetaParser(),
         private readonly WorkshopInfoClient $info = new WorkshopInfoClient(),
         private readonly WorkshopBrowseClient $browseClient = new WorkshopBrowseClient(),
@@ -156,15 +157,16 @@ final class DayZWorkshopService
      *
      * @return array<string, mixed>
      */
-    public function lookup(string $reference): array
+    public function lookup(string $reference, mixed $server = null): array
     {
         try {
             $workshopId = (new WorkshopReferenceParser())->parse($reference);
         } catch (Throwable) {
-            return ['workshop_id' => '', 'title' => '', 'thumbnail' => '', 'file_size' => '', 'found' => false];
+            return ['workshop_id' => '', 'title' => '', 'thumbnail' => '', 'file_size' => '', 'found' => false, 'installed' => false];
         }
 
         $info = $this->workshopInfo($workshopId);
+        $installed = $server !== null && $this->findMod($workshopId, $this->resolveServer($server)) !== null;
 
         return [
             'workshop_id' => $workshopId,
@@ -172,6 +174,7 @@ final class DayZWorkshopService
             'thumbnail'   => $info['thumbnail'] ?? '',
             'file_size'   => $info['file_size'] ?? '',
             'found'       => $info !== [] && ($info['title'] ?? '') !== '',
+            'installed'   => $installed,
         ];
     }
 
@@ -189,7 +192,7 @@ final class DayZWorkshopService
      *
      * @return array<string, mixed>
      */
-    public function browse(string $term = '', int $page = 1): array
+    public function browse(string $term = '', int $page = 1, mixed $server = null): array
     {
         $apiKey = $this->steamApiKey();
 
@@ -204,7 +207,22 @@ final class DayZWorkshopService
             ];
         }
 
-        return $this->browseClient->search($term, $page, $apiKey) + ['enabled' => true, 'message' => ''];
+        $payload = $this->browseClient->search($term, $page, $apiKey);
+
+        if ($server === null || !is_array($payload['items'] ?? null)) {
+            return $payload + ['enabled' => true, 'message' => ''];
+        }
+
+        $installedIds = $this->installedWorkshopIds($this->resolveServer($server));
+
+        $payload['items'] = array_map(static function (array $item) use ($installedIds): array {
+            $id = trim((string) ($item['workshop_id'] ?? ''));
+            $item['installed'] = $id !== '' && in_array($id, $installedIds, true);
+
+            return $item;
+        }, $payload['items']);
+
+        return $payload + ['enabled' => true, 'message' => ''];
     }
 
     /**
@@ -252,7 +270,47 @@ final class DayZWorkshopService
         ]);
 
         $server = $this->resolveServer($server);
-        $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $plan);
+        $installedIds = $this->installedWorkshopIds($server);
+        $persistedQueue = $this->persistedQueue($server);
+        $queuedIds = array_values(array_filter(array_map(
+            static fn (array $entry): string => trim((string) ($entry['workshop_id'] ?? '')),
+            $persistedQueue,
+        ), static fn (string $id): bool => $id !== ''));
+        $skipIds = array_values(array_unique(array_merge($installedIds, $queuedIds)));
+        $plan = array_values(array_filter($plan, static fn (string $id): bool => !in_array($id, $skipIds, true)));
+
+        if ($plan === []) {
+            return [
+                'workshop_id' => $workshopId,
+                'title' => '',
+                'thumbnail' => '',
+                'file_size' => '',
+                'install_order' => [],
+                'queue' => $persistedQueue,
+                'restart_triggered' => false,
+                'restart_after_update' => false,
+                'restart_required' => false,
+                'auto_dependency_installation' => true,
+                'status' => 'noop',
+                'message' => 'That mod and all required dependencies are already installed or queued.',
+            ];
+        }
+
+        $queue = array_merge(
+            array_values(array_filter(array_map(static function (array $entry): ?array {
+                $id = trim((string) ($entry['workshop_id'] ?? ''));
+
+                return $id === '' ? null : [
+                    'workshop_id' => $id,
+                    'title' => (string) ($entry['title'] ?? ''),
+                    'thumbnail' => (string) ($entry['thumbnail'] ?? ''),
+                    'file_size' => (string) ($entry['file_size'] ?? ''),
+                    'installed' => false,
+                    'status' => 'queued',
+                ];
+            }, $persistedQueue))),
+            array_map(fn (string $id): array => $this->queueEntry($id, $server), $plan),
+        );
         $item = current(array_filter($queue, static fn (array $entry): bool => $entry['workshop_id'] === $workshopId)) ?: null;
 
         $this->persistQueue($server, $queue);
@@ -310,12 +368,14 @@ final class DayZWorkshopService
 
         $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
         $complete = $queue !== [] && !in_array(false, array_column($queue, 'installed'), true);
+        $queue = array_values(array_filter($queue, static fn (array $entry): bool => !($entry['installed'] ?? false)));
 
         $this->persistQueue($server, $queue);
+        $this->syncInstalledTypesExtra($server, $workshopIds);
 
         return [
             'queue' => $queue,
-            'complete' => $complete,
+            'complete' => $complete || $queue === [],
         ];
     }
 
@@ -533,9 +593,36 @@ final class DayZWorkshopService
     {
         $server = $this->resolveServer($server);
         $mod = $this->findMod($reference, $server);
+        $dependencyAction = strtolower(trim((string) $this->context->input('dependency_action', '')));
 
         if ($mod === null) {
             return $this->removeQueued($reference, $server);
+        }
+
+        $dependents = $this->dependentMods((string) ($mod['workshop_id'] ?? ''), $server);
+
+        if ($dependents !== [] && $dependencyAction === '') {
+            return [
+                'status' => 'dependency_prompt',
+                'action' => 'remove',
+                'workshop_id' => (string) ($mod['workshop_id'] ?? ''),
+                'dependents' => $dependents,
+                'message' => 'Other installed mods depend on this mod. Choose remove one or remove all.',
+            ];
+        }
+
+        if ($dependents !== [] && !in_array($dependencyAction, ['remove_single', 'remove_all'], true)) {
+            return ['status' => 'failed', 'action' => 'remove', 'message' => 'Removal cancelled.'];
+        }
+
+        if ($dependencyAction === 'remove_all') {
+            foreach ($dependents as $dependent) {
+                $dependentReference = (string) ($dependent['workshop_id'] ?? '');
+
+                if ($dependentReference !== '') {
+                    $this->remove($dependentReference, $server, $deleteFiles);
+                }
+            }
         }
 
         $folder = (string) $mod['folder_name'];
@@ -743,13 +830,14 @@ final class DayZWorkshopService
     ): array {
         $meta = $installed ? $this->modMetadata($server, $folder) : [];
         $workshopId = $meta['publishedid'] ?? '';
+        $info = $workshopId !== '' ? $this->workshopInfo($workshopId) : [];
 
         return [
             'workshop_id'     => $workshopId,
-            'title'           => $meta['name'] ?? ltrim($folder, '@'),
+            'title'           => $meta['name'] ?? ($info['title'] ?? ltrim($folder, '@')),
             'folder_name'     => $folder,
             'author'          => $meta['author'] ?? '',
-            'thumbnail'       => '',
+            'thumbnail'       => (string) ($info['thumbnail'] ?? ''),
             'current_version' => $meta['version'] ?? '',
             'latest_version'  => '',
             'file_size'       => $installed ? $this->formatBytes($size) : '',
@@ -874,6 +962,68 @@ final class DayZWorkshopService
         }
 
         return array_values(array_unique(array_filter($ids, static fn (string $id): bool => ctype_digit($id))));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function installedWorkshopIds(mixed $server): array
+    {
+        $ids = [];
+
+        foreach ($this->installedMods($server) as $mod) {
+            $id = trim((string) ($mod['workshop_id'] ?? ''));
+
+            if ($id !== '' && ctype_digit($id)) {
+                $ids[] = $id;
+            }
+        }
+
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function dependentMods(string $workshopId, mixed $server): array
+    {
+        if ($workshopId === '') {
+            return [];
+        }
+
+        $dependents = [];
+
+        foreach ($this->installedMods($server) as $mod) {
+            $dependencies = $mod['dependencies'] ?? [];
+            $dependencies = is_array($dependencies) ? $dependencies : array_filter(explode(',', (string) $dependencies));
+            $dependencies = array_values(array_map('strval', $dependencies));
+
+            if (in_array($workshopId, $dependencies, true)) {
+                $dependents[] = [
+                    'workshop_id' => (string) ($mod['workshop_id'] ?? ''),
+                    'title' => (string) ($mod['title'] ?? ''),
+                    'folder_name' => (string) ($mod['folder_name'] ?? ''),
+                ];
+            }
+        }
+
+        return $dependents;
+    }
+
+    /**
+     * @param list<string> $workshopIds
+     */
+    private function syncInstalledTypesExtra(mixed $server, array $workshopIds): void
+    {
+        foreach ($workshopIds as $workshopId) {
+            $mod = $this->findMod((string) $workshopId, $server);
+
+            if ($mod === null || !($mod['installed'] ?? false)) {
+                continue;
+            }
+
+            $this->configuration->syncTypesExtraForMod($server, (string) ($mod['folder_name'] ?? ''), (string) ($mod['title'] ?? ''));
+        }
     }
 
     private function formatBytes(int $bytes): string

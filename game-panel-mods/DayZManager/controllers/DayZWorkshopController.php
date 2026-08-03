@@ -119,8 +119,9 @@ final class DayZWorkshopController
     public function lookup(mixed $server = null, string $reference = ''): array
     {
         $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
+        $model = $this->context->resolve($server)['model'];
 
-        return $this->service->lookup($reference);
+        return $this->service->lookup($reference, $model);
     }
 
     /**
@@ -132,8 +133,9 @@ final class DayZWorkshopController
     {
         $term = $term !== '' ? $term : $this->context->stringInput('search');
         $page = $page > 0 ? $page : (int) $this->context->stringInput('page', '1');
+        $model = $this->context->resolve($server)['model'];
 
-        return $this->service->browse($term, max(1, $page));
+        return $this->service->browse($term, max(1, $page), $model);
     }
 
     /**
