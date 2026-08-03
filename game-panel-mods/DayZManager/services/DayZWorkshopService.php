@@ -506,7 +506,6 @@ final class DayZWorkshopService
         // startup script can pass them to SteamCMD on the next boot.
         $this->startup->appendWorkshopIds($server, $plan);
         $this->appendToEnabledLoadOrder($server, $plan);
-        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
 
         // Restart only when explicitly requested by the operator.
         $restarted = $forceRestart ? $this->gateway->power($server, 'restart') : false;
