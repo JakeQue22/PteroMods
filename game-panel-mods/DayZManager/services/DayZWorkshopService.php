@@ -1325,9 +1325,16 @@ final class DayZWorkshopService
 
         if (!$this->gateway->renameFile($server, '/', $folderName, $newFolderName)) {
             // The rename may have failed because the target folder already exists
-            // (e.g., a previous re-download re-created the @workshopId folder while
-            // @ModName was already in place). Check whether the target is present and,
-            // if so, delete the numeric duplicate instead.
+            // (e.g., a previous rename already created @ModName, and SteamCMD then
+            // re-downloaded the mod into @workshopId again on a later update). Check
+            // whether the target is present and, if so, replace the stale @ModName
+            // folder with the freshly downloaded @workshopId contents instead of
+            // discarding the newer download: the numeric folder is always the one
+            // SteamCMD just wrote, so it holds the up-to-date mod version, while the
+            // named folder may be an outdated copy. Keeping the outdated copy can
+            // silently downgrade a mod (e.g. Community Framework) to a version that
+            // can no longer read save data written by the newer one, crashing the
+            // server in a restart loop.
             $this->gateway->clearFileListingCache($server);
             $this->memo = [];
             $existingFolders = $this->modFolders($server);
@@ -1337,7 +1344,20 @@ final class DayZWorkshopService
             ) !== [];
 
             if ($targetExists) {
-                $this->gateway->deletePath($server, '/' . $folderName);
+                if (!$this->gateway->deletePath($server, '/' . $newFolderName)) {
+                    // Could not remove the stale folder; keep the numeric folder in
+                    // place rather than risk losing the freshly downloaded mod.
+                    return $folderName;
+                }
+
+                $this->memo = [];
+
+                if (!$this->gateway->renameFile($server, '/', $folderName, $newFolderName)) {
+                    // The rename still failed after clearing the stale folder; leave
+                    // the numeric folder as-is so the mod keeps loading.
+                    return $folderName;
+                }
+
                 $this->memo = [];
 
                 // Rewrite the load order to use the named folder so the numeric
