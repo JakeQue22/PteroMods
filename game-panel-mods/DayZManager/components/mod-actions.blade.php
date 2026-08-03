@@ -77,8 +77,18 @@
                 : '<div class="dz-queue-thumb dz-queue-noimg"></div>')
                 + '<span class="dz-queue-label">' + label + '</span>'
                 + '<span class="dz-queue-status ' + (done ? 'dz-text-green' : 'dz-text-amber') + '">'
-                + (done ? '✓ Installed' : '⧗ Queued') + '</span>';
+                + (done ? '✓ Installed' : '⧗ Queued') + '</span>'
+                + (!done
+                    ? '<button type="button" class="dz-btn dz-btn-sm dz-btn-red" data-queue-remove="' + workshopId + '">Remove</button>'
+                    : '');
             container.appendChild(row);
+
+            const removeBtn = row.querySelector('[data-queue-remove]');
+            if (removeBtn) {
+                removeBtn.addEventListener('click', function () {
+                    window.pteroRemoveQueuedInstall(workshopId);
+                });
+            }
         });
 
         if (status) {
@@ -408,6 +418,45 @@
             }
         } catch (err) {
             if (status) {
+                status.textContent = '✗ Network error: ' + err.message;
+                status.className = 'dz-status dz-text-red';
+            }
+        }
+    };
+
+    window.pteroRemoveQueuedInstall = async function (workshopId) {
+        const status = document.getElementById('ptero-install-status');
+        if (!workshopId) {
+            return;
+        }
+        if (!confirm('Remove ' + workshopId + ' from the install queue?')) {
+            return;
+        }
+        try {
+            const res = await apiPost('remove', { workshop_id: workshopId, queue_only: true });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.status !== 'failed') {
+                if (Array.isArray(data.queue)) {
+                    renderQueueList(data.queue, data.queue.length > 0 && data.queue.every(function (e) { return !!e.installed; }));
+                } else {
+                    await resumeQueue();
+                }
+                if (status) {
+                    status.classList.remove('dz-hidden');
+                    status.textContent = data.message || 'Removed from queue.';
+                    status.className = 'dz-status dz-text-green';
+                }
+                return;
+            }
+
+            if (status) {
+                status.classList.remove('dz-hidden');
+                status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                status.className = 'dz-status dz-text-red';
+            }
+        } catch (err) {
+            if (status) {
+                status.classList.remove('dz-hidden');
                 status.textContent = '✗ Network error: ' + err.message;
                 status.className = 'dz-status dz-text-red';
             }

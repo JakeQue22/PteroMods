@@ -15,6 +15,7 @@ final class DayZDashboardService
 {
     /** DayZ's default slot count, used when the max player count is unknown. */
     private const DEFAULT_MAX_PLAYERS = 64;
+    private const DEFAULT_MAP = 'ChernarusPlus';
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
@@ -82,12 +83,12 @@ final class DayZDashboardService
         $map = trim((string) $map);
 
         if ($map === '') {
-            return 'N/A';
+            return self::DEFAULT_MAP;
         }
 
         // DayZ reports mission names such as "dayzOffline.chernarusplus".
         $known = [
-            'chernarusplus' => 'Chernarus+',
+            'chernarusplus' => 'ChernarusPlus',
             'chernarus'     => 'Chernarus',
             'enoch'         => 'Livonia',
             'livonia'       => 'Livonia',

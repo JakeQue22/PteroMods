@@ -152,8 +152,15 @@ final class DayZWorkshopController
     public function remove(mixed $server = null, string $workshopId = ''): array
     {
         $model = $this->manage($server);
+        $queueOnly = filter_var(
+            $this->context->input('queue_only', false),
+            FILTER_VALIDATE_BOOL,
+            FILTER_NULL_ON_FAILURE,
+        ) ?? false;
 
-        return $this->service->remove($this->workshopId($workshopId), $model);
+        return $queueOnly
+            ? $this->service->removeQueued($this->workshopId($workshopId), $model)
+            : $this->service->remove($this->workshopId($workshopId), $model);
     }
 
     /**

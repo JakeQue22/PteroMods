@@ -261,6 +261,7 @@ final class DayZWorkshopService
         // Append the new workshop IDs to the egg's MODS variable so the
         // startup script can pass them to SteamCMD on the next boot.
         $this->startup->appendWorkshopIds($server, $plan);
+        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
 
         // Restart only when explicitly requested by the operator.
         $restarted = $forceRestart ? $this->gateway->power($server, 'restart') : false;
@@ -373,6 +374,18 @@ final class DayZWorkshopService
                 return;
             }
 
+            $workshopIds = array_values(array_filter(array_map(
+                static fn (array $entry): string => (string) ($entry['workshop_id'] ?? ''),
+                $queue,
+            ), static fn (string $id): bool => $id !== ''));
+            $query = \Illuminate\Support\Facades\DB::table('dayz_mod_install_queue')->where('server_id', $serverId);
+
+            if ($workshopIds === []) {
+                $query->delete();
+            } else {
+                $query->whereNotIn('workshop_id', $workshopIds)->delete();
+            }
+
             foreach (array_values($queue) as $position => $entry) {
                 $workshopId = (string) ($entry['workshop_id'] ?? '');
 
@@ -397,6 +410,40 @@ final class DayZWorkshopService
             // Persisting the queue is best-effort; the live folder scan is
             // still authoritative for whether a mod is actually installed.
         }
+    }
+
+    /**
+     * @param list<string> $workshopIds
+     */
+    private function deleteQueueEntries(mixed $server, array $workshopIds): bool
+    {
+        $serverId = $this->serverIdentifier($server);
+        $workshopIds = array_values(array_filter(array_map(
+            static fn (mixed $id): string => trim((string) $id),
+            $workshopIds,
+        ), static fn (string $id): bool => $id !== ''));
+
+        if ($serverId === ''
+            || $workshopIds === []
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return false;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_mod_install_queue')) {
+                return false;
+            }
+
+            $deleted = \Illuminate\Support\Facades\DB::table('dayz_mod_install_queue')
+                ->where('server_id', $serverId)
+                ->whereIn('workshop_id', $workshopIds)
+                ->delete();
+        } catch (Throwable) {
+            return false;
+        }
+
+        return $deleted > 0;
     }
 
     /**
@@ -488,7 +535,7 @@ final class DayZWorkshopService
         $mod = $this->findMod($reference, $server);
 
         if ($mod === null) {
-            return ['status' => 'failed', 'action' => 'remove', 'reference' => $reference, 'message' => 'That mod is not installed on this server.'];
+            return $this->removeQueued($reference, $server);
         }
 
         $folder = (string) $mod['folder_name'];
@@ -505,8 +552,43 @@ final class DayZWorkshopService
         $result['message'] = $filesDeleted
             ? sprintf('Removed %s from the load order and deleted its files.', $folder)
             : sprintf('Removed %s from the load order. Delete the folder in the file manager to free the disk space.', $folder);
+        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
 
         return $result;
+    }
+
+    /**
+     * Removes a Workshop ID from this server's persisted install queue.
+     *
+     * @return array<string, mixed>
+     */
+    public function removeQueued(string $reference, mixed $server = null): array
+    {
+        $server = $this->resolveServer($server);
+        $workshopId = trim((string) $reference);
+
+        if (!ctype_digit($workshopId)) {
+            $mod = $this->findMod($reference, $server);
+            $workshopId = (string) ($mod['workshop_id'] ?? '');
+        }
+
+        if ($workshopId === '') {
+            return ['status' => 'failed', 'action' => 'queue-remove', 'reference' => $reference, 'message' => 'That queue entry could not be found.'];
+        }
+
+        $removed = $this->deleteQueueEntries($server, [$workshopId]);
+        $queue = $this->persistedQueue($server);
+        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
+
+        return [
+            'status' => $removed ? 'applied' : 'failed',
+            'action' => 'queue-remove',
+            'workshop_id' => $workshopId,
+            'queue' => $queue,
+            'message' => $removed
+                ? 'Removed that Workshop mod from the install queue.'
+                : 'That Workshop mod was not in the install queue.',
+        ];
     }
 
     /**
@@ -586,6 +668,7 @@ final class DayZWorkshopService
     private function persistOrder(mixed $server, array $order, string $action): array
     {
         $result = $this->startup->saveModList($server, $order);
+        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
         $this->memo = [];
 
         return [
@@ -760,6 +843,37 @@ final class DayZWorkshopService
         }
 
         return $this->context->resolve($server)['model'];
+    }
+
+    /**
+     * @param list<string> $extra
+     * @return list<string>
+     */
+    private function modlistWorkshopIds(mixed $server, array $extra = []): array
+    {
+        $ids = $extra;
+
+        foreach ($this->installedMods($server) as $mod) {
+            if (!($mod['enabled'] ?? false)) {
+                continue;
+            }
+
+            $id = trim((string) ($mod['workshop_id'] ?? ''));
+
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+
+        foreach ($this->persistedQueue($server) as $entry) {
+            $id = trim((string) ($entry['workshop_id'] ?? ''));
+
+            if ($id !== '') {
+                $ids[] = $id;
+            }
+        }
+
+        return array_values(array_unique(array_filter($ids, static fn (string $id): bool => ctype_digit($id))));
     }
 
     private function formatBytes(int $bytes): string

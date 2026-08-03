@@ -24,11 +24,13 @@ final class DayZStartupService
 
     /** Egg variables commonly used by DayZ eggs to hold the server-only mod list. */
     private const SERVER_MOD_LIST_VARIABLES = ['SERVER_MOD_LIST', 'SERVER_MODS', 'SERVERMODS', 'SERVER_MOD'];
+    private const MODLIST_PATH = '/modlist.html';
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly StartupCommandRenderer $renderer = new StartupCommandRenderer(),
         private readonly ModMetaParser $meta = new ModMetaParser(),
+        private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
     ) {
     }
 
@@ -163,6 +165,8 @@ final class DayZStartupService
      */
     public function appendWorkshopIds(mixed $server, array $workshopIds): void
     {
+        $workshopIds = $this->normalizeWorkshopIds($workshopIds);
+
         if ($workshopIds === []) {
             return;
         }
@@ -190,9 +194,28 @@ final class DayZStartupService
 
             $merged = array_values(array_unique(array_merge($tokens, $workshopIds)));
             $this->writeServerVariable($server, $name, implode(';', $merged));
+            $this->syncModlistHtml($server, $merged);
 
             return;
         }
+
+        $this->syncModlistHtml($server, $workshopIds);
+    }
+
+    /**
+     * Writes a DayZ Launcher-style modlist file consumed by popular DayZ eggs.
+     *
+     * @param list<string> $workshopIds
+     */
+    public function syncModlistHtml(mixed $server, array $workshopIds): bool
+    {
+        $workshopIds = $this->normalizeWorkshopIds($workshopIds);
+
+        if ($workshopIds === []) {
+            return false;
+        }
+
+        return $this->gateway->writeFile($server, self::MODLIST_PATH, $this->buildModlistHtml($workshopIds));
     }
 
     /**
@@ -354,5 +377,39 @@ final class DayZStartupService
         }
 
         return [];
+    }
+
+    /**
+     * @param list<string> $workshopIds
+     * @return list<string>
+     */
+    private function normalizeWorkshopIds(array $workshopIds): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            static fn (mixed $id): string => trim((string) $id),
+            $workshopIds,
+        ), static fn (string $id): bool => $id !== '' && ctype_digit($id))));
+    }
+
+    /**
+     * @param list<string> $workshopIds
+     */
+    private function buildModlistHtml(array $workshopIds): string
+    {
+        $lines = [
+            '<!-- Created by DayZ Launcher -->',
+            '<html>',
+            '<body>',
+        ];
+
+        foreach ($workshopIds as $workshopId) {
+            $url = 'https://steamcommunity.com/sharedfiles/filedetails/?id=' . rawurlencode($workshopId);
+            $lines[] = sprintf('<a href="%s">%s</a><br />', $url, $workshopId);
+        }
+
+        $lines[] = '</body>';
+        $lines[] = '</html>';
+
+        return implode("\n", $lines) . "\n";
     }
 }

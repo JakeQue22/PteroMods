@@ -206,6 +206,8 @@ final class DayZServerQueryService
             }
         }
 
+        // Some hosts configure DayZ's Steam query port to match the game port.
+        $ports[] = $gamePort;
         $ports[] = $gamePort + self::DAYZ_QUERY_PORT_OFFSET;
         $ports[] = self::DEFAULT_STEAM_QUERY_PORT;
 
