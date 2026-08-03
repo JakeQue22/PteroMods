@@ -244,7 +244,7 @@ final class DayZWorkshopService
      * @param array<string, array{dependencies?: list<string>, requires_cf?: bool}> $metadata
      * @return array<string, mixed>
      */
-    public function installPlan(string $reference, array $metadata = [], mixed $server = null): array
+    public function installPlan(string $reference, array $metadata = [], mixed $server = null, bool $forceRestart = false): array
     {
         $workshopId = (new WorkshopReferenceParser())->parse($reference);
         $plan = (new WorkshopDependencyPlanner())->buildPlan($workshopId, $metadata + [
@@ -262,8 +262,8 @@ final class DayZWorkshopService
         // startup script can pass them to SteamCMD on the next boot.
         $this->startup->appendWorkshopIds($server, $plan);
 
-        // Restart the server so its startup script downloads the mods.
-        $restarted = $this->gateway->power($server, 'restart');
+        // Restart only when explicitly requested by the operator.
+        $restarted = $forceRestart ? $this->gateway->power($server, 'restart') : false;
 
         return [
             'workshop_id' => $workshopId,
@@ -273,12 +273,13 @@ final class DayZWorkshopService
             'install_order' => $plan,
             'queue' => $queue,
             'restart_triggered' => $restarted,
-            'restart_after_update' => true,
+            'restart_after_update' => $restarted,
+            'restart_required' => true,
             'auto_dependency_installation' => true,
             'status' => 'queued',
             'message' => $restarted
-                ? 'Install queued. The server is restarting so its startup script can download the mods via SteamCMD.'
-                : 'Install queued. Start or restart the server to let its startup script download the mods via SteamCMD.',
+                ? 'Install queued. The server is restarting so its startup script can download queued mods via SteamCMD.'
+                : 'Install queued. Restart the server when you are ready to download queued mods via SteamCMD.',
         ];
     }
 

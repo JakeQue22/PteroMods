@@ -58,8 +58,13 @@ final class DayZWorkshopController
         $model = $this->manage($server);
 
         $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
+        $forceRestart = filter_var(
+            $this->context->input('force_restart', false),
+            FILTER_VALIDATE_BOOL,
+            FILTER_NULL_ON_FAILURE,
+        ) ?? false;
 
-        return $this->service->installPlan($reference, $metadata, $model);
+        return $this->service->installPlan($reference, $metadata, $model, $forceRestart);
     }
 
     /**

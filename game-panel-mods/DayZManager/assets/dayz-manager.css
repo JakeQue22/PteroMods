@@ -212,6 +212,7 @@ body.dz-body {
   border: 1px solid var(--dz-border);
   border-radius: var(--dz-radius);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  width: 100%;
   min-width: 16rem;
 }
 
@@ -230,6 +231,13 @@ body.dz-body {
 }
 
 .dz-lookup-item:hover { background: var(--dz-surface-alt); }
+.dz-lookup-item:disabled,
+.dz-lookup-item.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.dz-lookup-item:disabled:hover,
+.dz-lookup-item.is-disabled:hover { background: transparent; }
 
 .dz-lookup-item img { width: 2rem; height: 2rem; object-fit: cover; border-radius: 0.35rem; flex-shrink: 0; }
 
@@ -243,6 +251,7 @@ body.dz-body {
   background: rgba(0, 0, 0, 0.6);
   padding: 1.5rem;
 }
+.dz-modal.dz-hidden { display: none; }
 
 .dz-modal-content {
   background: var(--dz-surface, #1b1f27);
@@ -279,6 +288,12 @@ body.dz-body {
 }
 
 .dz-browse-card:hover { border-color: var(--dz-accent, var(--dz-border)); }
+.dz-browse-card.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  border-color: var(--dz-border);
+}
+.dz-browse-card.is-disabled:hover { border-color: var(--dz-border); }
 .dz-browse-card img { width: 100%; height: 7rem; object-fit: cover; border-radius: 0.35rem; }
 .dz-browse-noimg { width: 100%; height: 7rem; border-radius: 0.35rem; background: var(--dz-border); }
 

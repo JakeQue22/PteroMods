@@ -22,15 +22,20 @@
             <input id="ptero-workshop-ref" class="dz-input" type="text" placeholder="Workshop ID or Steam Workshop URL" autocomplete="off" />
         </div>
         <button class="dz-btn" onclick="pteroInstallMod()">Install</button>
+        <button class="dz-btn dz-btn-amber" onclick="pteroInstallMod(true)">Install + Restart</button>
         @if (!empty($browse_enabled))
             <button class="dz-btn dz-btn-ghost" onclick="pteroOpenBrowseModal()">Browse Workshop</button>
         @endif
     </div>
+    <p class="dz-sub">Default install action only queues mods. Use restart actions when you're ready to apply queued installs.</p>
     <p id="ptero-install-status" class="dz-status dz-hidden"></p>
     <div id="ptero-install-queue" class="dz-queue-list dz-hidden"></div>
+    <div id="ptero-queue-actions" class="dz-form dz-hidden">
+        <button class="dz-btn dz-btn-amber" onclick="pteroRestartQueuedInstall()">Restart server to install queued mods</button>
+    </div>
 </section>
 
-<div id="ptero-browse-modal" class="dz-modal dz-hidden" onclick="if(event.target===this)pteroCloseBrowseModal()">
+<div id="ptero-browse-modal" class="dz-modal dz-hidden">
     <div class="dz-modal-content">
         <div class="dz-modal-head">
             <h3>Browse DayZ Workshop</h3>

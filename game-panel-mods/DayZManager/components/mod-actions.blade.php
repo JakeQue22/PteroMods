@@ -2,6 +2,7 @@
 (function () {
     const SERVER_ID = @json($server_id);
     const ENDPOINT_BASE = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/mods/';
+    const queuedWorkshopIds = new Set();
 
     function csrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
@@ -34,13 +35,28 @@
     // Queue display helpers
     // ---------------------------------------------------------------------------
 
+    function normalizeWorkshopId(value) {
+        return String(value || '').trim();
+    }
+
+    function refreshQueueActions() {
+        const actions = document.getElementById('ptero-queue-actions');
+        if (!actions) {
+            return;
+        }
+        actions.classList.toggle('dz-hidden', queuedWorkshopIds.size === 0);
+    }
+
     function renderQueueList(queue, complete) {
         const container = document.getElementById('ptero-install-queue');
         const status = document.getElementById('ptero-install-status');
         if (!container) return;
 
+        queuedWorkshopIds.clear();
+
         if (!Array.isArray(queue) || queue.length === 0) {
             container.classList.add('dz-hidden');
+            refreshQueueActions();
             return;
         }
 
@@ -48,8 +64,12 @@
         container.innerHTML = '';
 
         queue.forEach(function (entry) {
+            const workshopId = normalizeWorkshopId(entry.workshop_id);
             const label = entry.title ? (entry.title + ' (' + entry.workshop_id + ')') : entry.workshop_id;
             const done = entry.installed;
+            if (workshopId !== '' && !done) {
+                queuedWorkshopIds.add(workshopId);
+            }
             const row = document.createElement('div');
             row.className = 'dz-queue-item';
             row.innerHTML = (entry.thumbnail
@@ -57,7 +77,7 @@
                 : '<div class="dz-queue-thumb dz-queue-noimg"></div>')
                 + '<span class="dz-queue-label">' + label + '</span>'
                 + '<span class="dz-queue-status ' + (done ? 'dz-text-green' : 'dz-text-amber') + '">'
-                + (done ? '✓ Installed' : '⧗ Downloading…') + '</span>';
+                + (done ? '✓ Installed' : '⧗ Queued') + '</span>';
             container.appendChild(row);
         });
 
@@ -65,9 +85,11 @@
             status.classList.remove('dz-hidden');
             status.textContent = complete
                 ? '✓ All mods installed.'
-                : '⧗ Download in progress — check back or restart the server if this persists.';
+                : '⧗ Mods are queued. Restart the server to install queued mods.';
             status.className = 'dz-status ' + (complete ? 'dz-text-green' : 'dz-text-muted');
         }
+
+        refreshQueueActions();
     }
 
     async function pollInstallStatus(workshopIds, attemptsLeft) {
@@ -130,20 +152,33 @@
         if (!info || !info.found) {
             return;
         }
+        const workshopId = normalizeWorkshopId(info.workshop_id);
+        const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
         const dropdown = document.createElement('div');
         dropdown.id = 'ptero-workshop-lookup';
         dropdown.className = 'dz-lookup-dropdown';
-        dropdown.innerHTML = '<button type="button" class="dz-lookup-item">'
+        dropdown.innerHTML = '<button type="button" class="dz-lookup-item' + (alreadyQueued ? ' is-disabled' : '') + '"'
+            + (alreadyQueued ? ' disabled' : '')
+            + '>'
             + (info.thumbnail ? '<img src="' + info.thumbnail + '" alt="" loading="lazy" />' : '')
             + '<span>' + (info.title || ('Workshop ' + info.workshop_id)) + ' <small>(' + info.workshop_id + ')</small></span>'
-            + '<span class="dz-text-muted" style="font-size:0.72rem;margin-left:auto;">Click to install</span>'
+            + '<span class="dz-text-muted" style="font-size:0.72rem;margin-left:auto;">'
+            + (alreadyQueued ? 'Already queued' : 'Click to queue')
+            + '</span>'
             + '</button>';
-        dropdown.querySelector('.dz-lookup-item').addEventListener('click', function () {
-            input.value = info.workshop_id;
-            closeLookupDropdown();
-            window.pteroInstallMod();
-        });
-        input.insertAdjacentElement('afterend', dropdown);
+        if (!alreadyQueued) {
+            dropdown.querySelector('.dz-lookup-item').addEventListener('click', function () {
+                input.value = info.workshop_id;
+                closeLookupDropdown();
+                window.pteroInstallMod();
+            });
+        }
+        const wrap = input.closest('.dz-input-wrap');
+        if (wrap) {
+            wrap.appendChild(dropdown);
+        } else {
+            input.insertAdjacentElement('afterend', dropdown);
+        }
     }
 
     function attachLookup() {
@@ -218,19 +253,26 @@
             }
             grid.innerHTML = '';
             data.items.forEach(function (item) {
+                const workshopId = normalizeWorkshopId(item.workshop_id);
+                const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
                 const card = document.createElement('button');
                 card.type = 'button';
-                card.className = 'dz-browse-card';
+                card.className = 'dz-browse-card' + (alreadyQueued ? ' is-disabled' : '');
+                if (alreadyQueued) {
+                    card.disabled = true;
+                }
                 card.innerHTML = (item.thumbnail ? '<img src="' + item.thumbnail + '" alt="" loading="lazy" />' : '<div class="dz-browse-noimg"></div>')
-                    + '<span>' + item.title + '</span>';
-                card.addEventListener('click', function () {
-                    const input = document.getElementById('ptero-workshop-ref');
-                    if (input) {
-                        input.value = item.workshop_id;
-                    }
-                    window.pteroCloseBrowseModal();
-                    window.pteroInstallMod();
-                });
+                    + '<span>' + item.title + (alreadyQueued ? ' (already queued)' : '') + '</span>';
+                if (!alreadyQueued) {
+                    card.addEventListener('click', function () {
+                        const input = document.getElementById('ptero-workshop-ref');
+                        if (input) {
+                            input.value = item.workshop_id;
+                        }
+                        window.pteroCloseBrowseModal();
+                        window.pteroInstallMod();
+                    });
+                }
                 grid.appendChild(card);
             });
         } catch (err) {
@@ -257,20 +299,44 @@
         }
     };
 
+    function bindBrowseModalClose() {
+        const modal = document.getElementById('ptero-browse-modal');
+        if (!modal || modal.dataset.pteroBrowseBound) {
+            return;
+        }
+        modal.dataset.pteroBrowseBound = '1';
+        modal.addEventListener('click', function (event) {
+            if (event.target === modal) {
+                window.pteroCloseBrowseModal();
+            }
+        });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') {
+                window.pteroCloseBrowseModal();
+            }
+        });
+    }
+
     window.pteroBrowseSearch = function () {
         const searchInput = document.getElementById('ptero-browse-search');
         loadBrowseResults(searchInput ? searchInput.value.trim() : '', 1);
     };
 
+    bindBrowseModalClose();
+
     // ---------------------------------------------------------------------------
     // Install
     // ---------------------------------------------------------------------------
 
-    window.pteroInstallMod = async function () {
+    window.pteroInstallMod = async function (forceRestart) {
         const input = document.getElementById('ptero-workshop-ref');
         const status = document.getElementById('ptero-install-status');
+        const restartNow = !!forceRestart;
         const ref = (input && input.value ? input.value : '').trim();
         if (!ref) {
+            return;
+        }
+        if (restartNow && !confirm('Queue this install and restart the server now? Warning: this will restart the server immediately.')) {
             return;
         }
         if (input) { input.value = ''; }
@@ -281,7 +347,7 @@
             status.className = 'dz-status dz-text-muted';
         }
         try {
-            const res = await apiPost('install', { reference: ref });
+            const res = await apiPost('install', { reference: ref, force_restart: restartNow });
             const data = await res.json().catch(() => ({}));
             if (res.ok) {
                 if (status) {
@@ -300,6 +366,45 @@
                     status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
                     status.className = 'dz-status dz-text-red';
                 }
+            }
+        } catch (err) {
+            if (status) {
+                status.textContent = '✗ Network error: ' + err.message;
+                status.className = 'dz-status dz-text-red';
+            }
+        }
+    };
+
+    window.pteroRestartQueuedInstall = async function () {
+        const status = document.getElementById('ptero-install-status');
+        if (!confirm('Restart server to process queued workshop installs? Warning: connected players will be disconnected.')) {
+            return;
+        }
+        if (status) {
+            status.classList.remove('dz-hidden');
+            status.textContent = 'Sending restart signal…';
+            status.className = 'dz-status dz-text-muted';
+        }
+        try {
+            const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/restart', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfToken(),
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ reason: 'Apply queued DayZ Workshop installs' }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.status !== 'failed' && data.status !== 'rejected') {
+                if (status) {
+                    status.textContent = '✓ ' + (data.message || 'Restart signal sent. The queued installs should start now.');
+                    status.className = 'dz-status dz-text-green';
+                }
+            } else if (status) {
+                status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                status.className = 'dz-status dz-text-red';
             }
         } catch (err) {
             if (status) {

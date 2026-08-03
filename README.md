@@ -317,7 +317,9 @@ written to the `dayz_mod_install_queue` table (keyed by server and Workshop ID),
 so the "downloading…" status shown on the page survives a reload instead of
 disappearing; `GET /mods/install/queue` restores it. A `say` console command is
 also sent to the server so operators watching the live console see the request.
-Installing or updating a mod still downloads files with SteamCMD, which is the
+By default, queueing a mod does **not** restart the server — the operator can
+trigger a restart later from the queue action, or force an immediate restart at
+queue time with the explicit override. Installing or updating a mod still downloads files with SteamCMD, which is the
 egg's responsibility — the module tracks progress by watching for the mod's
 folder to appear on disk, it does not run SteamCMD itself.
 
@@ -351,6 +353,7 @@ command, or configuration files; other subusers keep read-only access.
 ```json
 {
     "reference": "https://steamcommunity.com/sharedfiles/filedetails/?id=1559212036",
+    "force_restart": false,
     "metadata": {
         "1559212036": { "requires_cf": false }
     }
