@@ -40,10 +40,14 @@ final class DayZServerController
         $resolved = $this->context->resolve($server);
         $this->query->clearCache($resolved['model']);
         $live = $this->query->query($resolved['model']);
+        $details = $this->gateway->details($resolved['model']);
         $powerState = $this->gateway->state($resolved['model']) ?? '';
         $live['player_count'] = $this->dashboard->formatPlayerCount($live);
         $live['power_state'] = $powerState;
         $live['panel_running'] = in_array($powerState, ['running', 'starting', 'stopping'], true);
+        $live['version'] = $this->dashboard->resolveServerVersion($resolved['model'], $live);
+        $live['server_status'] = $this->dashboard->resolveStatus($resolved['model'], $live, $details);
+        $live['status_source'] = $this->dashboard->statusSource($resolved['model'], $live, $details);
 
         return $live;
     }
@@ -195,6 +199,11 @@ final class DayZServerController
 
         $payload['live'] = $this->query->query($resolved['model']);
         $payload['live']['player_count'] = $this->dashboard->formatPlayerCount($payload['live']);
+
+        $details = $this->gateway->details($resolved['model']);
+        $payload['live']['version'] = $this->dashboard->resolveServerVersion($resolved['model'], $payload['live']);
+        $payload['live']['server_status'] = $this->dashboard->resolveStatus($resolved['model'], $payload['live'], $details);
+        $payload['live']['status_source'] = $this->dashboard->statusSource($resolved['model'], $payload['live'], $details);
 
         return $this->renderer->render('server', $payload, 'server', $resolved['id'], $resolved['name']);
     }

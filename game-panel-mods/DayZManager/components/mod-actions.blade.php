@@ -790,5 +790,24 @@
             alert('Network error: ' + err.message);
         }
     };
+
+    window.pteroReorderMods = async function (orderedIds) {
+        if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
+            return;
+        }
+        try {
+            const res = await apiPost('reorder', { ordered_ids: orderedIds });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.status === 'failed') {
+                alert('Reorder failed: ' + (data.message || res.status));
+                location.reload();
+                return;
+            }
+            location.reload();
+        } catch (err) {
+            alert('Network error: ' + err.message);
+            location.reload();
+        }
+    };
 }());
 </script>

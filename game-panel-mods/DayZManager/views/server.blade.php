@@ -5,7 +5,21 @@
         <dl class="dz-grid" id="dz-query-stats">
             <div class="dz-stat">
                 <dt>Query Status</dt>
-                <dd id="dz-query-status" class="{{ $live['online'] ? 'dz-text-green' : 'dz-text-red' }}">{{ $live['online'] ? 'Online' : 'Offline' }}</dd>
+                @php
+                    $initialStatus = (string) ($live['server_status'] ?? ($live['online'] ? 'running' : 'offline'));
+                    $initialStatusClass = match (strtolower($initialStatus)) {
+                        'running'          => 'dz-text-green',
+                        'offline',
+                        'stopping',
+                        'suspended',
+                        'install failed'   => 'dz-text-red',
+                        'starting',
+                        'installing',
+                        'restoring backup' => 'dz-text-amber',
+                        default            => '',
+                    };
+                @endphp
+                <dd id="dz-query-status" class="{{ $initialStatusClass }}">{{ ucfirst($initialStatus) }}</dd>
             </div>
             <div class="dz-stat"><dt>Query Endpoint</dt><dd id="dz-query-endpoint">{{ $live['endpoint'] ?? 'Unknown' }}</dd></div>
             <div class="dz-stat"><dt>Players</dt><dd id="dz-query-players">{{ $live['player_count'] ?? (($live['players'] ?? 0) . ' / ' . ($live['max_players'] ?? 64)) }}</dd></div>
@@ -199,9 +213,20 @@
             if (res.ok) {
                 const online = !!data.online;
                 const panelRunning = !!data.panel_running;
+                const statusValue = String(data.server_status || (online ? 'running' : (panelRunning ? 'starting' : 'offline')));
+                const statusClassMap = {
+                    running: 'dz-text-green',
+                    offline: 'dz-text-red',
+                    stopping: 'dz-text-red',
+                    suspended: 'dz-text-red',
+                    'install failed': 'dz-text-red',
+                    starting: 'dz-text-amber',
+                    installing: 'dz-text-amber',
+                    'restoring backup': 'dz-text-amber',
+                };
                 if (statusEl) {
-                    statusEl.textContent = online ? 'Online' : (panelRunning ? 'Running (query offline)' : 'Offline');
-                    statusEl.className = (online || panelRunning) ? 'dz-text-green' : 'dz-text-red';
+                    statusEl.textContent = statusValue.charAt(0).toUpperCase() + statusValue.slice(1);
+                    statusEl.className = statusClassMap[statusValue.toLowerCase()] || '';
                 }
                 if (endpointEl) { endpointEl.textContent = data.endpoint || 'Unknown'; }
                 if (playersEl) {

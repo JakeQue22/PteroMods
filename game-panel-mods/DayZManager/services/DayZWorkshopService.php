@@ -103,6 +103,22 @@ final class DayZWorkshopService
             return $this->memo[$memoKey] = $this->databaseMods();
         }
 
+        // Proactively rename any folder still using its numeric Workshop ID
+        // (e.g. `@1559212036`) to the mod's friendly name and drop that ID
+        // from the SteamCMD download variable. Previously this only happened
+        // while actively polling a fresh install (syncInstalledTypesExtra()),
+        // so a mod installed/updated through any other path (server restart,
+        // externally edited modlist.html, etc.) kept its numeric folder name
+        // forever, which made every subsequent scan treat it as "not
+        // installed" and re-queue/re-download it into a duplicate @ID folder.
+        if ($this->renameNumericModFolders($server, $folders)) {
+            $this->gateway->clearFileListingCache($server);
+            $startup = $this->startup->startup($server);
+            $loadOrder = $startup['mods'];
+            $serverMods = $startup['server_mods'];
+            $folders = $this->modFolders($server);
+        }
+
         $known = [];
 
         foreach ($folders as $folder) {
@@ -246,6 +262,27 @@ final class DayZWorkshopService
 
         // Re-index positions after deduplication.
         $mods = array_values($deduped);
+
+        // The Community Framework must always be shown (and load) first: many
+        // scripted mods depend on it, and loading it after them crashes the
+        // server. This mirrors the same enforcement applied to the persisted
+        // load order in enforceCommunityFrameworkFirst(), so the displayed
+        // "Load position" always matches what will actually happen on boot.
+        $cfIndex = null;
+
+        foreach ($mods as $idx => $mod) {
+            if ((string) ($mod['workshop_id'] ?? '') === WorkshopDependencyPlanner::COMMUNITY_FRAMEWORK_ID) {
+                $cfIndex = $idx;
+                break;
+            }
+        }
+
+        if ($cfIndex !== null && $cfIndex > 0) {
+            $cfMod = $mods[$cfIndex];
+            unset($mods[$cfIndex]);
+            array_unshift($mods, $cfMod);
+            $mods = array_values($mods);
+        }
 
         foreach ($mods as $idx => $_) {
             $mods[$idx]['position'] = $idx;
@@ -1018,6 +1055,55 @@ final class DayZWorkshopService
     }
 
     /**
+     * Moves the Community Framework (CF Tools, Workshop ID
+     * {@see WorkshopDependencyPlanner::COMMUNITY_FRAMEWORK_ID}) to the front of
+     * an enabled load order, if present.
+     *
+     * CF must load before any mod that depends on it (nearly every scripted
+     * mod does); loading it later crashes the server or breaks dependent
+     * mods. Enable/disable/reorder never disturbs the rest of the order, only
+     * CF's own position, so a drag-and-drop reorder that moves CF elsewhere
+     * is silently corrected back to the front.
+     *
+     * @param list<string> $order
+     * @return list<string>
+     */
+    private function enforceCommunityFrameworkFirst(mixed $server, array $order): array
+    {
+        if (count($order) < 2) {
+            return $order;
+        }
+
+        $cfIndex = null;
+
+        foreach ($order as $index => $folder) {
+            $bare = ltrim(strtolower(trim($folder)), '@');
+
+            if ($bare === WorkshopDependencyPlanner::COMMUNITY_FRAMEWORK_ID) {
+                $cfIndex = $index;
+                break;
+            }
+
+            $mod = $this->findMod($folder, $server);
+
+            if ($mod !== null && (string) ($mod['workshop_id'] ?? '') === WorkshopDependencyPlanner::COMMUNITY_FRAMEWORK_ID) {
+                $cfIndex = $index;
+                break;
+            }
+        }
+
+        if ($cfIndex === null || $cfIndex === 0) {
+            return $order;
+        }
+
+        $folder = $order[$cfIndex];
+        unset($order[$cfIndex]);
+        array_unshift($order, $folder);
+
+        return array_values($order);
+    }
+
+    /**
      * Writes a load order back to Pterodactyl and reports the outcome.
      *
      * @param list<string> $order
@@ -1025,6 +1111,7 @@ final class DayZWorkshopService
      */
     private function persistOrder(mixed $server, array $order, string $action): array
     {
+        $order = $this->enforceCommunityFrameworkFirst($server, $order);
         $result = $this->startup->saveModList($server, $order);
         // Clear the memo before reading the updated Workshop ID list so that
         // modlist.html reflects the new enabled state, not the stale cache.
@@ -1313,6 +1400,61 @@ final class DayZWorkshopService
         }
 
         return $dependents;
+    }
+
+    /**
+     * Scans every mod folder still named after its bare numeric Workshop ID
+     * (e.g. `@1559212036`) and, once its `meta.cpp`/`mod.cpp` is readable,
+     * renames it to a friendly `@ModName` folder and removes the ID from the
+     * SteamCMD download variable so it stops being re-queued/re-downloaded.
+     *
+     * Returns true when at least one folder was renamed, so callers can
+     * refresh any cached folder/startup listings before continuing.
+     *
+     * @param list<array{name: string, size: int}> $folders
+     */
+    private function renameNumericModFolders(mixed $server, array $folders): bool
+    {
+        $renamed = false;
+
+        foreach ($folders as $folder) {
+            $folderName = (string) ($folder['name'] ?? '');
+            $bare = ltrim($folderName, '@');
+
+            if ($bare === '' || !ctype_digit($bare)) {
+                continue;
+            }
+
+            $meta = $this->modMetadata($server, $folderName);
+            $title = (string) ($meta['name'] ?? '');
+
+            if ($title === '') {
+                // meta.cpp/mod.cpp not readable yet (mid-download) — nothing to rename.
+                continue;
+            }
+
+            $newFolderName = $this->maybeRenameFolderToModName($server, $folderName, $title, $bare);
+
+            if ($newFolderName === $folderName) {
+                continue;
+            }
+
+            $renamed = true;
+
+            $this->startup->removeWorkshopIds(
+                $server,
+                [$bare],
+                $this->modlistWorkshopIds($server),
+            );
+
+            $this->configuration->syncTypesExtraForMod($server, $newFolderName, $title);
+        }
+
+        if ($renamed) {
+            $this->memo = [];
+        }
+
+        return $renamed;
     }
 
     /**

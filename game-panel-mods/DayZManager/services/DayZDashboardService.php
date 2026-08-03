@@ -86,7 +86,7 @@ final class DayZDashboardService
      *
      * @param array<string, mixed> $live
      */
-    private function resolveServerVersion(mixed $model, array $live): string
+    public function resolveServerVersion(mixed $model, array $live): string
     {
         $version = trim((string) ($live['version'] ?? ''));
 
@@ -259,7 +259,7 @@ final class DayZDashboardService
      * @param array{online: bool}                                              $live
      * @param array{state: string, is_suspended: bool, utilization: array}|null $details
      */
-    private function resolveStatus(mixed $model, array $live, ?array $details): string
+    public function resolveStatus(mixed $model, array $live, ?array $details): string
     {
         $installState = $this->installState($model);
 
@@ -316,7 +316,7 @@ final class DayZDashboardService
      * @param array{online: bool}                                              $live
      * @param array{state: string, is_suspended: bool, utilization: array}|null $details
      */
-    private function statusSource(mixed $model, array $live, ?array $details): string
+    public function statusSource(mixed $model, array $live, ?array $details): string
     {
         if ($this->installState($model) !== '') {
             return 'panel';
