@@ -296,7 +296,7 @@ final class DayZWorkshopService
      *
      * @return array<string, mixed>
      */
-    public function browse(string $term = '', int $page = 1, mixed $server = null): array
+    public function browse(string $term = '', int $page = 1, mixed $server = null, array $options = []): array
     {
         $apiKey = $this->steamApiKey();
 
@@ -305,13 +305,18 @@ final class DayZWorkshopService
                 'items' => [],
                 'page' => $page,
                 'has_more' => false,
+                'per_page' => 24,
+                'sort' => 'most_popular',
+                'filters' => ['type' => '', 'mod_type' => '', 'required_dlc' => ''],
+                'available_sorts' => $this->browseClient->availableSorts(),
+                'available_filters' => $this->browseClient->availableFilters(),
                 'enabled' => false,
                 'message' => 'Set the STEAM_WEB_API_KEY environment variable (a free Steam Web API key) '
                     . 'on the panel to enable browsing the Workshop.',
             ];
         }
 
-        $payload = $this->browseClient->search($term, $page, $apiKey);
+        $payload = $this->browseClient->search($term, $page, $apiKey, $options);
 
         if ($server === null || !is_array($payload['items'] ?? null)) {
             return $payload + ['enabled' => true, 'message' => ''];
@@ -472,9 +477,16 @@ final class DayZWorkshopService
     public function installStatus(array $workshopIds, mixed $server = null): array
     {
         $server = $this->resolveServer($server);
+        $persistedQueue = $this->persistedQueue($server);
+        $persistedIds = array_values(array_filter(array_map(
+            static fn (array $entry): string => trim((string) ($entry['workshop_id'] ?? '')),
+            $persistedQueue,
+        ), static fn (string $id): bool => $id !== ''));
 
         if ($workshopIds === []) {
-            $workshopIds = array_column($this->persistedQueue($server), 'workshop_id');
+            $workshopIds = $persistedIds;
+        } elseif ($persistedIds !== []) {
+            $workshopIds = array_values(array_intersect($workshopIds, $persistedIds));
         }
 
         // Clear the file-listing cache so the status check always reads the

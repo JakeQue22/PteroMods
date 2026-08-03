@@ -41,13 +41,45 @@
             <h3>Browse DayZ Workshop</h3>
             <button type="button" class="dz-btn dz-btn-sm" onclick="pteroCloseBrowseModal()">✕ Close</button>
         </div>
-        <div class="dz-form">
+        <div class="dz-form dz-browse-toolbar">
             <input id="ptero-browse-search" class="dz-input" type="text" placeholder="Search Workshop mods…"
                    onkeydown="if (event.key === 'Enter') { pteroBrowseSearch(); }" />
+            <select id="ptero-browse-sort" class="dz-input" onchange="pteroBrowseApplyOptions()">
+                <option value="most_popular">Most Popular</option>
+                <option value="most_subscribed">Most Subscribed</option>
+                <option value="last_updated">Last Updated</option>
+                <option value="new">New</option>
+            </select>
             <button class="dz-btn" onclick="pteroBrowseSearch()">Search</button>
         </div>
         <p id="ptero-browse-message" class="dz-sub"></p>
-        <div id="ptero-browse-grid" class="dz-browse-grid"></div>
+        <div class="dz-browse-layout">
+            <aside class="dz-browse-sidebar">
+                <div class="dz-browse-sidebar-section">
+                    <h4>Type</h4>
+                    <div id="ptero-browse-filter-type" class="dz-browse-filter-group"></div>
+                </div>
+                <div class="dz-browse-sidebar-section">
+                    <h4>Mod Type</h4>
+                    <div id="ptero-browse-filter-mod-type" class="dz-browse-filter-group"></div>
+                </div>
+                <div class="dz-browse-sidebar-section">
+                    <h4>Required DLC</h4>
+                    <div id="ptero-browse-filter-required-dlc" class="dz-browse-filter-group"></div>
+                </div>
+            </aside>
+            <div class="dz-browse-main">
+                <div id="ptero-browse-grid" class="dz-browse-grid"></div>
+                <div class="dz-browse-footer">
+                    <button type="button" id="ptero-browse-prev" class="dz-btn dz-btn-ghost dz-btn-sm" onclick="pteroBrowsePage(-1)">← Previous</button>
+                    <span id="ptero-browse-page-label" class="dz-sub">Page 1</span>
+                    <button type="button" id="ptero-browse-next" class="dz-btn dz-btn-ghost dz-btn-sm" onclick="pteroBrowsePage(1)">Next →</button>
+                </div>
+            </div>
+            <aside id="ptero-browse-details" class="dz-browse-details">
+                <p class="dz-sub">Select a Workshop item to view details.</p>
+            </aside>
+        </div>
     </div>
 </div>
 

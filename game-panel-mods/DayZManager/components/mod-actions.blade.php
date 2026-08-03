@@ -4,10 +4,61 @@
     const ENDPOINT_BASE = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/mods/';
     const queuedWorkshopIds = new Set();
     const installedWorkshopIds = new Set(@json($installed_workshop_ids ?? []));
+    let installPollToken = 0;
+    const browseState = {
+        term: '',
+        page: 1,
+        hasMore: false,
+        sort: 'most_popular',
+        filters: { type: '', mod_type: '', required_dlc: '' },
+        items: [],
+        selectedId: '',
+    };
 
     function csrfToken() {
         const meta = document.querySelector('meta[name="csrf-token"]');
         return meta ? meta.content : '';
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatNumber(value) {
+        const number = Number(value || 0);
+        return Number.isFinite(number) ? number.toLocaleString() : '0';
+    }
+
+    function formatFileSize(bytes) {
+        const size = Number(bytes || 0);
+        if (!Number.isFinite(size) || size <= 0) {
+            return 'Unknown size';
+        }
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let value = size;
+        let unit = 0;
+        while (value >= 1024 && unit < units.length - 1) {
+            value /= 1024;
+            unit += 1;
+        }
+        return (value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)) + ' ' + units[unit];
+    }
+
+    function formatTimestamp(value) {
+        const timestamp = Number(value || 0);
+        if (!Number.isFinite(timestamp) || timestamp <= 0) {
+            return 'Unknown';
+        }
+        try {
+            return new Date(timestamp * 1000).toLocaleDateString();
+        } catch (err) {
+            return 'Unknown';
+        }
     }
 
     async function apiPost(endpoint, body) {
@@ -32,12 +83,13 @@
         });
     }
 
-    // ---------------------------------------------------------------------------
-    // Queue display helpers
-    // ---------------------------------------------------------------------------
-
     function normalizeWorkshopId(value) {
         return String(value || '').trim();
+    }
+
+    function isBrowseModalOpen() {
+        const modal = document.getElementById('ptero-browse-modal');
+        return !!modal && !modal.classList.contains('dz-hidden');
     }
 
     function refreshQueueActions() {
@@ -51,13 +103,20 @@
     function renderQueueList(queue, complete) {
         const container = document.getElementById('ptero-install-queue');
         const status = document.getElementById('ptero-install-status');
-        if (!container) return;
+        if (!container) {
+            return;
+        }
 
         queuedWorkshopIds.clear();
 
         if (!Array.isArray(queue) || queue.length === 0) {
             container.classList.add('dz-hidden');
+            container.innerHTML = '';
             refreshQueueActions();
+            if (isBrowseModalOpen()) {
+                renderBrowseGrid();
+                renderBrowseDetails();
+            }
             return;
         }
 
@@ -77,12 +136,12 @@
             const row = document.createElement('div');
             row.className = 'dz-queue-item';
             row.innerHTML = (entry.thumbnail
-                ? '<img src="' + entry.thumbnail + '" alt="" loading="lazy" class="dz-queue-thumb" />'
+                ? '<img src="' + escapeHtml(entry.thumbnail) + '" alt="" loading="lazy" class="dz-queue-thumb" />'
                 : '<div class="dz-queue-thumb dz-queue-noimg"></div>')
-                + '<span class="dz-queue-label">' + label + '</span>'
+                + '<span class="dz-queue-label">' + escapeHtml(label) + '</span>'
                 + '<span class="dz-queue-status ' + (done ? 'dz-text-green' : 'dz-text-amber') + '">'
                 + (done ? '✓ Installed' : '⧗ Queued') + '</span>'
-                + '<button type="button" class="dz-btn dz-btn-sm dz-btn-red" data-queue-remove="' + workshopId + '">✕</button>';
+                + '<button type="button" class="dz-btn dz-btn-sm dz-btn-red" data-queue-remove="' + escapeHtml(workshopId) + '">✕</button>';
             container.appendChild(row);
 
             const removeBtn = row.querySelector('[data-queue-remove]');
@@ -102,28 +161,38 @@
         }
 
         refreshQueueActions();
+
+        if (isBrowseModalOpen()) {
+            renderBrowseGrid();
+            renderBrowseDetails();
+        }
     }
 
-    async function pollInstallStatus(workshopIds, attemptsLeft) {
-        if (attemptsLeft <= 0) {
+    function startInstallPolling(workshopIds) {
+        installPollToken += 1;
+        const token = installPollToken;
+        pollInstallStatus(workshopIds, 90, token);
+    }
+
+    async function pollInstallStatus(workshopIds, attemptsLeft, token) {
+        if (attemptsLeft <= 0 || token !== installPollToken) {
             return;
         }
         try {
             const res = await apiGet('install/status', { workshop_ids: JSON.stringify(workshopIds) });
             const data = await res.json().catch(() => ({}));
-            if (!res.ok || !Array.isArray(data.queue)) {
+            if (token !== installPollToken || !res.ok || !Array.isArray(data.queue)) {
                 return;
             }
             renderQueueList(data.queue, data.complete);
             if (!data.complete) {
-                setTimeout(function () { pollInstallStatus(workshopIds, attemptsLeft - 1); }, 4000);
+                setTimeout(function () { pollInstallStatus(workshopIds, attemptsLeft - 1, token); }, 4000);
             }
         } catch (err) {
             // Polling failures are silent; the last known status stays on screen.
         }
     }
 
-    // Restores any install still in progress when the page loads.
     async function resumeQueue() {
         try {
             const res = await apiGet('install/queue');
@@ -133,7 +202,7 @@
             }
             renderQueueList(data.queue, data.complete);
             if (!data.complete) {
-                pollInstallStatus(data.queue.map(function (e) { return e.workshop_id; }), 90);
+                startInstallPolling(data.queue.map(function (entry) { return entry.workshop_id; }));
             }
         } catch (err) {
             // No persisted queue, or the request failed; nothing to resume.
@@ -145,10 +214,6 @@
     } else {
         resumeQueue();
     }
-
-    // ---------------------------------------------------------------------------
-    // Lookup dropdown
-    // ---------------------------------------------------------------------------
 
     let lookupTimer = null;
 
@@ -174,8 +239,8 @@
         dropdown.innerHTML = '<button type="button" class="dz-lookup-item' + (disabled ? ' is-disabled' : '') + '"'
             + (disabled ? ' disabled' : '')
             + '>'
-            + (info.thumbnail ? '<img src="' + info.thumbnail + '" alt="" loading="lazy" />' : '')
-            + '<span>' + (info.title || ('Workshop ' + info.workshop_id)) + ' <small>(' + info.workshop_id + ')</small></span>'
+            + (info.thumbnail ? '<img src="' + escapeHtml(info.thumbnail) + '" alt="" loading="lazy" />' : '')
+            + '<span>' + escapeHtml(info.title || ('Workshop ' + info.workshop_id)) + ' <small>(' + escapeHtml(info.workshop_id) + ')</small></span>'
             + '<span class="dz-text-muted" style="font-size:0.72rem;margin-left:auto;">'
             + (alreadyInstalled ? 'Already installed' : (alreadyQueued ? 'Already queued' : 'Click to queue'))
             + '</span>'
@@ -230,82 +295,264 @@
 
     attachLookup();
 
-    // ---------------------------------------------------------------------------
-    // Browse modal
-    // ---------------------------------------------------------------------------
+    function browseControls() {
+        return {
+            grid: document.getElementById('ptero-browse-grid'),
+            message: document.getElementById('ptero-browse-message'),
+            details: document.getElementById('ptero-browse-details'),
+            pageLabel: document.getElementById('ptero-browse-page-label'),
+            prev: document.getElementById('ptero-browse-prev'),
+            next: document.getElementById('ptero-browse-next'),
+            search: document.getElementById('ptero-browse-search'),
+            sort: document.getElementById('ptero-browse-sort'),
+            type: document.getElementById('ptero-browse-filter-type'),
+            modType: document.getElementById('ptero-browse-filter-mod-type'),
+            requiredDlc: document.getElementById('ptero-browse-filter-required-dlc'),
+        };
+    }
 
-    async function loadBrowseResults(term, page) {
-        const grid = document.getElementById('ptero-browse-grid');
-        const message = document.getElementById('ptero-browse-message');
-        if (!grid) {
+    function selectedBrowseItem() {
+        const selectedId = browseState.selectedId;
+        if (!selectedId) {
+            return browseState.items[0] || null;
+        }
+        return browseState.items.find(function (item) {
+            return normalizeWorkshopId(item.workshop_id) === selectedId;
+        }) || browseState.items[0] || null;
+    }
+
+    function renderBrowseFilters(definitions, group, container) {
+        if (!container) {
             return;
         }
-        grid.innerHTML = '<p class="dz-sub">Loading…</p>';
-        if (message) {
-            message.textContent = '';
+        container.innerHTML = '';
+        const allButton = document.createElement('button');
+        allButton.type = 'button';
+        allButton.className = 'dz-browse-filter' + (!browseState.filters[group] ? ' is-active' : '');
+        allButton.textContent = 'All';
+        allButton.addEventListener('click', function () {
+            browseState.filters[group] = '';
+            loadBrowseResults(browseState.term, 1);
+        });
+        container.appendChild(allButton);
+
+        (definitions || []).forEach(function (definition) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'dz-browse-filter' + (browseState.filters[group] === definition.value ? ' is-active' : '');
+            button.innerHTML = '<span>' + escapeHtml(definition.label) + '</span>'
+                + (definition.count ? '<small>' + escapeHtml(definition.count) + '</small>' : '');
+            button.addEventListener('click', function () {
+                browseState.filters[group] = browseState.filters[group] === definition.value ? '' : definition.value;
+                loadBrowseResults(browseState.term, 1);
+            });
+            container.appendChild(button);
+        });
+    }
+
+    function renderBrowseDetails(item) {
+        const controls = browseControls();
+        if (!controls.details) {
+            return;
+        }
+        if (!item) {
+            controls.details.innerHTML = '<p class="dz-sub">Select a Workshop item to view details.</p>';
+            return;
+        }
+        const workshopId = normalizeWorkshopId(item.workshop_id);
+        const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
+        const alreadyInstalled = (workshopId !== '' && installedWorkshopIds.has(workshopId)) || !!item.installed;
+        const disabled = alreadyQueued || alreadyInstalled;
+        const description = String(item.description || '').trim();
+        const tags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : [];
+        controls.details.innerHTML = ''
+            + '<div class="dz-browse-details-card">'
+            + (item.thumbnail ? '<img src="' + escapeHtml(item.thumbnail) + '" alt="" loading="lazy" class="dz-browse-details-thumb" />' : '<div class="dz-browse-details-thumb dz-browse-noimg"></div>')
+            + '<h4>' + escapeHtml(item.title || ('Workshop ' + workshopId)) + '</h4>'
+            + '<p class="dz-sub">Workshop ID: <code>' + escapeHtml(workshopId) + '</code></p>'
+            + '<dl class="dz-browse-meta">'
+            + '<div><dt>Updated</dt><dd>' + escapeHtml(formatTimestamp(item.time_updated)) + '</dd></div>'
+            + '<div><dt>Published</dt><dd>' + escapeHtml(formatTimestamp(item.time_created)) + '</dd></div>'
+            + '<div><dt>Subscribers</dt><dd>' + escapeHtml(formatNumber(item.subscriptions)) + '</dd></div>'
+            + '<div><dt>Votes</dt><dd>' + escapeHtml(formatNumber(item.votes_up)) + '</dd></div>'
+            + '<div><dt>Size</dt><dd>' + escapeHtml(formatFileSize(item.file_size)) + '</dd></div>'
+            + '</dl>'
+            + (tags.length > 0 ? '<div class="dz-tags dz-browse-tags">' + tags.map(function (tag) {
+                return '<span>' + escapeHtml(tag) + '</span>';
+            }).join('') + '</div>' : '')
+            + '<p class="dz-browse-description">' + escapeHtml(description || 'No description provided.') + '</p>'
+            + '<div class="dz-browse-detail-actions">'
+            + '<button type="button" class="dz-btn dz-btn-sm" data-browse-install'
+            + (disabled ? ' disabled' : '')
+            + '>' + (alreadyInstalled ? 'Already installed' : (alreadyQueued ? 'Already queued' : 'Queue install')) + '</button>'
+            + '<a class="dz-btn dz-btn-sm dz-btn-ghost" href="' + escapeHtml(item.view_url || ('https://steamcommunity.com/sharedfiles/filedetails/?id=' + workshopId)) + '" target="_blank" rel="noopener noreferrer">Open on Steam</a>'
+            + '</div>'
+            + '</div>';
+
+        const installButton = controls.details.querySelector('[data-browse-install]');
+        if (installButton && !disabled) {
+            installButton.addEventListener('click', function () {
+                const input = document.getElementById('ptero-workshop-ref');
+                if (input) {
+                    input.value = workshopId;
+                }
+                window.pteroInstallMod();
+            });
+        }
+    }
+
+    function renderBrowseGrid() {
+        const controls = browseControls();
+        if (!controls.grid) {
+            return;
+        }
+        if (!Array.isArray(browseState.items) || browseState.items.length === 0) {
+            controls.grid.innerHTML = '<p class="dz-sub">No mods found.</p>';
+            renderBrowseDetails(null);
+            return;
+        }
+        const selected = selectedBrowseItem();
+        browseState.selectedId = selected ? normalizeWorkshopId(selected.workshop_id) : '';
+        controls.grid.innerHTML = '';
+
+        browseState.items.forEach(function (item) {
+            const workshopId = normalizeWorkshopId(item.workshop_id);
+            const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
+            const alreadyInstalled = (workshopId !== '' && installedWorkshopIds.has(workshopId)) || !!item.installed;
+            const disabled = alreadyQueued || alreadyInstalled;
+            const card = document.createElement('div');
+            card.className = 'dz-browse-card' + (browseState.selectedId === workshopId ? ' is-selected' : '') + (disabled ? ' is-disabled' : '');
+            card.innerHTML = ''
+                + (item.thumbnail ? '<img src="' + escapeHtml(item.thumbnail) + '" alt="" loading="lazy" />' : '<div class="dz-browse-noimg"></div>')
+                + '<div class="dz-browse-card-body">'
+                + '<strong>' + escapeHtml(item.title || ('Workshop ' + workshopId)) + '</strong>'
+                + '<span class="dz-text-muted">ID ' + escapeHtml(workshopId) + '</span>'
+                + '<span class="dz-text-muted">' + escapeHtml(formatNumber(item.subscriptions)) + ' subscribers</span>'
+                + (alreadyInstalled ? '<span class="dz-text-green">Already installed</span>' : (alreadyQueued ? '<span class="dz-text-amber">Already queued</span>' : ''))
+                + '</div>'
+                + '<div class="dz-browse-card-actions">'
+                + '<button type="button" class="dz-btn dz-btn-sm dz-btn-ghost" data-browse-details>View Details</button>'
+                + '<button type="button" class="dz-btn dz-btn-sm" data-browse-install' + (disabled ? ' disabled' : '') + '>'
+                + (alreadyInstalled ? 'Installed' : (alreadyQueued ? 'Queued' : 'Queue')) + '</button>'
+                + '</div>';
+            controls.grid.appendChild(card);
+
+            const select = function () {
+                browseState.selectedId = workshopId;
+                renderBrowseGrid();
+                renderBrowseDetails(item);
+            };
+
+            const detailsButton = card.querySelector('[data-browse-details]');
+            if (detailsButton) {
+                detailsButton.addEventListener('click', select);
+            }
+
+            card.querySelector('img, .dz-browse-noimg, .dz-browse-card-body')?.addEventListener('click', select);
+
+            const installButton = card.querySelector('[data-browse-install]');
+            if (installButton && !disabled) {
+                installButton.addEventListener('click', function () {
+                    const input = document.getElementById('ptero-workshop-ref');
+                    if (input) {
+                        input.value = workshopId;
+                    }
+                    window.pteroInstallMod();
+                });
+            }
+        });
+
+        renderBrowseDetails(selectedBrowseItem());
+    }
+
+    function updateBrowsePagination() {
+        const controls = browseControls();
+        if (controls.pageLabel) {
+            controls.pageLabel.textContent = 'Page ' + browseState.page;
+        }
+        if (controls.prev) {
+            controls.prev.disabled = browseState.page <= 1;
+        }
+        if (controls.next) {
+            controls.next.disabled = !browseState.hasMore;
+        }
+    }
+
+    async function loadBrowseResults(term, page) {
+        const controls = browseControls();
+        if (!controls.grid) {
+            return;
+        }
+        browseState.term = term || '';
+        browseState.page = Math.max(1, Number(page || 1));
+        browseState.sort = controls.sort ? controls.sort.value : browseState.sort;
+        controls.grid.innerHTML = '<p class="dz-sub">Loading…</p>';
+        if (controls.message) {
+            controls.message.textContent = '';
         }
         try {
-            const res = await apiGet('browse', { search: term || '', page: page || 1 });
+            const res = await apiGet('browse', {
+                search: browseState.term,
+                page: browseState.page,
+                sort: browseState.sort,
+                type: browseState.filters.type || '',
+                mod_type: browseState.filters.mod_type || '',
+                required_dlc: browseState.filters.required_dlc || '',
+            });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                grid.innerHTML = '';
-                if (message) {
-                    message.textContent = data.message || 'Could not load the Workshop.';
+                controls.grid.innerHTML = '';
+                if (controls.message) {
+                    controls.message.textContent = data.message || 'Could not load the Workshop.';
                 }
                 return;
             }
             if (data.enabled === false) {
-                grid.innerHTML = '';
-                if (message) {
-                    message.textContent = data.message || 'Workshop browsing is not configured.';
+                controls.grid.innerHTML = '';
+                if (controls.message) {
+                    controls.message.textContent = data.message || 'Workshop browsing is not configured.';
                 }
                 return;
             }
-            if (!Array.isArray(data.items) || data.items.length === 0) {
-                grid.innerHTML = '<p class="dz-sub">No mods found.</p>';
-                return;
+            browseState.items = Array.isArray(data.items) ? data.items : [];
+            browseState.hasMore = !!data.has_more;
+            browseState.sort = String(data.sort || browseState.sort || 'most_popular');
+            browseState.filters = Object.assign({ type: '', mod_type: '', required_dlc: '' }, data.filters || browseState.filters);
+            browseState.selectedId = browseState.items.some(function (item) {
+                return normalizeWorkshopId(item.workshop_id) === browseState.selectedId;
+            }) ? browseState.selectedId : '';
+
+            if (controls.sort) {
+                controls.sort.value = browseState.sort;
             }
-            grid.innerHTML = '';
-            data.items.forEach(function (item) {
-                const workshopId = normalizeWorkshopId(item.workshop_id);
-                const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
-                const alreadyInstalled = (workshopId !== '' && installedWorkshopIds.has(workshopId)) || !!item.installed;
-                const disabled = alreadyQueued || alreadyInstalled;
-                const card = document.createElement('button');
-                card.type = 'button';
-                card.className = 'dz-browse-card' + (disabled ? ' is-disabled' : '');
-                if (disabled) {
-                    card.disabled = true;
-                }
-                card.innerHTML = (item.thumbnail ? '<img src="' + item.thumbnail + '" alt="" loading="lazy" />' : '<div class="dz-browse-noimg"></div>')
-                    + '<span>' + item.title + (alreadyInstalled ? ' (already installed)' : (alreadyQueued ? ' (already queued)' : '')) + '</span>';
-                if (!disabled) {
-                    card.addEventListener('click', function () {
-                        const input = document.getElementById('ptero-workshop-ref');
-                        if (input) {
-                            input.value = item.workshop_id;
-                        }
-                        window.pteroCloseBrowseModal();
-                        window.pteroInstallMod();
-                    });
-                }
-                grid.appendChild(card);
-            });
+
+            renderBrowseFilters((data.available_filters || {}).type || [], 'type', controls.type);
+            renderBrowseFilters((data.available_filters || {}).mod_type || [], 'mod_type', controls.modType);
+            renderBrowseFilters((data.available_filters || {}).required_dlc || [], 'required_dlc', controls.requiredDlc);
+            renderBrowseGrid();
+            updateBrowsePagination();
         } catch (err) {
-            grid.innerHTML = '';
-            if (message) {
-                message.textContent = 'Network error: ' + err.message;
+            controls.grid.innerHTML = '';
+            if (controls.message) {
+                controls.message.textContent = 'Network error: ' + err.message;
             }
         }
     }
 
     window.pteroOpenBrowseModal = function () {
         const modal = document.getElementById('ptero-browse-modal');
+        const controls = browseControls();
         if (!modal) {
             return;
         }
         modal.classList.remove('dz-hidden');
-        loadBrowseResults('', 1);
+        if (controls.search) {
+            controls.search.value = browseState.term;
+        }
+        if (controls.sort) {
+            controls.sort.value = browseState.sort;
+        }
+        loadBrowseResults(browseState.term, browseState.page);
     };
 
     window.pteroCloseBrowseModal = function () {
@@ -334,15 +581,23 @@
     }
 
     window.pteroBrowseSearch = function () {
-        const searchInput = document.getElementById('ptero-browse-search');
-        loadBrowseResults(searchInput ? searchInput.value.trim() : '', 1);
+        const controls = browseControls();
+        loadBrowseResults(controls.search ? controls.search.value.trim() : '', 1);
+    };
+
+    window.pteroBrowseApplyOptions = function () {
+        window.pteroBrowseSearch();
+    };
+
+    window.pteroBrowsePage = function (direction) {
+        const nextPage = browseState.page + Number(direction || 0);
+        if (nextPage < 1 || (direction > 0 && !browseState.hasMore)) {
+            return;
+        }
+        loadBrowseResults(browseState.term, nextPage);
     };
 
     bindBrowseModalClose();
-
-    // ---------------------------------------------------------------------------
-    // Install
-    // ---------------------------------------------------------------------------
 
     window.pteroInstallMod = async function (forceRestart) {
         const input = document.getElementById('ptero-workshop-ref');
@@ -355,7 +610,9 @@
         if (restartNow && !confirm('Queue this install and restart the server now? Warning: this will restart the server immediately.')) {
             return;
         }
-        if (input) { input.value = ''; }
+        if (input) {
+            input.value = '';
+        }
         closeLookupDropdown();
         if (status) {
             status.classList.remove('dz-hidden');
@@ -377,13 +634,14 @@
                     ? data.install_order
                     : [data.workshop_id || ref];
                 if (ids.length > 0) {
-                    pollInstallStatus(ids, 90);
+                    startInstallPolling(ids);
                 }
-            } else {
-                if (status) {
-                    status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
-                    status.className = 'dz-status dz-text-red';
+                if (isBrowseModalOpen()) {
+                    loadBrowseResults(browseState.term, browseState.page);
                 }
+            } else if (status) {
+                status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                status.className = 'dz-status dz-text-red';
             }
         } catch (err) {
             if (status) {
@@ -440,12 +698,16 @@
         if (!confirm('Remove ' + workshopId + ' from the install queue?')) {
             return;
         }
+        installPollToken += 1;
         try {
             const res = await apiPost('remove', { workshop_id: workshopId, queue_only: true });
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.status !== 'failed') {
                 if (Array.isArray(data.queue)) {
-                    renderQueueList(data.queue, data.queue.length > 0 && data.queue.every(function (e) { return !!e.installed; }));
+                    renderQueueList(data.queue, data.queue.length > 0 && data.queue.every(function (entry) { return !!entry.installed; }));
+                    if (data.queue.length > 0) {
+                        startInstallPolling(data.queue.map(function (entry) { return entry.workshop_id; }));
+                    }
                 } else {
                     await resumeQueue();
                 }
@@ -453,6 +715,9 @@
                     status.classList.remove('dz-hidden');
                     status.textContent = data.message || 'Removed from queue.';
                     status.className = 'dz-status dz-text-green';
+                }
+                if (isBrowseModalOpen()) {
+                    loadBrowseResults(browseState.term, browseState.page);
                 }
                 return;
             }

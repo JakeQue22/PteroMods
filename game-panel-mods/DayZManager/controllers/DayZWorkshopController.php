@@ -134,8 +134,14 @@ final class DayZWorkshopController
         $term = $term !== '' ? $term : $this->context->stringInput('search');
         $page = $page > 0 ? $page : (int) $this->context->stringInput('page', '1');
         $model = $this->context->resolve($server)['model'];
+        $options = [
+            'sort' => $this->context->stringInput('sort'),
+            'type' => $this->context->stringInput('type'),
+            'mod_type' => $this->context->stringInput('mod_type'),
+            'required_dlc' => $this->context->stringInput('required_dlc'),
+        ];
 
-        return $this->service->browse($term, max(1, $page), $model);
+        return $this->service->browse($term, max(1, $page), $model, $options);
     }
 
     /**
