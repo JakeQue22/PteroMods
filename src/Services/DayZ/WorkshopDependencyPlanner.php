@@ -9,7 +9,7 @@ namespace PteroMods\Services\DayZ;
  */
 final class WorkshopDependencyPlanner
 {
-    private const COMMUNITY_FRAMEWORK_ID = '1559212036';
+    public const COMMUNITY_FRAMEWORK_ID = '1559212036';
 
     /**
      * @param array<string, array{dependencies?: list<string>, requires_cf?: bool}> $metadata

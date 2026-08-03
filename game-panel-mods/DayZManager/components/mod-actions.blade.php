@@ -5,6 +5,7 @@
     const queuedWorkshopIds = new Set();
     const installedWorkshopIds = new Set(@json($installed_workshop_ids ?? []));
     let installPollToken = 0;
+    let browseFetchController = null;
     const browseState = {
         term: '',
         page: 1,
@@ -115,7 +116,6 @@
             refreshQueueActions();
             if (isBrowseModalOpen()) {
                 renderBrowseGrid();
-                renderBrowseDetails();
             }
             return;
         }
@@ -164,7 +164,6 @@
 
         if (isBrowseModalOpen()) {
             renderBrowseGrid();
-            renderBrowseDetails();
         }
     }
 
@@ -490,14 +489,29 @@
         if (controls.message) {
             controls.message.textContent = '';
         }
+
+        // Abort any previous in-flight browse request so that rapid page
+        // navigation or filter changes never append stale results to the grid.
+        if (browseFetchController) {
+            browseFetchController.abort();
+        }
+        browseFetchController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const signal = browseFetchController ? browseFetchController.signal : undefined;
+
         try {
-            const res = await apiGet('browse', {
+            const url = ENDPOINT_BASE + 'browse?' + new URLSearchParams({
                 search: browseState.term,
                 page: browseState.page,
                 sort: browseState.sort,
                 type: browseState.filters.type || '',
                 mod_type: browseState.filters.mod_type || '',
                 required_dlc: browseState.filters.required_dlc || '',
+            }).toString();
+            const res = await fetch(url, {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' },
+                signal: signal,
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
@@ -532,6 +546,10 @@
             renderBrowseGrid();
             updateBrowsePagination();
         } catch (err) {
+            if (err && err.name === 'AbortError') {
+                // A newer request was started; silently discard this stale response.
+                return;
+            }
             controls.grid.innerHTML = '';
             if (controls.message) {
                 controls.message.textContent = 'Network error: ' + err.message;

@@ -1186,15 +1186,28 @@ final class DayZWorkshopService
         $ids = $extra;
 
         foreach ($this->installedMods($server) as $mod) {
+            $id = trim((string) ($mod['workshop_id'] ?? ''));
+
+            if ($id === '') {
+                continue;
+            }
+
+            // Always include the Community Framework (CF Tools) when it is
+            // installed on the server, regardless of whether it appears in
+            // the -mod= load order. Many eggs download it as a dependency
+            // without explicitly adding it to the load order, so it would
+            // otherwise be silently omitted from modlist.html even though
+            // every connected player needs to have it installed.
+            if ($id === WorkshopDependencyPlanner::COMMUNITY_FRAMEWORK_ID && ($mod['installed'] ?? false)) {
+                $ids[] = $id;
+                continue;
+            }
+
             if (!($mod['enabled'] ?? false)) {
                 continue;
             }
 
-            $id = trim((string) ($mod['workshop_id'] ?? ''));
-
-            if ($id !== '') {
-                $ids[] = $id;
-            }
+            $ids[] = $id;
         }
 
         foreach ($this->persistedQueue($server) as $entry) {
@@ -1326,6 +1339,22 @@ final class DayZWorkshopService
             if ($targetExists) {
                 $this->gateway->deletePath($server, '/' . $folderName);
                 $this->memo = [];
+
+                // Rewrite the load order to use the named folder so the numeric
+                // Workshop ID is removed from startup variables (preventing the
+                // egg from re-downloading the mod into @workshopId on every restart).
+                $order = $this->enabledFolders($server);
+                $updated = array_map(
+                    static fn (string $f): string => strcasecmp($f, $folderName) === 0 ? $newFolderName : $f,
+                    $order,
+                );
+
+                if ($updated !== $order) {
+                    $this->startup->saveModList($server, $updated);
+                    $this->memo = [];
+                }
+
+                $this->renameInFullOrder($server, $folderName, $newFolderName);
 
                 return $newFolderName;
             }
