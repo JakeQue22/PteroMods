@@ -129,9 +129,15 @@ final class DayZWorkshopController
      *
      * @return array<string, mixed>
      */
-    public function browse(mixed $server = null, string $term = '', int $page = 1): array
+    public function browse(mixed $server = null, string $term = '', int $page = 0): array
     {
         $term = $term !== '' ? $term : $this->context->stringInput('search');
+        // $page has no matching {page} route placeholder, so Laravel's method
+        // binding never populates it from the query string; it always keeps
+        // its default value. That default must therefore be falsy (0), or the
+        // `?: stringInput('page')` fallback below would never run and every
+        // request — including "next page" clicks — would silently stay on
+        // page 1 regardless of the `page` query parameter actually sent.
         $page = $page > 0 ? $page : (int) $this->context->stringInput('page', '1');
         $model = $this->context->resolve($server)['model'];
         $options = [

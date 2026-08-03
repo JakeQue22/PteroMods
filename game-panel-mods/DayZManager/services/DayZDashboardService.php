@@ -46,7 +46,7 @@ final class DayZDashboardService
             'server_name'          => $live['name'] ?? $resolved['name'],
             'server_id'            => $resolved['id'],
             'current_map'          => $this->formatMap($live['map'] ?? $this->context->attribute($model, ['map', 'current_map'])),
-            'server_version'       => $live['version'] ?? $this->fallback($this->context->attribute($model, ['version', 'server_version'])),
+            'server_version'       => $this->resolveServerVersion($model, $live),
             'installed_mods'       => $installedMods,
             'installed_mods_count' => count($installedMods),
             'enabled_mods_count'   => count(array_filter($installedMods, static fn (array $mod): bool => (bool) ($mod['enabled'] ?? false))),
@@ -71,6 +71,57 @@ final class DayZDashboardService
         $value = $this->context->attribute($source, $keys);
 
         return is_numeric($value) ? (int) $value : null;
+    }
+
+    /**
+     * Resolves the DayZ server version to display.
+     *
+     * The live Steam query is authoritative when the server answered it.
+     * Otherwise the SteamCMD `appmanifest_223350.acf` file SteamCMD writes
+     * into the server root after every install/update is read directly from
+     * the container (the same way mod metadata is read from `meta.cpp`),
+     * since its `buildid` reflects the actually-installed DayZ build even
+     * while the server itself is offline or not answering Steam queries.
+     * Only when neither source has anything does this fall back to "N/A".
+     *
+     * @param array<string, mixed> $live
+     */
+    private function resolveServerVersion(mixed $model, array $live): string
+    {
+        $version = trim((string) ($live['version'] ?? ''));
+
+        if ($version !== '') {
+            return $version;
+        }
+
+        $buildId = $this->installedBuildId($model);
+
+        if ($buildId !== '') {
+            return 'Build ' . $buildId;
+        }
+
+        return $this->fallback($this->context->attribute($model, ['version', 'server_version']));
+    }
+
+    /**
+     * Reads the `buildid` SteamCMD recorded for the DayZ dedicated server app
+     * (Steam app id 223350) the last time it installed/updated.
+     */
+    private function installedBuildId(mixed $model): string
+    {
+        foreach (['/steamapps/appmanifest_223350.acf', '/appmanifest_223350.acf'] as $path) {
+            $contents = $this->gateway->readFile($model, $path);
+
+            if ($contents === null || $contents === '') {
+                continue;
+            }
+
+            if (preg_match('/"buildid"\s*"(\d+)"/i', $contents, $matches) === 1) {
+                return $matches[1];
+            }
+        }
+
+        return '';
     }
 
     private function fallback(string $value, string $fallback = 'N/A'): string

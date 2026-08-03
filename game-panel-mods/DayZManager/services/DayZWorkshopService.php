@@ -397,7 +397,36 @@ final class DayZWorkshopService
             $persistedQueue,
         ), static fn (string $id): bool => $id !== ''));
         $skipIds = array_values(array_unique(array_merge($installedIds, $queuedIds)));
-        $plan = array_values(array_filter($plan, static fn (string $id): bool => !in_array($id, $skipIds, true)));
+
+        // Also recognize mods that are already present on disk under their
+        // friendly `@ModName` folder rather than the numeric `@workshopId`
+        // folder. `installedWorkshopIds()` only matches on the `publishedid`
+        // recorded in meta.cpp/mod.cpp, which is not always reliable (some
+        // mods ship without it, or it was stripped by a prior manual install),
+        // so every requested/dependency Workshop ID is additionally checked
+        // against the folder name its title would produce. This is the same
+        // scheme `maybeRenameFolderToModName()` uses, so a match here means
+        // SteamCMD would otherwise re-download a mod the server already has.
+        $installedFolderKeys = $this->installedFolderKeys($server);
+        $plan = array_values(array_filter($plan, function (string $id) use ($skipIds, $installedFolderKeys, $metadata): bool {
+            if (in_array($id, $skipIds, true)) {
+                return false;
+            }
+
+            if ($installedFolderKeys === []) {
+                return true;
+            }
+
+            $title = trim((string) ($metadata[$id]['title'] ?? ($this->workshopInfo($id)['title'] ?? '')));
+
+            if ($title === '') {
+                return true;
+            }
+
+            $folderKey = strtolower(ltrim($this->modFolderNameFromTitle($title, $id), '@'));
+
+            return !in_array($folderKey, $installedFolderKeys, true);
+        }));
 
         if ($plan === []) {
             return [
@@ -1237,6 +1266,25 @@ final class DayZWorkshopService
         }
 
         return array_values(array_unique($ids));
+    }
+
+    /**
+     * Every mod folder actually present in the server root, as a lower-cased
+     * key with the leading `@` stripped (e.g. `@CF` -> `cf`).
+     *
+     * Unlike `installedWorkshopIds()`, this is a raw disk scan independent of
+     * whatever `meta.cpp`/`mod.cpp` metadata a folder does or does not carry,
+     * so a mod already installed under its friendly folder name is still
+     * recognized even when its Workshop ID cannot be read from the folder.
+     *
+     * @return list<string>
+     */
+    private function installedFolderKeys(mixed $server): array
+    {
+        return array_values(array_unique(array_map(
+            static fn (array $folder): string => strtolower(ltrim($folder['name'], '@')),
+            $this->modFolders($server),
+        )));
     }
 
     /**
