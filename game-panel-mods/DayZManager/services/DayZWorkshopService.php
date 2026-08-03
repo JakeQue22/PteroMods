@@ -439,6 +439,7 @@ final class DayZWorkshopService
         // Append the new workshop IDs to the egg's MODS variable so the
         // startup script can pass them to SteamCMD on the next boot.
         $this->startup->appendWorkshopIds($server, $plan);
+        $this->appendToEnabledLoadOrder($server, $plan);
         $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
 
         // Restart only when explicitly requested by the operator.
@@ -493,11 +494,20 @@ final class DayZWorkshopService
         // latest files from Wings rather than a 30-second-old snapshot.
         $this->gateway->clearFileListingCache($server);
 
-        $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
-        $complete = $queue !== [] && !in_array(false, array_column($queue, 'installed'), true);
-        $queue = array_values(array_filter($queue, static fn (array $entry): bool => !($entry['installed'] ?? false)));
+        $statusQueue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
+        $complete = $statusQueue !== [] && !in_array(false, array_column($statusQueue, 'installed'), true);
+        $installedIds = array_values(array_filter(array_map(
+            static fn (array $entry): string => (bool) ($entry['installed'] ?? false) ? trim((string) ($entry['workshop_id'] ?? '')) : '',
+            $statusQueue,
+        ), static fn (string $id): bool => $id !== ''));
+        $queue = array_values(array_filter($statusQueue, static fn (array $entry): bool => !($entry['installed'] ?? false)));
 
         $this->persistQueue($server, $queue);
+
+        if ($installedIds !== []) {
+            $this->startup->removeWorkshopIds($server, $installedIds, $this->modlistWorkshopIds($server));
+        }
+
         $this->syncInstalledTypesExtra($server, $workshopIds);
 
         return [
@@ -667,6 +677,48 @@ final class DayZWorkshopService
     private function serverIdentifier(mixed $server): string
     {
         return $server === null ? '' : $this->context->attribute($server, ['uuid', 'uuidShort', 'id']);
+    }
+
+    /**
+     * Ensures newly queued Workshop IDs are present in the `-mod=` load order
+     * so they stay enabled after install unless explicitly disabled.
+     *
+     * @param list<string> $workshopIds
+     */
+    private function appendToEnabledLoadOrder(mixed $server, array $workshopIds): void
+    {
+        $workshopIds = array_values(array_filter(array_map(
+            static fn (mixed $id): string => trim((string) $id),
+            $workshopIds,
+        ), static fn (string $id): bool => ctype_digit($id)));
+
+        if ($workshopIds === []) {
+            return;
+        }
+
+        $order = $this->enabledFolders($server);
+        $changed = false;
+
+        foreach ($workshopIds as $workshopId) {
+            $exists = false;
+
+            foreach ($order as $entry) {
+                if (ltrim(strtolower($entry), '@') === strtolower($workshopId)) {
+                    $exists = true;
+                    break;
+                }
+            }
+
+            if (!$exists) {
+                $order[] = $workshopId;
+                $changed = true;
+            }
+        }
+
+        if ($changed) {
+            $this->startup->saveModList($server, $order);
+            $this->memo = [];
+        }
     }
 
     /**

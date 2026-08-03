@@ -132,35 +132,29 @@ final class WorkshopBrowseClient
             ? $this->queryTypeForSort($sort)
             : self::QUERY_TYPE_RANKED_BY_TEXT_SEARCH;
 
-        try {
-            $response = \Illuminate\Support\Facades\Http::timeout(6)->get(self::ENDPOINT, [
-                'key'                  => $apiKey,
-                'appid'                => self::DAYZ_APP_ID,
-                'creator_appid'        => self::DAYZ_APP_ID,
-                'consumer_appid'       => self::DAYZ_APP_ID,
-                'numperpage'           => self::PER_PAGE,
-                'page'                 => $page,
-                'query_type'           => $queryType,
-                'search_text'          => $term,
-                'requiredtags'         => $this->requiredTagsFromFilters($filters),
-                'return_vote_data'     => true,
-                'return_tags'          => true,
-                'return_previews'      => true,
-                'return_short_description' => true,
-                'strip_description_bbcode' => true,
-            ]);
+        $details = [];
+        $nextCursor = '';
+        $cursor = '*';
 
-            if (!$response->successful()) {
+        for ($currentPage = 1; $currentPage <= $page; $currentPage++) {
+            $response = $this->queryFiles($apiKey, $term, $filters, $queryType, $cursor);
+
+            if ($response === null) {
                 return $empty;
             }
 
-            $details = $response->json('response.publishedfiledetails');
-        } catch (Throwable) {
-            return $empty;
-        }
+            if ($currentPage < $page) {
+                $cursor = $response['next_cursor'];
 
-        if (!is_array($details)) {
-            return $empty;
+                if ($cursor === '') {
+                    return $empty;
+                }
+
+                continue;
+            }
+
+            $details = $response['details'];
+            $nextCursor = $response['next_cursor'];
         }
 
         $items = [];
@@ -206,14 +200,10 @@ final class WorkshopBrowseClient
             ];
         }
 
-        if ($term !== '') {
-            $items = $this->sortItems($items, $sort);
-        }
-
         return [
             'items'    => $items,
             'page'     => $page,
-            'has_more' => count($items) >= self::PER_PAGE,
+            'has_more' => $nextCursor !== '',
             'per_page' => self::PER_PAGE,
             'sort' => $sort,
             'filters' => $filters,
@@ -337,5 +327,50 @@ final class WorkshopBrowseClient
         });
 
         return array_values($items);
+    }
+
+    /**
+     * @param array{type: string, mod_type: string, required_dlc: string} $filters
+     * @return array{details: array<int, mixed>, next_cursor: string}|null
+     */
+    private function queryFiles(string $apiKey, string $term, array $filters, int $queryType, string $cursor): ?array
+    {
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(6)->get(self::ENDPOINT, [
+                'key'                  => $apiKey,
+                'appid'                => self::DAYZ_APP_ID,
+                'creator_appid'        => self::DAYZ_APP_ID,
+                'consumer_appid'       => self::DAYZ_APP_ID,
+                'numperpage'           => self::PER_PAGE,
+                'query_type'           => $queryType,
+                'search_text'          => $term,
+                'requiredtags'         => $this->requiredTagsFromFilters($filters),
+                'return_vote_data'     => true,
+                'return_tags'          => true,
+                'return_previews'      => true,
+                'return_short_description' => true,
+                'strip_description_bbcode' => true,
+                'cursor'               => $cursor,
+            ]);
+
+            if (!$response->successful()) {
+                return null;
+            }
+        } catch (Throwable) {
+            return null;
+        }
+
+        $details = $response->json('response.publishedfiledetails');
+
+        if (!is_array($details)) {
+            return null;
+        }
+
+        $nextCursor = trim((string) $response->json('response.next_cursor', ''));
+
+        return [
+            'details' => $details,
+            'next_cursor' => $nextCursor === '*' ? '' : $nextCursor,
+        ];
     }
 }

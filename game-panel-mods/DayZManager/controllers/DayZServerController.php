@@ -6,6 +6,7 @@ namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZDashboardService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZPanelGateway;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZServerQueryService;
 use GamePanelMods\DayZManager\Services\DayZServerService;
@@ -21,6 +22,7 @@ final class DayZServerController
         private readonly DayZServerService $service = new DayZServerService(),
         private readonly DayZWorkshopService $workshop = new DayZWorkshopService(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
+        private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZDashboardService $dashboard = new DayZDashboardService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
@@ -38,7 +40,10 @@ final class DayZServerController
         $resolved = $this->context->resolve($server);
         $this->query->clearCache($resolved['model']);
         $live = $this->query->query($resolved['model']);
+        $powerState = $this->gateway->state($resolved['model']) ?? '';
         $live['player_count'] = $this->dashboard->formatPlayerCount($live);
+        $live['power_state'] = $powerState;
+        $live['panel_running'] = in_array($powerState, ['running', 'starting', 'stopping'], true);
 
         return $live;
     }

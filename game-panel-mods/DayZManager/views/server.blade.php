@@ -198,9 +198,10 @@
 
             if (res.ok) {
                 const online = !!data.online;
+                const panelRunning = !!data.panel_running;
                 if (statusEl) {
-                    statusEl.textContent = online ? 'Online' : 'Offline';
-                    statusEl.className = online ? 'dz-text-green' : 'dz-text-red';
+                    statusEl.textContent = online ? 'Online' : (panelRunning ? 'Running (query offline)' : 'Offline');
+                    statusEl.className = (online || panelRunning) ? 'dz-text-green' : 'dz-text-red';
                 }
                 if (endpointEl) { endpointEl.textContent = data.endpoint || 'Unknown'; }
                 if (playersEl) {
@@ -209,8 +210,12 @@
                 }
                 if (versionEl) { versionEl.textContent = data.version || 'N/A'; }
                 if (msg) {
-                    msg.textContent = online ? '✓ Server is online.' : '✗ Server is offline or unreachable.';
-                    msg.className = 'dz-status ' + (online ? 'dz-text-green' : 'dz-text-red');
+                    msg.textContent = online
+                        ? '✓ Server is online.'
+                        : (panelRunning
+                            ? '⚠ Server process is running, but the Steam query endpoint is unreachable.'
+                            : '✗ Server is offline or unreachable.');
+                    msg.className = 'dz-status ' + ((online || panelRunning) ? 'dz-text-green' : 'dz-text-red');
                 }
             } else {
                 if (msg) {
