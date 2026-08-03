@@ -52,7 +52,12 @@ final class DayZConfigurationService
             return false;
         }
 
-        $sourcePath = '/' . ltrim($folderName, '/') . '/Extras/types.xml';
+        $sourcePath = $this->findTypesXmlSourcePath($server, $folderName);
+
+        if ($sourcePath === '') {
+            return false;
+        }
+
         $typesXml = $this->gateway->readFile($server, $sourcePath);
 
         if ($typesXml === null || trim($typesXml) === '') {
@@ -73,6 +78,55 @@ final class DayZConfigurationService
         }
 
         return $this->appendMissionTypeEntry($server, $missionPath, $modName);
+    }
+
+    /**
+     * Removes Types_Extra files and cfgeconomycore entries associated with a mod.
+     */
+    public function removeTypesExtraForMod(mixed $server, string $folderName, string $title = '', string $workshopId = ''): bool
+    {
+        $missionPath = $this->activeMissionPath($server);
+
+        if ($missionPath === '') {
+            return false;
+        }
+
+        $candidates = array_values(array_unique(array_filter([
+            $this->sanitizeModNameOrEmpty($title),
+            $this->sanitizeModNameOrEmpty(ltrim($folderName, '@/')),
+            $this->sanitizeModNameOrEmpty($workshopId),
+        ], static fn (string $name): bool => $name !== '')));
+
+        if ($candidates === []) {
+            return false;
+        }
+
+        $changed = false;
+
+        foreach ($candidates as $name) {
+            $deleted = $this->gateway->deletePath($server, $missionPath . '/Types_Extra/' . $name . '.xml');
+            $changed = $changed || $deleted;
+        }
+
+        $cfgPath = $missionPath . '/cfgeconomycore.xml';
+        $cfg = $this->gateway->readFile($server, $cfgPath);
+
+        if ($cfg === null || trim($cfg) === '') {
+            return $changed;
+        }
+
+        $updated = $cfg;
+
+        foreach ($candidates as $name) {
+            $pattern = '/^\h*<file\h+name="Types_Extra\/' . preg_quote($name, '/') . '\.xml"\h+type="types"\h*\/>\h*\R?/mi';
+            $updated = (string) preg_replace($pattern, '', $updated);
+        }
+
+        if ($updated !== $cfg) {
+            $changed = $this->gateway->writeFile($server, $cfgPath, $updated) || $changed;
+        }
+
+        return $changed;
     }
 
     /**
@@ -325,9 +379,74 @@ final class DayZConfigurationService
 
     private function sanitizeModName(string $value): string
     {
-        $value = preg_replace('/[^A-Za-z0-9]+/', '', trim($value)) ?? '';
+        $value = $this->sanitizeModNameOrEmpty($value);
 
         return $value !== '' ? $value : 'WorkshopMod';
+    }
+
+    private function sanitizeModNameOrEmpty(string $value): string
+    {
+        return preg_replace('/[^A-Za-z0-9]+/', '', trim($value)) ?? '';
+    }
+
+    private function findTypesXmlSourcePath(mixed $server, string $folderName): string
+    {
+        $root = '/' . ltrim($folderName, '/');
+        $directCandidates = [
+            $root . '/Extras/types.xml',
+            $root . '/extras/types.xml',
+        ];
+
+        foreach ($directCandidates as $candidate) {
+            $contents = $this->gateway->readFile($server, $candidate);
+
+            if ($contents !== null && trim($contents) !== '') {
+                return $candidate;
+            }
+        }
+
+        $queue = [[$root, 0]];
+        $visited = [];
+
+        while ($queue !== []) {
+            [$path, $depth] = array_shift($queue);
+            $normalized = strtolower($path);
+
+            if (isset($visited[$normalized])) {
+                continue;
+            }
+
+            $visited[$normalized] = true;
+
+            if ($depth > 2) {
+                continue;
+            }
+
+            foreach ($this->gateway->listDirectory($server, $path) as $entry) {
+                if (!($entry['directory'] ?? false) || ($entry['name'] ?? '') === '') {
+                    continue;
+                }
+
+                $child = rtrim($path, '/') . '/' . (string) $entry['name'];
+
+                if (strcasecmp((string) $entry['name'], 'extras') === 0) {
+                    foreach (['types.xml', 'Types.xml'] as $typesFile) {
+                        $candidate = $child . '/' . $typesFile;
+                        $contents = $this->gateway->readFile($server, $candidate);
+
+                        if ($contents !== null && trim($contents) !== '') {
+                            return $candidate;
+                        }
+                    }
+                }
+
+                if ($depth < 2) {
+                    $queue[] = [$child, $depth + 1];
+                }
+            }
+        }
+
+        return '';
     }
 
     private function activeMissionPath(mixed $server): string

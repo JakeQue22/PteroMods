@@ -74,6 +74,8 @@ final class DayZServerService
                 'interval_minutes' => 0,
                 'next_restart_at' => null,
                 'warnings_sent' => [],
+                'warning_minutes_enabled' => self::RESTART_WARNINGS_MINUTES,
+                'warning_messages' => [],
             ];
         }
 
@@ -82,13 +84,21 @@ final class DayZServerService
             'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
             'next_restart_at' => (string) ($schedule['next_restart_at'] ?? ''),
             'warnings_sent' => $this->parseWarnings((string) ($schedule['warnings_sent'] ?? '')),
+            'warning_minutes_enabled' => $this->enabledWarningMinutes($schedule),
+            'warning_messages' => $this->warningMessages($schedule),
         ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function saveRestartSchedule(mixed $server, int $intervalMinutes, bool $enabled): array
+    public function saveRestartSchedule(
+        mixed $server,
+        int $intervalMinutes,
+        bool $enabled,
+        array $warningMinutesEnabled = [],
+        array $warningMessages = [],
+    ): array
     {
         $serverId = $this->serverIdentifier($server);
 
@@ -105,18 +115,30 @@ final class DayZServerService
         }
 
         $nextRestart = $enabled ? date('Y-m-d H:i:s', time() + ($intervalMinutes * 60)) : null;
+        $warningMinutesEnabled = $this->normalizeWarningMinutes($warningMinutesEnabled);
+        $warningMessages = $this->normalizeWarningMessages($warningMessages);
+        $update = [
+            'enabled' => $enabled ? 1 : 0,
+            'interval_minutes' => $intervalMinutes,
+            'next_restart_at' => $nextRestart,
+            'warnings_sent' => '',
+            'updated_at' => date('Y-m-d H:i:s'),
+            'created_at' => date('Y-m-d H:i:s'),
+        ];
+
+        if ($this->hasScheduleColumn('warning_minutes_enabled')) {
+            $update['warning_minutes_enabled'] = implode(',', $warningMinutesEnabled);
+        }
+
+        if ($this->hasScheduleColumn('warning_messages')) {
+            $encoded = json_encode($warningMessages);
+            $update['warning_messages'] = is_string($encoded) ? $encoded : null;
+        }
 
         try {
             \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')->updateOrInsert(
                 ['server_id' => $serverId],
-                [
-                    'enabled' => $enabled ? 1 : 0,
-                    'interval_minutes' => $intervalMinutes,
-                    'next_restart_at' => $nextRestart,
-                    'warnings_sent' => '',
-                    'updated_at' => date('Y-m-d H:i:s'),
-                    'created_at' => date('Y-m-d H:i:s'),
-                ],
+                $update,
             );
         } catch (Throwable) {
             return ['status' => 'failed', 'message' => 'Failed to save restart schedule.'];
@@ -151,11 +173,13 @@ final class DayZServerService
 
         $now = time();
         $warningsSent = $this->parseWarnings((string) ($schedule['warnings_sent'] ?? ''));
+        $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
+        $warningMessages = $this->warningMessages($schedule);
         $messagesSent = [];
 
-        foreach (self::RESTART_WARNINGS_MINUTES as $minutes) {
+        foreach ($enabledWarningMinutes as $minutes) {
             if ($now >= ($next - ($minutes * 60)) && !in_array($minutes, $warningsSent, true)) {
-                $message = sprintf("<t color='#ff0000'>Server restart in %s.</t>", $this->formatMinutes($minutes));
+                $message = $this->warningMessage($minutes, $warningMessages);
                 if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
                     $warningsSent[] = $minutes;
                     $messagesSent[] = $message;
@@ -172,7 +196,7 @@ final class DayZServerService
             $warningsSent = [];
         }
 
-        $this->storeScheduleTick($serverId, $interval, $next, $warningsSent, true);
+        $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true);
 
         return [
             'status' => $restarted ? 'restarted' : ($messagesSent === [] ? 'waiting' : 'warning_sent'),
@@ -251,23 +275,34 @@ final class DayZServerService
     /**
      * @param list<int> $warningsSent
      */
-    private function storeScheduleTick(string $serverId, int $interval, int $next, array $warningsSent, bool $enabled): void
+    private function storeScheduleTick(string $serverId, array $schedule, int $interval, int $next, array $warningsSent, bool $enabled): void
     {
         if ($serverId === '' || !$this->hasScheduleTable()) {
             return;
         }
 
+        $update = [
+            'enabled' => $enabled ? 1 : 0,
+            'interval_minutes' => $interval,
+            'next_restart_at' => date('Y-m-d H:i:s', $next),
+            'warnings_sent' => implode(',', $warningsSent),
+            'updated_at' => date('Y-m-d H:i:s'),
+            'created_at' => date('Y-m-d H:i:s'),
+        ];
+
+        if ($this->hasScheduleColumn('warning_minutes_enabled')) {
+            $update['warning_minutes_enabled'] = implode(',', $this->enabledWarningMinutes($schedule));
+        }
+
+        if ($this->hasScheduleColumn('warning_messages')) {
+            $encoded = json_encode($this->warningMessages($schedule));
+            $update['warning_messages'] = is_string($encoded) ? $encoded : null;
+        }
+
         try {
             \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')->updateOrInsert(
                 ['server_id' => $serverId],
-                [
-                    'enabled' => $enabled ? 1 : 0,
-                    'interval_minutes' => $interval,
-                    'next_restart_at' => date('Y-m-d H:i:s', $next),
-                    'warnings_sent' => implode(',', $warningsSent),
-                    'updated_at' => date('Y-m-d H:i:s'),
-                    'created_at' => date('Y-m-d H:i:s'),
-                ],
+                $update,
             );
         } catch (Throwable) {
             // Best effort.
@@ -299,5 +334,109 @@ final class DayZServerService
         }
 
         return $minutes . ' minute' . ($minutes === 1 ? '' : 's');
+    }
+
+    private function hasScheduleColumn(string $column): bool
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Schema')) {
+            return false;
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Schema::hasColumn('dayz_restart_schedules', $column);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $schedule
+     * @return list<int>
+     */
+    private function enabledWarningMinutes(array $schedule): array
+    {
+        return $this->normalizeWarningMinutes($this->parseWarnings((string) ($schedule['warning_minutes_enabled'] ?? '')));
+    }
+
+    /**
+     * @param array<string, mixed> $schedule
+     * @return array<string, string>
+     */
+    private function warningMessages(array $schedule): array
+    {
+        $raw = (string) ($schedule['warning_messages'] ?? '');
+
+        if ($raw === '') {
+            return [];
+        }
+
+        $decoded = json_decode($raw, true);
+
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return $this->normalizeWarningMessages($decoded);
+    }
+
+    /**
+     * @param list<int> $minutes
+     * @return list<int>
+     */
+    private function normalizeWarningMinutes(array $minutes): array
+    {
+        $allowed = array_flip(self::RESTART_WARNINGS_MINUTES);
+        $normalized = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $minute): int => (int) $minute,
+            $minutes,
+        ), static fn (int $minute) use ($allowed): bool => isset($allowed[$minute]))));
+        rsort($normalized);
+
+        return $normalized === [] ? self::RESTART_WARNINGS_MINUTES : $normalized;
+    }
+
+    /**
+     * @param array<string, mixed> $messages
+     * @return array<string, string>
+     */
+    private function normalizeWarningMessages(array $messages): array
+    {
+        $allowed = array_flip(self::RESTART_WARNINGS_MINUTES);
+        $normalized = [];
+
+        foreach ($messages as $key => $message) {
+            $minute = (int) $key;
+
+            if (!isset($allowed[$minute])) {
+                continue;
+            }
+
+            $value = trim((string) $message);
+
+            if ($value === '') {
+                continue;
+            }
+
+            $normalized[(string) $minute] = function_exists('mb_substr')
+                ? mb_substr($value, 0, 240)
+                : substr($value, 0, 240);
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<string, string> $customMessages
+     */
+    private function warningMessage(int $minutes, array $customMessages): string
+    {
+        $template = $customMessages[(string) $minutes] ?? 'Server restart in {time}.';
+        $message = str_replace('{time}', $this->formatMinutes($minutes), $template);
+
+        if (preg_match('/<t\b/i', $message) !== 1) {
+            $message = "<t color='#ff0000'>" . $message . '</t>';
+        }
+
+        return $message;
     }
 }

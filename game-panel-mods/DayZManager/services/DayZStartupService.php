@@ -172,9 +172,14 @@ final class DayZStartupService
         }
 
         $variables = $this->databaseVariables($server);
+        $startupModVariable = $this->startupModVariableName($server);
 
         foreach (self::MOD_LIST_VARIABLES as $name) {
             if (!array_key_exists($name, $variables)) {
+                continue;
+            }
+
+            if ($startupModVariable !== null && strtoupper($name) === $startupModVariable) {
                 continue;
             }
 
@@ -203,6 +208,54 @@ final class DayZStartupService
     }
 
     /**
+     * Removes Workshop IDs from startup variables used for SteamCMD downloads.
+     *
+     * @param list<string> $workshopIds
+     * @param list<string> $remainingIds
+     */
+    public function removeWorkshopIds(mixed $server, array $workshopIds, array $remainingIds = []): void
+    {
+        $workshopIds = $this->normalizeWorkshopIds($workshopIds);
+        $remainingIds = $this->normalizeWorkshopIds($remainingIds);
+
+        if ($workshopIds === []) {
+            $this->syncModlistHtml($server, $remainingIds);
+
+            return;
+        }
+
+        $variables = $this->databaseVariables($server);
+
+        foreach (self::MOD_LIST_VARIABLES as $name) {
+            if (!array_key_exists($name, $variables)) {
+                continue;
+            }
+
+            $current = trim($variables[$name]);
+            $tokens = $current === '' ? [] : array_values(array_filter(
+                preg_split('/[;,\s]+/', $current) ?: [],
+                static fn (string $t): bool => $t !== '',
+            ));
+            $allNumeric = $tokens === [] || !in_array(false, array_map('ctype_digit', $tokens), true);
+
+            if (!$allNumeric) {
+                continue;
+            }
+
+            $filtered = array_values(array_filter(
+                $tokens,
+                static fn (string $id): bool => !in_array($id, $workshopIds, true),
+            ));
+
+            if ($filtered !== $tokens) {
+                $this->writeServerVariable($server, $name, implode(';', $filtered));
+            }
+        }
+
+        $this->syncModlistHtml($server, $remainingIds);
+    }
+
+    /**
      * Writes a DayZ Launcher-style modlist file consumed by popular DayZ eggs.
      *
      * @param list<string> $workshopIds
@@ -210,10 +263,6 @@ final class DayZStartupService
     public function syncModlistHtml(mixed $server, array $workshopIds): bool
     {
         $workshopIds = $this->normalizeWorkshopIds($workshopIds);
-
-        if ($workshopIds === []) {
-            return false;
-        }
 
         return $this->gateway->writeFile($server, self::MODLIST_PATH, $this->buildModlistHtml($workshopIds));
     }
@@ -282,6 +331,14 @@ final class DayZStartupService
         }
 
         return strtoupper($matches[1]);
+    }
+
+    private function startupModVariableName(mixed $server): ?string
+    {
+        $raw = $this->rawStartup($server);
+        $value = $this->rawParameterValue($raw, 'mod');
+
+        return $value === null ? null : $this->placeholderName($value);
     }
 
     /**

@@ -626,6 +626,8 @@ final class DayZWorkshopService
         }
 
         $folder = (string) $mod['folder_name'];
+        $workshopId = trim((string) ($mod['workshop_id'] ?? ''));
+        $title = (string) ($mod['title'] ?? '');
         $result = $this->toggle($reference, false, $server);
         $filesDeleted = false;
 
@@ -633,6 +635,14 @@ final class DayZWorkshopService
             $filesDeleted = $this->gateway->deletePath($server, '/' . $folder);
             $this->memo = [];
         }
+
+        $this->configuration->removeTypesExtraForMod($server, $folder, $title, $workshopId);
+        $remainingWorkshopIds = $this->modlistWorkshopIds($server);
+        $this->startup->removeWorkshopIds(
+            $server,
+            $workshopId !== '' ? [$workshopId] : [],
+            $remainingWorkshopIds,
+        );
 
         $result['action'] = 'remove';
         $result['files_deleted'] = $filesDeleted;
@@ -665,7 +675,8 @@ final class DayZWorkshopService
 
         $removed = $this->deleteQueueEntries($server, [$workshopId]);
         $queue = $this->persistedQueue($server);
-        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
+        $remainingWorkshopIds = $this->modlistWorkshopIds($server);
+        $this->startup->removeWorkshopIds($server, [$workshopId], $remainingWorkshopIds);
 
         return [
             'status' => $removed ? 'applied' : 'failed',

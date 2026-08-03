@@ -85,8 +85,20 @@ final class DayZServerController
             FILTER_NULL_ON_FAILURE,
         ) ?? false;
         $intervalHours = (int) $this->context->stringInput('interval_hours', '6');
+        $warningMinutesInput = $this->context->input('warning_minutes_enabled', []);
+        $warningMinutesEnabled = is_array($warningMinutesInput)
+            ? array_values(array_map(static fn (mixed $value): int => (int) $value, $warningMinutesInput))
+            : [];
+        $warningMessagesInput = $this->context->input('warning_messages', []);
+        $warningMessages = is_array($warningMessagesInput) ? $warningMessagesInput : [];
 
-        return $this->service->saveRestartSchedule($model, max(1, $intervalHours) * 60, $enabled);
+        return $this->service->saveRestartSchedule(
+            $model,
+            max(1, $intervalHours) * 60,
+            $enabled,
+            $warningMinutesEnabled,
+            $warningMessages,
+        );
     }
 
     /**
