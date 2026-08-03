@@ -9,6 +9,7 @@ $pages = [
     '/players'       => 'DayZPlayerController@index',
     '/server'        => 'DayZServerController@launchParameters',
     '/dzsa'          => 'DayZServerController@dzsa',
+    '/settings'      => 'DayZManagerSettingsController@index',
 ];
 
 $routes = [];
@@ -31,5 +32,14 @@ $routes[] = [
     'uri'    => '/game-panel-mods/dayz-manager/tab.js',
     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZTabController@script',
 ];
+
+// POST route for saving settings from the HTML page.
+foreach (['/servers/{server}/dayz', '/server/{server}/dayz', '/admin/servers/view/{server}/dayz'] as $prefix) {
+    $routes[] = [
+        'method' => 'POST',
+        'uri'    => $prefix . '/settings/save',
+        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@save',
+    ];
+}
 
 return $routes;

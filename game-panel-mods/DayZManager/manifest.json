@@ -1,7 +1,7 @@
 {
   "name": "DayZ Manager",
   "slug": "dayz-manager",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "author": "JakeQue22",
   "description": "DayZ server management with a live dashboard, Workshop mod discovery, player list management, power controls, real launch parameters, and linked configuration file editing.",
   "supports": [
@@ -16,6 +16,7 @@
     "Workshop Mods",
     "Player Lists",
     "Server",
-    "Configuration"
+    "Configuration",
+    "Settings"
   ]
 }
