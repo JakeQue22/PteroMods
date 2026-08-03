@@ -27,6 +27,19 @@
 @endphp
 
 <section class="dz-card">
+    <h2>Power Controls</h2>
+    <p class="dz-sub">Signals are sent to the Pterodactyl daemon that runs this server. Enter a reason to announce it in global chat before the signal is sent.</p>
+    <div class="dz-form">
+        <input id="dz-restart-reason" class="dz-input" type="text" placeholder="Reason (optional), e.g. Mod update applied" />
+        <button class="dz-btn dz-btn-green" onclick="pteroPowerSignal('start')">Start</button>
+        <button class="dz-btn" onclick="pteroPowerSignal('restart')">Restart</button>
+        <button class="dz-btn dz-btn-amber" onclick="pteroPowerSignal('stop')">Stop</button>
+        <button class="dz-btn dz-btn-red" onclick="pteroPowerSignal('kill')">Kill</button>
+    </div>
+    <p id="dz-restart-status" class="dz-status dz-hidden"></p>
+</section>
+
+<section class="dz-card">
     <h2>Scheduled Restarts</h2>
     <p class="dz-sub">Set restart timing, customize warning text, and choose which warning windows are broadcast.</p>
     <div class="dz-form">
@@ -62,7 +75,7 @@
         @endforeach
     </dl>
     <p class="dz-sub" style="margin-top:0.65rem;">
-        Use <code>{time}</code> in messages to inject the formatted countdown (for example, “10 minutes”).
+        Use <code>{time}</code> in messages to inject the formatted countdown (for example, "10 minutes").
     </p>
     <p class="dz-sub" style="margin-top:0.35rem;">
         Recommended: keep 10, 2, and 1 minute warnings enabled so players can log out and save.
@@ -72,19 +85,6 @@
         {{ !empty($restartSchedule['next_restart_at']) ? $restartSchedule['next_restart_at'] : 'Not scheduled' }}
     </p>
     <p id="dz-restart-schedule-status" class="dz-status dz-hidden"></p>
-</section>
-
-<section class="dz-card">
-    <h2>Power Controls</h2>
-    <p class="dz-sub">Signals are sent to the Pterodactyl daemon that runs this server.</p>
-    <div class="dz-form">
-        <input id="dz-restart-reason" class="dz-input" type="text" placeholder="Reason (optional), e.g. Mod update applied" />
-        <button class="dz-btn dz-btn-green" onclick="pteroPowerSignal('start')">Start</button>
-        <button class="dz-btn" onclick="pteroPowerSignal('restart')">Restart</button>
-        <button class="dz-btn dz-btn-amber" onclick="pteroPowerSignal('stop')">Stop</button>
-        <button class="dz-btn dz-btn-red" onclick="pteroPowerSignal('kill')">Kill</button>
-    </div>
-    <p id="dz-restart-status" class="dz-status dz-hidden"></p>
 </section>
 
 <section class="dz-card">
@@ -112,6 +112,7 @@
                 <option value="{{ $min }}">{{ $min }} minute{{ $min === 1 ? '' : 's' }}</option>
             @endforeach
         </select>
+        <input id="dz-timed-restart-reason" class="dz-input" type="text" placeholder="Reason (optional, announced in global chat)" style="max-width:22rem;" />
         <button class="dz-btn dz-btn-amber" onclick="pteroStartTimedRestart()">Restart in …</button>
         <button class="dz-btn dz-btn-red dz-hidden" id="dz-timed-cancel-btn" onclick="pteroCancelTimedRestart()">Cancel</button>
     </div>
@@ -275,8 +276,10 @@
         const active = document.getElementById('dz-timed-restart-active');
         const cancelBtn = document.getElementById('dz-timed-cancel-btn');
         const minutesEl = document.getElementById('dz-timed-restart-minutes');
+        const reasonEl = document.getElementById('dz-timed-restart-reason');
         const meta = document.querySelector('meta[name="csrf-token"]');
         const minutes = minutesEl ? parseInt(minutesEl.value, 10) : 10;
+        const reason = reasonEl ? reasonEl.value.trim() : '';
 
         if (!confirm('Schedule a server restart in ' + minutes + ' minute' + (minutes === 1 ? '' : 's') + '? '
             + 'Warning messages will be sent to global chat at the configured warning intervals.')) {
@@ -298,7 +301,7 @@
                     'X-CSRF-TOKEN': meta ? meta.content : '',
                     'Accept': 'application/json',
                 },
-                body: JSON.stringify({ minutes: minutes }),
+                body: JSON.stringify({ minutes: minutes, reason: reason }),
             });
             const data = await res.json().catch(() => ({}));
 
@@ -308,6 +311,7 @@
                     active.classList.remove('dz-hidden');
                 }
                 if (cancelBtn) { cancelBtn.classList.remove('dz-hidden'); }
+                if (reasonEl) { reasonEl.value = ''; }
                 if (status) {
                     status.textContent = '✓ ' + (data.message || 'Timed restart scheduled.');
                     status.className = 'dz-status dz-text-green';
@@ -436,6 +440,15 @@
                 if (next) {
                     next.textContent = 'Next restart: ' + (data.next_restart_at || 'Not scheduled');
                 }
+                // Repopulate message inputs with whatever was actually stored.
+                if (data.warning_messages && typeof data.warning_messages === 'object') {
+                    document.querySelectorAll('.dz-warning-message').forEach(function (input) {
+                        const minute = input.dataset.warningMinute;
+                        if (minute && Object.prototype.hasOwnProperty.call(data.warning_messages, minute)) {
+                            input.value = data.warning_messages[minute];
+                        }
+                    });
+                }
                 if (status) {
                     status.textContent = '✓ ' + (data.message || 'Schedule saved.');
                     status.className = 'dz-status dz-text-green';
@@ -454,10 +467,19 @@
 
     window.pteroTickRestartSchedule = async function () {
         const enabled = document.getElementById('dz-restart-enabled');
+        const active = document.getElementById('dz-timed-restart-active');
+        const cancelBtn = document.getElementById('dz-timed-cancel-btn');
         const next = document.getElementById('dz-restart-next');
-        if (!enabled || !enabled.checked) {
+        const timedRestartActive = active && !active.classList.contains('dz-hidden');
+        const scheduledEnabled = enabled && enabled.checked;
+
+        // Tick whenever there is something to process: an active timed restart
+        // OR scheduled restarts are enabled. This ensures timed restarts fire
+        // even when scheduled restarts are turned off.
+        if (!scheduledEnabled && !timedRestartActive) {
             return;
         }
+
         const meta = document.querySelector('meta[name="csrf-token"]');
         try {
             const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/restart-schedule/tick', {
@@ -471,8 +493,15 @@
                 body: JSON.stringify({}),
             });
             const data = await res.json().catch(() => ({}));
-            if (res.ok && next && data.next_restart_at) {
-                next.textContent = 'Next restart: ' + data.next_restart_at;
+            if (res.ok) {
+                if (next && data.next_restart_at) {
+                    next.textContent = 'Next restart: ' + data.next_restart_at;
+                }
+                // If the timed restart completed or was cleared server-side, hide the banner.
+                if (active && data.timed_restart_at === null && timedRestartActive) {
+                    active.classList.add('dz-hidden');
+                    if (cancelBtn) { cancelBtn.classList.add('dz-hidden'); }
+                }
             }
         } catch (err) {
             // Scheduler tick failures are non-fatal.

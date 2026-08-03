@@ -64,11 +64,12 @@ final class DayZServerController
     public function power(mixed $server = null, string $signal = ''): array
     {
         $signal = $signal !== '' ? $signal : $this->context->stringInput('signal');
+        $reason = $this->context->stringInput('reason');
 
         $model = $this->context->resolve($server)['model'];
         $this->context->authorizeManage($model);
 
-        return $this->service->power($model, $signal);
+        return $this->service->power($model, $signal, $reason);
     }
 
     /**
@@ -123,8 +124,9 @@ final class DayZServerController
         $this->context->authorizeManage($model);
 
         $minutes = (int) $this->context->stringInput('minutes', '10');
+        $reason  = $this->context->stringInput('reason');
 
-        return $this->service->startTimedRestart($model, max(1, $minutes));
+        return $this->service->startTimedRestart($model, max(1, $minutes), $reason);
     }
 
     /**

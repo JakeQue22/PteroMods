@@ -183,6 +183,17 @@ final class DayZServerQueryService
             return [];
         }
 
+        // Resolve a hostname to its numeric IP so the UDP query socket does not
+        // rely on the panel container's DNS configuration, which may not resolve
+        // the node's FQDN from inside the panel environment.
+        if (filter_var($host, FILTER_VALIDATE_IP) === false) {
+            $resolved = gethostbyname($host);
+
+            if ($resolved !== $host && filter_var($resolved, FILTER_VALIDATE_IP) !== false) {
+                $host = $resolved;
+            }
+        }
+
         $ports = [];
 
         // The most authoritative source: the `steamQueryPort` an operator set

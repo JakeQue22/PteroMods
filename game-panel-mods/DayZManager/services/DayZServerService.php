@@ -39,6 +39,19 @@ final class DayZServerService
             ];
         }
 
+        // Announce before executing so players see the message while the server is still running.
+        if ($reason !== '' && in_array($signal, ['stop', 'restart', 'kill'], true)) {
+            $label = match ($signal) {
+                'restart' => 'restarting',
+                'stop'    => 'shutting down',
+                default   => 'being killed',
+            };
+            $this->gateway->sendCommand(
+                $server,
+                "say -1 <t color='#ff0000'>Server is " . $label . '. Reason: ' . $reason . '</t>',
+            );
+        }
+
         $dispatched = $this->gateway->power($server, $signal);
 
         return [
@@ -275,7 +288,7 @@ final class DayZServerService
      *
      * @return array<string, mixed>
      */
-    public function startTimedRestart(mixed $server, int $minutes): array
+    public function startTimedRestart(mixed $server, int $minutes, string $reason = ''): array
     {
         $serverId = $this->serverIdentifier($server);
 
@@ -312,6 +325,15 @@ final class DayZServerService
             return ['status' => 'failed', 'message' => 'Failed to save timed restart.'];
         }
 
+        // Announce immediately to global chat.
+        $announcement = 'Server will restart in ' . $this->formatMinutes($minutes) . '.';
+
+        if ($reason !== '') {
+            $announcement .= ' Reason: ' . $reason;
+        }
+
+        $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>" . $announcement . '</t>');
+
         return [
             'status'           => 'scheduled',
             'timed_restart_at' => $timedAt,
@@ -332,6 +354,12 @@ final class DayZServerService
         if ($serverId === '' || !$this->hasScheduleTable() || !$this->hasScheduleColumn('timed_restart_at')) {
             return ['status' => 'failed', 'message' => 'No timed restart is active.'];
         }
+
+        // Announce cancellation in global chat before clearing the schedule.
+        $this->gateway->sendCommand(
+            $server,
+            "say -1 <t color='#00ff00'>The scheduled restart has been cancelled.</t>",
+        );
 
         try {
             \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')
