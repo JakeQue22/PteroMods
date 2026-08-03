@@ -503,6 +503,11 @@ final class DayZConfigurationService
 
         if (preg_match('/(<!--\s*Modded Types\s*-->)/i', $cfg) === 1) {
             $updated = (string) preg_replace('/(<!--\s*Modded Types\s*-->)/i', "$1\n" . $replacement, $cfg, 1);
+        } elseif (str_contains($cfg, '</ce>')) {
+            // Insert before the last </ce> so the entry is inside the <ce> element
+            // that DayZ requires for <file> declarations.
+            $pos = (int) strrpos($cfg, '</ce>');
+            $updated = substr($cfg, 0, $pos) . $replacement . substr($cfg, $pos);
         } elseif (str_contains($cfg, '</economycore>')) {
             $updated = str_replace('</economycore>', $replacement . '</economycore>', $cfg);
         } else {
