@@ -702,7 +702,19 @@ final class DayZWorkshopService
             $this->memo = [];
         }
 
+        // Remove the mod from the persisted full-order table so re-installing
+        // it later starts with a clean slate.
+        $this->removeFromFullOrder($server, $folder);
+
         $this->configuration->removeTypesExtraForMod($server, $folder, $title, $workshopId);
+
+        // Clear the install queue for this mod BEFORE computing remaining IDs so
+        // that a pending queue entry does not keep its Workshop ID alive in the
+        // download variable or modlist.html after the folder has been removed.
+        if ($workshopId !== '') {
+            $this->deleteQueueEntries($server, [$workshopId]);
+        }
+
         $remainingWorkshopIds = $this->modlistWorkshopIds($server);
         $this->startup->removeWorkshopIds(
             $server,
@@ -758,6 +770,11 @@ final class DayZWorkshopService
     /**
      * Enables or disables a mod by rewriting the `-mod=` load order.
      *
+     * When re-enabling a mod the method restores it to its original position
+     * in the load order (rather than always appending to the end) by consulting
+     * the `dayz_server_mod_order` table, which records the full mod order —
+     * including disabled mods — across enable/disable operations.
+     *
      * @return array<string, mixed>
      */
     public function toggle(string $reference, bool $enabled, mixed $server = null): array
@@ -770,14 +787,32 @@ final class DayZWorkshopService
         }
 
         $folder = (string) $mod['folder_name'];
+
+        // Ensure the full mod order is recorded in the DB before we make any
+        // change.  This way a disable never loses a mod's original position.
+        $this->bootstrapFullOrder($server);
+
         $order = $this->enabledFolders($server);
         $order = array_values(array_filter($order, static fn (string $entry): bool => strcasecmp($entry, $folder) !== 0));
 
         if ($enabled) {
-            $order[] = $folder;
+            // Insert at the position saved from a previous disable rather than
+            // always appending to the end, which would silently reorder mods.
+            $insertPos = $this->savedInsertPosition($server, $folder, $order);
+
+            if ($insertPos !== null) {
+                array_splice($order, $insertPos, 0, [$folder]);
+            } else {
+                $order[] = $folder;
+            }
         }
 
-        return $this->persistOrder($server, $order, $enabled ? 'enable' : 'disable') + ['folder_name' => $folder];
+        $result = $this->persistOrder($server, $order, $enabled ? 'enable' : 'disable');
+
+        // Keep the persisted full order in sync with the new enabled state.
+        $this->updateFullOrderEnabled($server, $folder, $enabled);
+
+        return $result + ['folder_name' => $folder];
     }
 
     /**
@@ -1181,6 +1216,9 @@ final class DayZWorkshopService
             $this->memo = [];
         }
 
+        // Keep the persisted full-order table in sync with the renamed folder.
+        $this->renameInFullOrder($server, $folderName, $newFolderName);
+
         return $newFolderName;
     }
 
@@ -1211,5 +1249,235 @@ final class DayZWorkshopService
         $power = min((int) floor(log((float) $bytes, 1024)), count($units) - 1);
 
         return sprintf('%.1f %s', $bytes / (1024 ** $power), $units[$power]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Full mod-order persistence (dayz_server_mod_order)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Ensures `dayz_server_mod_order` is populated for this server.
+     *
+     * On the first call for a server the table is seeded from the current
+     * `installedMods()` output — which lists mods in their real startup-command
+     * order — so every subsequent enable/disable can reference those positions.
+     * On later calls only mods not yet tracked are appended at the end, so newly
+     * installed mods are included without disturbing saved positions.
+     *
+     * All database operations are best-effort: if the table does not exist (old
+     * installation, not yet migrated) or any query fails the method is a no-op
+     * and `toggle()` falls back to appending.
+     */
+    private function bootstrapFullOrder(mixed $server): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_server_mod_order')) {
+                return;
+            }
+
+            // Collect the folder names already tracked for this server.
+            $tracked = \Illuminate\Support\Facades\DB::table('dayz_server_mod_order')
+                ->where('server_id', $serverId)
+                ->pluck('folder_name')
+                ->map(static fn (mixed $f): string => strtolower(trim((string) $f)))
+                ->all();
+
+            $initialFill = $tracked === [];
+
+            // When the table is fresh the maximum position is -1 so the first
+            // row gets position 0. When rows already exist new entries are
+            // appended after the highest existing position.
+            $nextPos = $initialFill
+                ? 0
+                : ((int) \Illuminate\Support\Facades\DB::table('dayz_server_mod_order')
+                    ->where('server_id', $serverId)
+                    ->max('position')) + 1;
+
+            foreach ($this->installedMods($server) as $mod) {
+                $folder = trim((string) ($mod['folder_name'] ?? ''));
+
+                if ($folder === '' || in_array(strtolower($folder), $tracked, true)) {
+                    continue;
+                }
+
+                // For the initial fill use the position from `installedMods()` so
+                // mods appear in their true startup-command order (0, 1, 2, …).
+                // For subsequent calls (new mods added later) just append.
+                $position = $initialFill ? (int) ($mod['position'] ?? $nextPos) : $nextPos;
+
+                \Illuminate\Support\Facades\DB::table('dayz_server_mod_order')->insertOrIgnore([
+                    'server_id'   => $serverId,
+                    'folder_name' => $folder,
+                    'position'    => $position,
+                    'enabled'     => ($mod['enabled'] ?? false) ? 1 : 0,
+                ]);
+
+                $tracked[] = strtolower($folder);
+                $nextPos   = max($nextPos, $position) + 1;
+            }
+        } catch (Throwable) {
+            // Best-effort: toggle() still works via the append fallback.
+        }
+    }
+
+    /**
+     * Returns the index in `$currentEnabledOrder` before which `$targetFolder`
+     * should be inserted when it is re-enabled, based on the positions saved in
+     * `dayz_server_mod_order`.
+     *
+     * The method walks forward from the target's saved position and returns the
+     * index of the first saved folder that is currently enabled.  When no such
+     * successor exists the caller should append to the end.
+     *
+     * @param  list<string> $currentEnabledOrder
+     */
+    private function savedInsertPosition(mixed $server, string $targetFolder, array $currentEnabledOrder): ?int
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return null;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_server_mod_order')) {
+                return null;
+            }
+
+            // Retrieve all rows for this server sorted by their saved position.
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_server_mod_order')
+                ->where('server_id', $serverId)
+                ->orderBy('position')
+                ->pluck('folder_name')
+                ->all();
+
+            if ($rows === []) {
+                return null;
+            }
+
+            // Locate the target folder.
+            $targetIdx = null;
+
+            foreach ($rows as $i => $row) {
+                if (strcasecmp((string) $row, $targetFolder) === 0) {
+                    $targetIdx = $i;
+                    break;
+                }
+            }
+
+            if ($targetIdx === null) {
+                return null;
+            }
+
+            // Walk forward from the target's position and find the first saved
+            // folder that still exists in the current enabled list.
+            for ($i = $targetIdx + 1; $i < count($rows); $i++) {
+                $savedFolder = (string) $rows[$i];
+
+                foreach ($currentEnabledOrder as $k => $enabledFolder) {
+                    if (strcasecmp($enabledFolder, $savedFolder) === 0) {
+                        return $k; // Insert before this enabled mod.
+                    }
+                }
+            }
+        } catch (Throwable) {
+            // Fall through to the null (append) result.
+        }
+
+        return null;
+    }
+
+    /**
+     * Updates the `enabled` flag for a single folder in the persisted full-order
+     * table without changing its position.
+     */
+    private function updateFullOrderEnabled(mixed $server, string $folder, bool $enabled): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_server_mod_order')) {
+                return;
+            }
+
+            \Illuminate\Support\Facades\DB::table('dayz_server_mod_order')
+                ->where('server_id', $serverId)
+                ->whereRaw('LOWER(folder_name) = ?', [strtolower($folder)])
+                ->update(['enabled' => $enabled ? 1 : 0]);
+        } catch (Throwable) {
+            // Best-effort.
+        }
+    }
+
+    /**
+     * Removes a folder from the persisted full-order table (called when a mod
+     * is permanently deleted so re-installing it starts fresh).
+     */
+    private function removeFromFullOrder(mixed $server, string $folder): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_server_mod_order')) {
+                return;
+            }
+
+            \Illuminate\Support\Facades\DB::table('dayz_server_mod_order')
+                ->where('server_id', $serverId)
+                ->whereRaw('LOWER(folder_name) = ?', [strtolower($folder)])
+                ->delete();
+        } catch (Throwable) {
+            // Best-effort.
+        }
+    }
+
+    /**
+     * Renames a folder in the persisted full-order table (called after a
+     * numeric `@workshopId` folder is renamed to `@ModName`).
+     */
+    private function renameInFullOrder(mixed $server, string $oldFolder, string $newFolder): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_server_mod_order')) {
+                return;
+            }
+
+            \Illuminate\Support\Facades\DB::table('dayz_server_mod_order')
+                ->where('server_id', $serverId)
+                ->whereRaw('LOWER(folder_name) = ?', [strtolower($oldFolder)])
+                ->update(['folder_name' => $newFolder]);
+        } catch (Throwable) {
+            // Best-effort.
+        }
     }
 }

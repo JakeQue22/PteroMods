@@ -70,6 +70,17 @@ CREATE TABLE IF NOT EXISTS `dayz_restart_schedules` (
     UNIQUE KEY `uq_dayz_restart_schedules_server` (`server_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS `dayz_server_mod_order` (
+    `id`          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`   VARCHAR(64)   NOT NULL,
+    `folder_name` VARCHAR(255)  NOT NULL,
+    `position`    INT           NOT NULL DEFAULT 0,
+    `enabled`     TINYINT(1)    NOT NULL DEFAULT 1,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_dayz_server_mod_order` (`server_id`, `folder_name`),
+    KEY `idx_dayz_server_mod_order_server` (`server_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Apply columns added in later migrations to any pre-existing installation.
 -- The IF NOT EXISTS guard makes this safe to re-run on a fresh schema too.
 ALTER TABLE `dayz_restart_schedules`
