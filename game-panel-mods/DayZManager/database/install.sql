@@ -69,3 +69,11 @@ CREATE TABLE IF NOT EXISTS `dayz_restart_schedules` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_dayz_restart_schedules_server` (`server_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Apply columns added in later migrations to any pre-existing installation.
+-- The IF NOT EXISTS guard makes this safe to re-run on a fresh schema too.
+ALTER TABLE `dayz_restart_schedules`
+    ADD COLUMN IF NOT EXISTS `timed_restart_at`      TIMESTAMP     NULL DEFAULT NULL AFTER `next_restart_at`,
+    ADD COLUMN IF NOT EXISTS `timed_warnings_sent`   VARCHAR(255)  NOT NULL DEFAULT '' AFTER `timed_restart_at`,
+    ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1' AFTER `warnings_sent`,
+    ADD COLUMN IF NOT EXISTS `warning_messages`      TEXT          NULL AFTER `warning_minutes_enabled`;

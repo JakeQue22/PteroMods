@@ -251,7 +251,7 @@ final class DayZServerService
         if ($now >= $next) {
             $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
             $restarted = $this->gateway->power($server, 'restart');
-            $next = $now + ($interval * 60);
+            $next = $next + ($interval * 60);
             $warningsSent = [];
         }
 

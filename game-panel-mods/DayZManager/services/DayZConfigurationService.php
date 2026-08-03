@@ -95,6 +95,9 @@ final class DayZConfigurationService
             $this->sanitizeModNameOrEmpty($title),
             $this->sanitizeModNameOrEmpty(ltrim($folderName, '@/')),
             $this->sanitizeModNameOrEmpty($workshopId),
+            // Mirror the primary name computed by syncTypesExtraForMod, including
+            // its "WorkshopMod" fallback for mods whose title/folder sanitises to "".
+            $this->sanitizeModName($title !== '' ? $title : ltrim($folderName, '@')),
         ], static fn (string $name): bool => $name !== '')));
 
         if ($candidates === []) {
