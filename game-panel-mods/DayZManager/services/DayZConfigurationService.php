@@ -392,9 +392,16 @@ final class DayZConfigurationService
     private function findTypesXmlSourcePath(mixed $server, string $folderName): string
     {
         $root = '/' . ltrim($folderName, '/');
+
+        // Check the most common locations first to avoid unnecessary directory
+        // listings: the mod root itself, and the canonical Extras/ subfolder.
         $directCandidates = [
             $root . '/Extras/types.xml',
             $root . '/extras/types.xml',
+            $root . '/types.xml',
+            $root . '/Types.xml',
+            $root . '/db/types.xml',
+            $root . '/db/Types.xml',
         ];
 
         foreach ($directCandidates as $candidate) {
@@ -405,6 +412,8 @@ final class DayZConfigurationService
             }
         }
 
+        // Fall back to a BFS of the mod folder looking for any subdirectory
+        // that contains a types.xml file (covers non-standard mod layouts).
         $queue = [[$root, 0]];
         $visited = [];
 
@@ -429,14 +438,14 @@ final class DayZConfigurationService
 
                 $child = rtrim($path, '/') . '/' . (string) $entry['name'];
 
-                if (strcasecmp((string) $entry['name'], 'extras') === 0) {
-                    foreach (['types.xml', 'Types.xml'] as $typesFile) {
-                        $candidate = $child . '/' . $typesFile;
-                        $contents = $this->gateway->readFile($server, $candidate);
+                // Check for types.xml in every discovered subdirectory so that
+                // mods which deviate from the Extras/ convention are handled.
+                foreach (['types.xml', 'Types.xml'] as $typesFile) {
+                    $candidate = $child . '/' . $typesFile;
+                    $contents = $this->gateway->readFile($server, $candidate);
 
-                        if ($contents !== null && trim($contents) !== '') {
-                            return $candidate;
-                        }
+                    if ($contents !== null && trim($contents) !== '') {
+                        return $candidate;
                     }
                 }
 

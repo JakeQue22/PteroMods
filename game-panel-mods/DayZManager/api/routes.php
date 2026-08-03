@@ -39,7 +39,10 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/power', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@power'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/restart-schedule', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@saveRestartSchedule'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/restart-schedule/tick', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@tickRestartSchedule'];
+    $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/timed-restart',          'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@timedRestart'];
+    $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/timed-restart/cancel',   'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@cancelTimedRestart'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/server/query-status', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@queryStatus'];
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dzsa',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@dzsa'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/install/status', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@installStatus'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/install/queue', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@queue'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/lookup', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@lookup'];

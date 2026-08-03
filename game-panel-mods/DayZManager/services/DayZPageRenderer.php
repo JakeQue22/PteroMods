@@ -22,6 +22,7 @@ final class DayZPageRenderer
         ['key' => 'players',       'label' => 'Player Lists',  'path' => '/players'],
         ['key' => 'server',        'label' => 'Server Control', 'path' => '/server'],
         ['key' => 'configuration', 'label' => 'Configuration', 'path' => '/configuration'],
+        ['key' => 'dzsa',          'label' => 'DZSA Launcher',  'path' => '/dzsa'],
     ];
 
     /**

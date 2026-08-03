@@ -220,7 +220,7 @@ final class DayZServerQueryService
     }
 
     /**
-     * The address players connect to (public alias/FQDN plus the game port).
+     * The address players (and query tools) can actually reach.
      */
     public function connectionAddress(mixed $server): ?string
     {
@@ -242,6 +242,78 @@ final class DayZServerQueryService
         ]);
 
         return $host === '' || $port <= 0 ? null : $host . ':' . $port;
+    }
+
+    /**
+     * Numeric IP address and query port suitable for the DZSA Launcher checker.
+     *
+     * DZSA requires a dotted-decimal IPv4 address, not a hostname. The raw
+     * allocation IP is preferred because it is already numeric; if it is a
+     * wildcard or private address the ip_alias is resolved via DNS.
+     *
+     * @return array{ip: string, query_port: int}|null
+     */
+    public function dzsaEndpoint(mixed $server): ?array
+    {
+        if ($server === null) {
+            return null;
+        }
+
+        $allocation = $this->primaryAllocation($server);
+
+        if ($allocation === null) {
+            return null;
+        }
+
+        $gamePort = (int) ($this->context->rawAttribute($allocation, 'port') ?? 0);
+
+        if ($gamePort <= 0) {
+            return null;
+        }
+
+        // Build a list of candidate addresses, preferring the ones that are
+        // already numeric public IPs so we avoid unnecessary DNS lookups.
+        $candidates = [
+            $this->attributeString($allocation, ['ip']),
+            $this->attributeString($allocation, ['ip_alias']),
+            $this->nodeHost($server),
+        ];
+
+        $numericIp = '';
+
+        foreach ($candidates as $host) {
+            $host = trim((string) $host);
+
+            if ($host === '' || $host === '0.0.0.0' || in_array($host, ['[::]', '::', '*'], true)) {
+                continue;
+            }
+
+            if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false) {
+                $numericIp = $host;
+                break;
+            }
+
+            // Resolve a hostname to a numeric IP (DZSA does not accept DNS names).
+            if (filter_var($host, FILTER_VALIDATE_IP) === false) {
+                $resolved = gethostbyname($host);
+
+                if ($resolved !== $host && filter_var($resolved, FILTER_VALIDATE_IP) !== false) {
+                    $numericIp = $resolved;
+                    break;
+                }
+            }
+        }
+
+        if ($numericIp === '') {
+            return null;
+        }
+
+        // Determine the Steam query port using the same priority chain used
+        // for the live server query, so DZSA sees the same port the panel uses.
+        $candidates = $this->resolveEndpointCandidates($server);
+        $queryPort = $candidates !== [] ? $candidates[0][1] : ($gamePort + self::DAYZ_QUERY_PORT_OFFSET);
+
+        return ['ip' => $numericIp, 'query_port' => $queryPort];
     }
 
     /**

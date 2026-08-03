@@ -210,6 +210,12 @@ final class DayZStartupService
     /**
      * Removes Workshop IDs from startup variables used for SteamCMD downloads.
      *
+     * Variables containing only numeric IDs are filtered directly. Variables
+     * whose values were later rewritten with folder names (e.g. `@CF;@Mod`)
+     * are also handled: any token whose bare value (after stripping a leading
+     * `@`) matches one of the Workshop IDs to remove is dropped, so a removal
+     * always sticks even when `saveModList` already rewrote the variable.
+     *
      * @param list<string> $workshopIds
      * @param list<string> $remainingIds
      */
@@ -236,15 +242,17 @@ final class DayZStartupService
                 preg_split('/[;,\s]+/', $current) ?: [],
                 static fn (string $t): bool => $t !== '',
             ));
-            $allNumeric = $tokens === [] || !in_array(false, array_map('ctype_digit', $tokens), true);
 
-            if (!$allNumeric) {
-                continue;
-            }
-
+            // Strip a leading `@` before comparing so that workshop IDs stored
+            // as folder names (`@1797720064`) are matched the same way as the
+            // plain numeric form (`1797720064`).
             $filtered = array_values(array_filter(
                 $tokens,
-                static fn (string $id): bool => !in_array($id, $workshopIds, true),
+                static function (string $token) use ($workshopIds): bool {
+                    $bare = ltrim(trim($token), '@');
+
+                    return !in_array($bare, $workshopIds, true);
+                },
             ));
 
             if ($filtered !== $tokens) {

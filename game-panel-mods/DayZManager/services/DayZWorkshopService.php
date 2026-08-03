@@ -1033,8 +1033,74 @@ final class DayZWorkshopService
                 continue;
             }
 
-            $this->configuration->syncTypesExtraForMod($server, (string) ($mod['folder_name'] ?? ''), (string) ($mod['title'] ?? ''));
+            $folderName = (string) ($mod['folder_name'] ?? '');
+            $title = (string) ($mod['title'] ?? '');
+
+            // Rename folders still using the numeric Workshop ID as their name
+            // (e.g. `@1797720064`) to the proper mod name (`@WindstridesClothingPack`).
+            $folderName = $this->maybeRenameFolderToModName($server, $folderName, $title, (string) $workshopId);
+
+            $this->configuration->syncTypesExtraForMod($server, $folderName, $title);
         }
+    }
+
+    /**
+     * When a mod folder is still named after its Workshop ID (e.g. `@1797720064`),
+     * rename it to a clean mod-name folder (`@WindstridesClothingPack`) and
+     * update the startup load order to use the new name.
+     */
+    private function maybeRenameFolderToModName(mixed $server, string $folderName, string $title, string $workshopId): string
+    {
+        $bare = ltrim($folderName, '@');
+
+        // Only rename when the current folder name IS the numeric Workshop ID.
+        if ($bare === '' || !ctype_digit($bare) || $bare !== $workshopId || $title === '') {
+            return $folderName;
+        }
+
+        $newFolderName = $this->modFolderNameFromTitle($title, $workshopId);
+
+        if ($newFolderName === $folderName) {
+            return $folderName;
+        }
+
+        if (!$this->gateway->renameFile($server, '/', $folderName, $newFolderName)) {
+            return $folderName;
+        }
+
+        // Clear the per-request memo so the next call re-reads the server root.
+        $this->memo = [];
+
+        // Rewrite the load order to use the new folder name.
+        $order = $this->enabledFolders($server);
+        $updated = array_map(
+            static fn (string $f): string => strcasecmp($f, $folderName) === 0 ? $newFolderName : $f,
+            $order,
+        );
+
+        if ($updated !== $order) {
+            $this->startup->saveModList($server, $updated);
+            $this->memo = [];
+        }
+
+        return $newFolderName;
+    }
+
+    /**
+     * Derives a clean `@FolderName` from a mod title.
+     *
+     * Spaces become underscores; all non-alphanumeric/underscore characters
+     * are stripped. Falls back to the Workshop ID if the result is empty.
+     */
+    private function modFolderNameFromTitle(string $title, string $workshopId): string
+    {
+        $clean = preg_replace('/[^A-Za-z0-9_]/', '', str_replace(' ', '_', trim($title)));
+
+        if ($clean === '' || $clean === null) {
+            return '@' . $workshopId;
+        }
+
+        return '@' . $clean;
     }
 
     private function formatBytes(int $bytes): string

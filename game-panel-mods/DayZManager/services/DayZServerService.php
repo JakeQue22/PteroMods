@@ -73,6 +73,7 @@ final class DayZServerService
                 'enabled' => false,
                 'interval_minutes' => 0,
                 'next_restart_at' => null,
+                'timed_restart_at' => null,
                 'warnings_sent' => [],
                 'warning_minutes_enabled' => self::RESTART_WARNINGS_MINUTES,
                 'warning_messages' => [],
@@ -83,6 +84,9 @@ final class DayZServerService
             'enabled' => (bool) ($schedule['enabled'] ?? false),
             'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
             'next_restart_at' => (string) ($schedule['next_restart_at'] ?? ''),
+            'timed_restart_at' => $this->hasScheduleColumn('timed_restart_at')
+                ? ($schedule['timed_restart_at'] ?? null)
+                : null,
             'warnings_sent' => $this->parseWarnings((string) ($schedule['warnings_sent'] ?? '')),
             'warning_minutes_enabled' => $this->enabledWarningMinutes($schedule),
             'warning_messages' => $this->warningMessages($schedule),
@@ -160,8 +164,64 @@ final class DayZServerService
         $serverId = $this->serverIdentifier($server);
         $schedule = $this->scheduleRow($serverId);
 
-        if ($schedule === null || !(bool) ($schedule['enabled'] ?? false)) {
+        if ($schedule === null) {
             return ['status' => 'idle', 'message' => 'Restart scheduling is disabled.'];
+        }
+
+        $now = time();
+        $results = [];
+
+        // ── One-time timed restart ────────────────────────────────────────────
+        if ($this->hasScheduleColumn('timed_restart_at')) {
+            $timedAt = $schedule['timed_restart_at'] ?? null;
+            $timedNext = $timedAt !== null ? strtotime((string) $timedAt) : false;
+
+            if ($timedNext !== false && $timedNext > 0) {
+                $timedWarningsSent = $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''));
+                $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
+                $warningMessages = $this->warningMessages($schedule);
+
+                foreach ($enabledWarningMinutes as $minutes) {
+                    if ($now >= ($timedNext - ($minutes * 60)) && !in_array($minutes, $timedWarningsSent, true)) {
+                        $message = $this->warningMessage($minutes, $warningMessages);
+
+                        if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
+                            $timedWarningsSent[] = $minutes;
+                            $results[] = $message;
+                        }
+                    }
+                }
+
+                if ($now >= $timedNext) {
+                    $this->gateway->sendCommand($server, "<t color='#ff0000'>Restarting now.</t>");
+                    $this->gateway->power($server, 'restart');
+                    $this->clearTimedRestart($serverId);
+
+                    return [
+                        'status'          => 'restarted',
+                        'messages_sent'   => $results,
+                        'next_restart_at' => null,
+                        'timed_restart_at' => null,
+                        'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
+                        'restarted'       => true,
+                    ];
+                }
+
+                if ($timedWarningsSent !== $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''))) {
+                    $this->storeTimedWarnings($serverId, $timedWarningsSent);
+                }
+            }
+        }
+
+        // ── Recurring scheduled restart ───────────────────────────────────────
+        if (!(bool) ($schedule['enabled'] ?? false)) {
+            return [
+                'status'          => $results === [] ? 'idle' : 'warning_sent',
+                'messages_sent'   => $results,
+                'next_restart_at' => null,
+                'interval_minutes' => 0,
+                'restarted'       => false,
+            ];
         }
 
         $interval = max(60, (int) ($schedule['interval_minutes'] ?? 0));
@@ -171,18 +231,17 @@ final class DayZServerService
             $next = time() + ($interval * 60);
         }
 
-        $now = time();
         $warningsSent = $this->parseWarnings((string) ($schedule['warnings_sent'] ?? ''));
         $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
         $warningMessages = $this->warningMessages($schedule);
-        $messagesSent = [];
 
         foreach ($enabledWarningMinutes as $minutes) {
             if ($now >= ($next - ($minutes * 60)) && !in_array($minutes, $warningsSent, true)) {
                 $message = $this->warningMessage($minutes, $warningMessages);
+
                 if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
                     $warningsSent[] = $minutes;
-                    $messagesSent[] = $message;
+                    $results[] = $message;
                 }
             }
         }
@@ -199,12 +258,90 @@ final class DayZServerService
         $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true);
 
         return [
-            'status' => $restarted ? 'restarted' : ($messagesSent === [] ? 'waiting' : 'warning_sent'),
-            'messages_sent' => $messagesSent,
+            'status'          => $restarted ? 'restarted' : ($results === [] ? 'waiting' : 'warning_sent'),
+            'messages_sent'   => $results,
             'next_restart_at' => date('c', $next),
             'interval_minutes' => $interval,
-            'restarted' => $restarted,
+            'restarted'       => $restarted,
         ];
+    }
+
+    /**
+     * Schedules a one-time timed restart that will send warnings in the global
+     * chat and restart the server after `$minutes` minutes.
+     *
+     * The timed restart runs independently of the recurring schedule: both can
+     * be active at the same time and the tick method handles each separately.
+     *
+     * @return array<string, mixed>
+     */
+    public function startTimedRestart(mixed $server, int $minutes): array
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === '') {
+            return ['status' => 'failed', 'message' => 'Server identifier unavailable.'];
+        }
+
+        if ($minutes < 1 || $minutes > 24 * 60) {
+            return ['status' => 'failed', 'message' => 'Restart delay must be between 1 minute and 24 hours.'];
+        }
+
+        if (!$this->hasScheduleTable()) {
+            return ['status' => 'failed', 'message' => 'Restart schedule storage is not available.'];
+        }
+
+        if (!$this->hasScheduleColumn('timed_restart_at')) {
+            return ['status' => 'failed', 'message' => 'Run the latest database migration to enable timed restarts.'];
+        }
+
+        $timedAt = date('Y-m-d H:i:s', time() + ($minutes * 60));
+        $update = [
+            'timed_restart_at'    => $timedAt,
+            'timed_warnings_sent' => '',
+            'updated_at'          => date('Y-m-d H:i:s'),
+            'created_at'          => date('Y-m-d H:i:s'),
+        ];
+
+        try {
+            \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')->updateOrInsert(
+                ['server_id' => $serverId],
+                $update,
+            );
+        } catch (Throwable) {
+            return ['status' => 'failed', 'message' => 'Failed to save timed restart.'];
+        }
+
+        return [
+            'status'           => 'scheduled',
+            'timed_restart_at' => $timedAt,
+            'minutes'          => $minutes,
+            'message'          => sprintf('Server will restart in %s.', $this->formatMinutes($minutes)),
+        ];
+    }
+
+    /**
+     * Cancels a pending one-time timed restart.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelTimedRestart(mixed $server): array
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === '' || !$this->hasScheduleTable() || !$this->hasScheduleColumn('timed_restart_at')) {
+            return ['status' => 'failed', 'message' => 'No timed restart is active.'];
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')
+                ->where('server_id', $serverId)
+                ->update(['timed_restart_at' => null, 'timed_warnings_sent' => '', 'updated_at' => date('Y-m-d H:i:s')]);
+        } catch (Throwable) {
+            return ['status' => 'failed', 'message' => 'Failed to cancel timed restart.'];
+        }
+
+        return ['status' => 'cancelled', 'message' => 'Timed restart cancelled.'];
     }
 
     /**
@@ -304,6 +441,42 @@ final class DayZServerService
                 ['server_id' => $serverId],
                 $update,
             );
+        } catch (Throwable) {
+            // Best effort.
+        }
+    }
+
+    /**
+     * @param list<int> $timedWarningsSent
+     */
+    private function storeTimedWarnings(string $serverId, array $timedWarningsSent): void
+    {
+        if ($serverId === '' || !$this->hasScheduleTable() || !$this->hasScheduleColumn('timed_warnings_sent')) {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')
+                ->where('server_id', $serverId)
+                ->update(['timed_warnings_sent' => implode(',', $timedWarningsSent), 'updated_at' => date('Y-m-d H:i:s')]);
+        } catch (Throwable) {
+            // Best effort.
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $schedule
+     */
+    private function clearTimedRestart(string $serverId): void
+    {
+        if ($serverId === '' || !$this->hasScheduleTable() || !$this->hasScheduleColumn('timed_restart_at')) {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')
+                ->where('server_id', $serverId)
+                ->update(['timed_restart_at' => null, 'timed_warnings_sent' => '', 'updated_at' => date('Y-m-d H:i:s')]);
         } catch (Throwable) {
             // Best effort.
         }

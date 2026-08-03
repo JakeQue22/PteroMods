@@ -88,6 +88,37 @@
 </section>
 
 <section class="dz-card">
+    <h2>Timed Restart</h2>
+    <p class="dz-sub">
+        Restart the server after a countdown, with warning messages sent to global chat at each configured
+        warning interval. Uses the same warning texts set in Scheduled Restarts above.
+    </p>
+    @php $timedRestartAt = $restart_schedule['timed_restart_at'] ?? null; @endphp
+    @if (!empty($timedRestartAt))
+        <p class="dz-sub dz-text-amber" id="dz-timed-restart-active">
+            ⏳ Timed restart scheduled for: <strong>{{ $timedRestartAt }}</strong>
+        </p>
+        <div class="dz-form" style="margin-top:0.5rem;">
+            <button class="dz-btn dz-btn-red" onclick="pteroCancelTimedRestart()">Cancel Timed Restart</button>
+        </div>
+    @else
+        <p class="dz-sub dz-hidden dz-text-amber" id="dz-timed-restart-active">
+            ⏳ Timed restart is active.
+        </p>
+    @endif
+    <div class="dz-form" style="margin-top:0.75rem;" id="dz-timed-restart-form">
+        <select id="dz-timed-restart-minutes" class="dz-input" style="max-width:12rem;">
+            @foreach ([5, 10, 15, 20, 30, 60, 120] as $min)
+                <option value="{{ $min }}">{{ $min }} minute{{ $min === 1 ? '' : 's' }}</option>
+            @endforeach
+        </select>
+        <button class="dz-btn dz-btn-amber" onclick="pteroStartTimedRestart()">Restart in …</button>
+        <button class="dz-btn dz-btn-red dz-hidden" id="dz-timed-cancel-btn" onclick="pteroCancelTimedRestart()">Cancel</button>
+    </div>
+    <p id="dz-timed-restart-status" class="dz-status dz-hidden"></p>
+</section>
+
+<section class="dz-card">
     <h2>Current Launch Parameters</h2>
     @if ($startup_source === 'pterodactyl')
         <p class="dz-sub">Loaded from the Pterodactyl startup command and this server's egg variables.</p>
@@ -237,6 +268,110 @@
 
     window.pteroRestartServer = function () {
         return window.pteroPowerSignal('restart');
+    };
+
+    window.pteroStartTimedRestart = async function () {
+        const status = document.getElementById('dz-timed-restart-status');
+        const active = document.getElementById('dz-timed-restart-active');
+        const cancelBtn = document.getElementById('dz-timed-cancel-btn');
+        const minutesEl = document.getElementById('dz-timed-restart-minutes');
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        const minutes = minutesEl ? parseInt(minutesEl.value, 10) : 10;
+
+        if (!confirm('Schedule a server restart in ' + minutes + ' minute' + (minutes === 1 ? '' : 's') + '? '
+            + 'Warning messages will be sent to global chat at the configured warning intervals.')) {
+            return;
+        }
+
+        if (status) {
+            status.classList.remove('dz-hidden');
+            status.textContent = 'Scheduling timed restart…';
+            status.className = 'dz-status dz-text-muted';
+        }
+
+        try {
+            const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/timed-restart', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': meta ? meta.content : '',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ minutes: minutes }),
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (res.ok && data.status === 'scheduled') {
+                if (active) {
+                    active.textContent = '⏳ Timed restart scheduled for: ' + (data.timed_restart_at || '');
+                    active.classList.remove('dz-hidden');
+                }
+                if (cancelBtn) { cancelBtn.classList.remove('dz-hidden'); }
+                if (status) {
+                    status.textContent = '✓ ' + (data.message || 'Timed restart scheduled.');
+                    status.className = 'dz-status dz-text-green';
+                }
+            } else {
+                if (status) {
+                    status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                    status.className = 'dz-status dz-text-red';
+                }
+            }
+        } catch (err) {
+            if (status) {
+                status.textContent = '✗ Network error: ' + err.message;
+                status.className = 'dz-status dz-text-red';
+            }
+        }
+    };
+
+    window.pteroCancelTimedRestart = async function () {
+        const status = document.getElementById('dz-timed-restart-status');
+        const active = document.getElementById('dz-timed-restart-active');
+        const cancelBtn = document.getElementById('dz-timed-cancel-btn');
+        const meta = document.querySelector('meta[name="csrf-token"]');
+
+        if (!confirm('Cancel the scheduled timed restart?')) { return; }
+
+        if (status) {
+            status.classList.remove('dz-hidden');
+            status.textContent = 'Cancelling timed restart…';
+            status.className = 'dz-status dz-text-muted';
+        }
+
+        try {
+            const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/timed-restart/cancel', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': meta ? meta.content : '',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({}),
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (res.ok && data.status === 'cancelled') {
+                if (active) { active.classList.add('dz-hidden'); }
+                if (cancelBtn) { cancelBtn.classList.add('dz-hidden'); }
+                if (status) {
+                    status.textContent = '✓ ' + (data.message || 'Timed restart cancelled.');
+                    status.className = 'dz-status dz-text-green';
+                }
+            } else {
+                if (status) {
+                    status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                    status.className = 'dz-status dz-text-red';
+                }
+            }
+        } catch (err) {
+            if (status) {
+                status.textContent = '✗ Network error: ' + err.message;
+                status.className = 'dz-status dz-text-red';
+            }
+        }
     };
 
     window.pteroSaveRestartSchedule = async function () {

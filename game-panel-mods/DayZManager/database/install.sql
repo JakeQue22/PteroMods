@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS `dayz_restart_schedules` (
     `enabled`          TINYINT(1)    NOT NULL DEFAULT 0,
     `interval_minutes` INT           NOT NULL DEFAULT 360,
     `next_restart_at`  TIMESTAMP     NULL DEFAULT NULL,
+    `timed_restart_at` TIMESTAMP     NULL DEFAULT NULL,
+    `timed_warnings_sent` VARCHAR(255) NOT NULL DEFAULT '',
     `warnings_sent`    VARCHAR(255)  NOT NULL DEFAULT '',
     `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1',
     `warning_messages` TEXT           NULL,

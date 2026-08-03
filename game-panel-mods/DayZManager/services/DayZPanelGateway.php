@@ -171,6 +171,45 @@ final class DayZPanelGateway
     }
 
     /**
+     * Renames a file or directory inside the server container.
+     *
+     * Both `$from` and `$to` are file/directory names relative to `$root`
+     * (not full paths). Returns true when the rename succeeds.
+     */
+    public function renameFile(mixed $server, string $root, string $from, string $to): bool
+    {
+        if ($server === null || $from === '' || $to === '' || $from === $to) {
+            return false;
+        }
+
+        $root = $this->normalizePath($root);
+        $repository = $this->fileRepository($server);
+
+        if ($repository !== null && method_exists($repository, 'renameFiles')) {
+            try {
+                $repository->renameFiles($root, [['from' => $from, 'to' => $to]]);
+                $this->forget($this->cacheKey('files', $server, $root));
+
+                return true;
+            } catch (Throwable) {
+                return false;
+            }
+        }
+
+        if (!class_exists('Illuminate\\Support\\Facades\\Http')) {
+            return false;
+        }
+
+        $renamed = $this->daemonRequest($server, 'PUT', '/files/rename', ['root' => $root, 'files' => [['from' => $from, 'to' => $to]]]) !== null;
+
+        if ($renamed) {
+            $this->forget($this->cacheKey('files', $server, $root));
+        }
+
+        return $renamed;
+    }
+
+    /**
      * Deletes a file or directory inside the server container.
      */
     public function deletePath(mixed $server, string $path): bool
@@ -474,8 +513,10 @@ final class DayZPanelGateway
                 ->timeout(5)
                 ->acceptJson();
 
-            if (strtoupper($method) !== 'POST') {
+            if (strtoupper($method) !== 'POST' && strtoupper($method) !== 'PUT') {
                 $response = $request->get($url, $payload);
+            } elseif (strtoupper($method) === 'PUT') {
+                $response = $request->put($url, $payload);
             } elseif ($body !== null) {
                 $query = $payload === [] ? '' : '?' . http_build_query($payload);
                 $response = $request->withBody($body, 'text/plain')->post($url . $query);

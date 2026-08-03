@@ -113,6 +113,59 @@ final class DayZServerController
     }
 
     /**
+     * Schedules a one-time timed restart with countdown warnings.
+     *
+     * @return array<string, mixed>
+     */
+    public function timedRestart(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        $minutes = (int) $this->context->stringInput('minutes', '10');
+
+        return $this->service->startTimedRestart($model, max(1, $minutes));
+    }
+
+    /**
+     * Cancels a pending one-time timed restart.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelTimedRestart(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->service->cancelTimedRestart($model);
+    }
+
+    /**
+     * Renders the DZSA Launcher tab, or returns the server's DZSA endpoint for API requests.
+     *
+     * @return mixed
+     */
+    public function dzsa(mixed $server = null)
+    {
+        $resolved = $this->context->resolve($server);
+
+        $dzsaEndpoint = $this->query->dzsaEndpoint($resolved['model']);
+        $payload = [
+            'dzsa_ip'         => $dzsaEndpoint !== null ? $dzsaEndpoint['ip'] : '',
+            'dzsa_query_port' => $dzsaEndpoint !== null ? $dzsaEndpoint['query_port'] : 0,
+            'dzsa_url'        => $dzsaEndpoint !== null
+                ? 'https://dayzsalauncher.com/#/servercheck/' . $dzsaEndpoint['ip'] . ':' . $dzsaEndpoint['query_port']
+                : '',
+        ];
+
+        if ($this->context->expectsJson()) {
+            return $payload;
+        }
+
+        return $this->renderer->render('dzsa', $payload, 'dzsa', $resolved['id'], $resolved['name']);
+    }
+
+    /**
      * Renders the server control page, or returns launch parameters for API requests.
      *
      * @param list<string> $enabledFolders
