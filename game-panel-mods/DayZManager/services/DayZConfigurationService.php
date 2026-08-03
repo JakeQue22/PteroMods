@@ -125,7 +125,7 @@ final class DayZConfigurationService
             $pattern = '/^\h*<file\h+name="Types_Extra\/' . preg_quote($name, '/') . '\.xml"\h+type="types"\h*\/>\h*\R?/mi';
             $updated = (string) preg_replace($pattern, '', $updated);
 
-            // Remove entries written without the Types_Extra/ prefix (older insertion format).
+            // Remove entries in the correct format: ModName.xml inside a <ce folder="Types_Extra"> block.
             $patternNew = '/^\h*<file\h+name="' . preg_quote($name, '/') . '\.xml"\h+type="types"\h*\/>\h*\R?/mi';
             $updated = (string) preg_replace($patternNew, '', $updated);
         }
@@ -499,34 +499,39 @@ final class DayZConfigurationService
         }
 
         $fileName = $modName . '.xml';
+        $fileLine  = sprintf('<file name="%s" type="types" />', $fileName);
 
-        // The canonical entry placed directly inside <economycore> with the Types_Extra/ path prefix.
-        $fileLine = sprintf('<file name="Types_Extra/%s" type="types" />', $fileName);
-
-        // Skip if already present (canonical format).
+        // Already present inside a <ce folder="Types_Extra"> block.
         if (str_contains($cfg, $fileLine)) {
-            return true;
-        }
-
-        // Also skip if already written without the Types_Extra/ prefix (older insertion format).
-        $bareFileLine = sprintf('<file name="%s" type="types" />', $fileName);
-
-        if (str_contains($cfg, $bareFileLine)) {
             return true;
         }
 
         // Detect the indentation style used by the file (tab or 4 spaces).
         $indent = preg_match('/^\t<(?:ce|economycore)\b/mi', $cfg) ? "\t" : '    ';
-        $newFileEntry = $indent . $fileLine;
+        $newFileEntry = $indent . $indent . $fileLine;
 
-        // Insert directly inside <economycore>, after the last </ce> and before </economycore>.
-        if (str_contains($cfg, '</economycore>')) {
-            $updated = str_replace('</economycore>', $newFileEntry . "\n" . '</economycore>', $cfg);
-        } elseif (str_contains($cfg, '</ce>')) {
-            $pos     = (int) strrpos($cfg, '</ce>');
-            $updated = substr($cfg, 0, $pos + 5) . "\n" . $newFileEntry . substr($cfg, $pos + 5);
+        // Try to insert into an existing <ce folder="Types_Extra"> block.
+        if (preg_match('/<ce\b[^>]*\bfolder=["\']Types_Extra["\']/i', $cfg) === 1) {
+            $updated = (string) preg_replace(
+                '/(<ce\b[^>]*\bfolder=["\']Types_Extra["\'][^>]*>)([\s\S]*?)(<\/ce>)/i',
+                '$1$2' . "\n" . $newFileEntry . '$3',
+                $cfg,
+                1,
+            );
         } else {
-            $updated = rtrim($cfg) . "\n" . $newFileEntry . "\n";
+            // No Types_Extra block yet; create one before </economycore>.
+            $newBlock = $indent . '<ce folder="Types_Extra">' . "\n"
+                      . $newFileEntry . "\n"
+                      . $indent . '</ce>';
+
+            if (str_contains($cfg, '</economycore>')) {
+                $updated = str_replace('</economycore>', $newBlock . "\n" . '</economycore>', $cfg);
+            } elseif (str_contains($cfg, '</ce>')) {
+                $pos     = (int) strrpos($cfg, '</ce>');
+                $updated = substr($cfg, 0, $pos + 5) . "\n" . $newBlock . substr($cfg, $pos + 5);
+            } else {
+                $updated = rtrim($cfg) . "\n" . $newBlock . "\n";
+            }
         }
 
         if (!isset($updated) || $updated === $cfg) {
