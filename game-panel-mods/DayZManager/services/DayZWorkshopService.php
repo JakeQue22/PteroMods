@@ -124,6 +124,28 @@ final class DayZWorkshopService
         $enabledKeys = array_map('strtolower', $loadOrder);
         $serverOnlyKeys = array_map('strtolower', $serverMods);
 
+        // Expand enabledKeys / serverOnlyKeys to cover both the bare numeric form
+        // ('1797720064') and the @-prefixed folder form ('@1797720064') so that mods
+        // referenced as numeric IDs in the startup command are still shown as enabled.
+        foreach ([$loadOrder, $serverMods] as $i => $list) {
+            foreach ($list as $f) {
+                $lower = strtolower($f);
+                $bare = ltrim($lower, '@');
+                if (ctype_digit($bare)) {
+                    if ($i === 0) {
+                        $enabledKeys[] = '@' . $bare;
+                        $enabledKeys[] = $bare;
+                    } else {
+                        $serverOnlyKeys[] = '@' . $bare;
+                        $serverOnlyKeys[] = $bare;
+                    }
+                }
+            }
+        }
+
+        $enabledKeys = array_unique($enabledKeys);
+        $serverOnlyKeys = array_unique($serverOnlyKeys);
+
         $mods = [];
         $position = 0;
 
@@ -145,6 +167,50 @@ final class DayZWorkshopService
             );
 
             $position++;
+        }
+
+        // Deduplicate by Workshop ID: when the same mod appears under both its
+        // mod-name folder (@ModName) and its numeric Workshop ID folder (@1797720064),
+        // keep only one entry, preferring the installed non-numeric-folder version.
+        $seenIds = [];
+        $deduped = [];
+
+        foreach ($mods as $mod) {
+            $wid = (string) ($mod['workshop_id'] ?? '');
+            $folder = ltrim((string) ($mod['folder_name'] ?? ''), '@');
+
+            if ($wid !== '') {
+                if (!isset($seenIds[$wid])) {
+                    $seenIds[$wid] = count($deduped);
+                    $deduped[] = $mod;
+                } else {
+                    $existingIdx = $seenIds[$wid];
+                    $existingFolder = ltrim((string) ($deduped[$existingIdx]['folder_name'] ?? ''), '@');
+
+                    // Replace the existing entry when this one is installed and the
+                    // existing one uses a raw numeric folder name while this one does not.
+                    if (($mod['installed'] ?? false)
+                        && ctype_digit($existingFolder)
+                        && !ctype_digit($folder)) {
+                        $deduped[$existingIdx] = $mod;
+                    }
+                }
+            } else {
+                // No Workshop ID yet (not installed): skip if a bare numeric folder
+                // duplicates a mod already represented by its Workshop ID.
+                if (ctype_digit($folder) && isset($seenIds[$folder])) {
+                    continue;
+                }
+
+                $deduped[] = $mod;
+            }
+        }
+
+        // Re-index positions after deduplication.
+        $mods = array_values($deduped);
+
+        foreach ($mods as $idx => $_) {
+            $mods[$idx]['position'] = $idx;
         }
 
         return $this->memo[$memoKey] = $mods;
@@ -1034,11 +1100,24 @@ final class DayZWorkshopService
             }
 
             $folderName = (string) ($mod['folder_name'] ?? '');
+            $originalFolderName = $folderName;
             $title = (string) ($mod['title'] ?? '');
 
             // Rename folders still using the numeric Workshop ID as their name
             // (e.g. `@1797720064`) to the proper mod name (`@WindstridesClothingPack`).
             $folderName = $this->maybeRenameFolderToModName($server, $folderName, $title, (string) $workshopId);
+
+            // When the folder was successfully renamed away from the numeric Workshop ID,
+            // remove that ID from the SteamCMD download variable so the next server
+            // restart does not re-download the mod into a new @workshopId folder and
+            // create a duplicate installation.
+            if ($folderName !== $originalFolderName) {
+                $this->startup->removeWorkshopIds(
+                    $server,
+                    [(string) $workshopId],
+                    $this->modlistWorkshopIds($server),
+                );
+            }
 
             $this->configuration->syncTypesExtraForMod($server, $folderName, $title);
         }
@@ -1065,6 +1144,25 @@ final class DayZWorkshopService
         }
 
         if (!$this->gateway->renameFile($server, '/', $folderName, $newFolderName)) {
+            // The rename may have failed because the target folder already exists
+            // (e.g., a previous re-download re-created the @workshopId folder while
+            // @ModName was already in place). Check whether the target is present and,
+            // if so, delete the numeric duplicate instead.
+            $this->gateway->clearFileListingCache($server);
+            $this->memo = [];
+            $existingFolders = $this->modFolders($server);
+            $targetExists = array_filter(
+                $existingFolders,
+                static fn (array $f): bool => strcasecmp($f['name'], $newFolderName) === 0,
+            ) !== [];
+
+            if ($targetExists) {
+                $this->gateway->deletePath($server, '/' . $folderName);
+                $this->memo = [];
+
+                return $newFolderName;
+            }
+
             return $folderName;
         }
 

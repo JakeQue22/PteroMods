@@ -134,11 +134,20 @@ final class DayZServerService
         $nextRestart = $enabled ? date('Y-m-d H:i:s', time() + ($intervalMinutes * 60)) : null;
         $warningMinutesEnabled = $this->normalizeWarningMinutes($warningMinutesEnabled);
         $warningMessages = $this->normalizeWarningMessages($warningMessages);
+
+        // Pre-mark intervals >= intervalMinutes as already sent so the first tick
+        // does not fire them all at once. The intervals that are shorter than the
+        // restart delay will still fire at the appropriate times.
+        $preFilledWarnings = $enabled ? array_values(array_filter(
+            $warningMinutesEnabled,
+            static fn (int $m): bool => $m >= $intervalMinutes,
+        )) : [];
+
         $update = [
             'enabled' => $enabled ? 1 : 0,
             'interval_minutes' => $intervalMinutes,
             'next_restart_at' => $nextRestart,
-            'warnings_sent' => '',
+            'warnings_sent' => implode(',', $preFilledWarnings),
             'updated_at' => date('Y-m-d H:i:s'),
             'created_at' => date('Y-m-d H:i:s'),
         ];
@@ -190,6 +199,24 @@ final class DayZServerService
             $timedNext = $timedAt !== null ? strtotime((string) $timedAt) : false;
 
             if ($timedNext !== false && $timedNext > 0) {
+                // When the restart time has already passed (e.g. the tick was
+                // delayed), fire the restart immediately without sending
+                // retrospective warning messages that would spam global chat.
+                if ($now >= $timedNext) {
+                    $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
+                    $this->gateway->power($server, 'restart');
+                    $this->clearTimedRestart($serverId);
+
+                    return [
+                        'status'          => 'restarted',
+                        'messages_sent'   => $results,
+                        'next_restart_at' => null,
+                        'timed_restart_at' => null,
+                        'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
+                        'restarted'       => true,
+                    ];
+                }
+
                 $timedWarningsSent = $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''));
                 $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
                 $warningMessages = $this->warningMessages($schedule);
@@ -203,21 +230,6 @@ final class DayZServerService
                             $results[] = $message;
                         }
                     }
-                }
-
-                if ($now >= $timedNext) {
-                    $this->gateway->sendCommand($server, "<t color='#ff0000'>Restarting now.</t>");
-                    $this->gateway->power($server, 'restart');
-                    $this->clearTimedRestart($serverId);
-
-                    return [
-                        'status'          => 'restarted',
-                        'messages_sent'   => $results,
-                        'next_restart_at' => null,
-                        'timed_restart_at' => null,
-                        'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
-                        'restarted'       => true,
-                    ];
                 }
 
                 if ($timedWarningsSent !== $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''))) {
@@ -244,28 +256,30 @@ final class DayZServerService
             $next = time() + ($interval * 60);
         }
 
-        $warningsSent = $this->parseWarnings((string) ($schedule['warnings_sent'] ?? ''));
-        $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
-        $warningMessages = $this->warningMessages($schedule);
-
-        foreach ($enabledWarningMinutes as $minutes) {
-            if ($now >= ($next - ($minutes * 60)) && !in_array($minutes, $warningsSent, true)) {
-                $message = $this->warningMessage($minutes, $warningMessages);
-
-                if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
-                    $warningsSent[] = $minutes;
-                    $results[] = $message;
-                }
-            }
-        }
-
         $restarted = false;
 
         if ($now >= $next) {
+            // Restart time has passed; restart immediately without sending
+            // any retrospective warning messages.
             $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
             $restarted = $this->gateway->power($server, 'restart');
             $next = $next + ($interval * 60);
             $warningsSent = [];
+        } else {
+            $warningsSent = $this->parseWarnings((string) ($schedule['warnings_sent'] ?? ''));
+            $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
+            $warningMessages = $this->warningMessages($schedule);
+
+            foreach ($enabledWarningMinutes as $minutes) {
+                if ($now >= ($next - ($minutes * 60)) && !in_array($minutes, $warningsSent, true)) {
+                    $message = $this->warningMessage($minutes, $warningMessages);
+
+                    if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
+                        $warningsSent[] = $minutes;
+                        $results[] = $message;
+                    }
+                }
+            }
         }
 
         $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true);
@@ -309,9 +323,19 @@ final class DayZServerService
         }
 
         $timedAt = date('Y-m-d H:i:s', time() + ($minutes * 60));
+
+        // Pre-mark warning intervals that are already irrelevant for this restart
+        // delay (i.e., M >= $minutes) so the first tick does not fire them all at
+        // once. The immediate announcement below already covers the "restart in N
+        // minutes" message; shorter-interval warnings will fire at the right time.
+        $alreadySent = array_values(array_filter(
+            self::RESTART_WARNINGS_MINUTES,
+            static fn (int $m): bool => $m >= $minutes,
+        ));
+
         $update = [
             'timed_restart_at'    => $timedAt,
-            'timed_warnings_sent' => '',
+            'timed_warnings_sent' => implode(',', $alreadySent),
             'updated_at'          => date('Y-m-d H:i:s'),
             'created_at'          => date('Y-m-d H:i:s'),
         ];
