@@ -13,7 +13,7 @@ use Throwable;
 final class DayZServerService
 {
     /** @var list<int> */
-    private const RESTART_WARNINGS_MINUTES = [180, 120, 60, 30, 20, 10, 5, 2, 1];
+    private const RESTART_WARNINGS_MINUTES = [180, 120, 60, 30, 20, 15, 10, 5, 2, 1];
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),

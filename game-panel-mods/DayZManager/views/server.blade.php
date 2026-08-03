@@ -21,7 +21,7 @@
 @php
     $restartSchedule = $restart_schedule ?? ['enabled' => false, 'interval_minutes' => 360, 'next_restart_at' => null];
     $intervalHours = max(1, (int) (($restartSchedule['interval_minutes'] ?? 360) / 60));
-    $warningMinuteOptions = [180, 120, 60, 30, 20, 10, 5, 2, 1];
+    $warningMinuteOptions = [180, 120, 60, 30, 20, 15, 10, 5, 2, 1];
     $warningMinutesEnabled = array_map('intval', $restartSchedule['warning_minutes_enabled'] ?? $warningMinuteOptions);
     $warningMessages = is_array($restartSchedule['warning_messages'] ?? null) ? $restartSchedule['warning_messages'] : [];
 @endphp
@@ -508,6 +508,10 @@
         }
     };
 
-    setInterval(window.pteroTickRestartSchedule, 60000);
+    setInterval(window.pteroTickRestartSchedule, 30000);
+
+    // Tick immediately on load so a due restart or warning fires right away
+    // rather than waiting up to 30 seconds for the first interval.
+    window.pteroTickRestartSchedule();
 }());
 </script>

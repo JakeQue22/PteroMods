@@ -146,6 +146,12 @@ final class DayZWorkshopService
         $enabledKeys = array_unique($enabledKeys);
         $serverOnlyKeys = array_unique($serverOnlyKeys);
 
+        // When the startup is available but the load order is empty, all mods
+        // should show as disabled (not enabled). The "all installed = enabled"
+        // fallback only applies when the daemon is unreachable and no startup
+        // data exists at all.
+        $startupKnown = $startup['source'] !== 'unavailable';
+
         $mods = [];
         $position = 0;
 
@@ -161,13 +167,45 @@ final class DayZWorkshopService
                 $entry === null ? $name : $entry['name'],
                 installed: $entry !== null,
                 size: $entry['size'] ?? 0,
-                enabled: $enabledKeys === [] ? $entry !== null : in_array($key, $enabledKeys, true),
+                enabled: ($enabledKeys === [] && !$startupKnown) ? $entry !== null : in_array($key, $enabledKeys, true),
                 serverOnly: in_array($key, $serverOnlyKeys, true),
                 position: $position,
             );
 
             $position++;
         }
+
+        // Merge numeric "not-installed, enabled" placeholder entries with their
+        // installed counterparts. When the startup command references a mod by its
+        // numeric Workshop ID (e.g. 1797720064) and the corresponding folder on disk
+        // has been renamed to its proper name (e.g. @CF), the two entries would
+        // otherwise appear as separate rows. This pass promotes the installed entry
+        // to "enabled" and removes the numeric placeholder.
+        $widsToInstalledIdx = [];
+
+        foreach ($mods as $idx => $mod) {
+            $wid = (string) ($mod['workshop_id'] ?? '');
+
+            if ($wid !== '' && ($mod['installed'] ?? false)) {
+                $widsToInstalledIdx[$wid] = $idx;
+            }
+        }
+
+        foreach ($mods as $idx => $mod) {
+            $folder = ltrim((string) ($mod['folder_name'] ?? ''), '@');
+
+            if (!ctype_digit($folder) || ($mod['installed'] ?? false) || !($mod['enabled'] ?? false)) {
+                continue;
+            }
+
+            // Numeric folder = Workshop ID; check if an installed mod has this Workshop ID.
+            if (isset($widsToInstalledIdx[$folder])) {
+                $mods[$widsToInstalledIdx[$folder]]['enabled'] = true;
+                unset($mods[$idx]);
+            }
+        }
+
+        $mods = array_values($mods);
 
         // Deduplicate by Workshop ID: when the same mod appears under both its
         // mod-name folder (@ModName) and its numeric Workshop ID folder (@1797720064),
@@ -296,6 +334,17 @@ final class DayZWorkshopService
      */
     private function steamApiKey(): string
     {
+        // Check the panel-level DB setting first (set via the DayZ Manager settings page).
+        try {
+            $dbKey = (new DayZManagerSettingsService())->get('steam_web_api_key', '');
+
+            if (is_string($dbKey) && $dbKey !== '') {
+                return $dbKey;
+            }
+        } catch (\Throwable) {
+            // Settings service unavailable; fall through to environment variables.
+        }
+
         foreach (['STEAM_WEB_API_KEY', 'PTEROMODS_STEAM_API_KEY'] as $variable) {
             $value = getenv($variable);
 
@@ -332,7 +381,7 @@ final class DayZWorkshopService
     {
         $workshopId = (new WorkshopReferenceParser())->parse($reference);
         $plan = (new WorkshopDependencyPlanner())->buildPlan($workshopId, $metadata + [
-            $workshopId => $metadata[$workshopId] ?? ['dependencies' => [], 'requires_cf' => true],
+            $workshopId => $metadata[$workshopId] ?? ['dependencies' => [], 'requires_cf' => false],
         ]);
 
         $server = $this->resolveServer($server);
@@ -787,13 +836,30 @@ final class DayZWorkshopService
         }
 
         $folder = (string) $mod['folder_name'];
+        $workshopId = trim((string) ($mod['workshop_id'] ?? ''));
 
         // Ensure the full mod order is recorded in the DB before we make any
         // change.  This way a disable never loses a mod's original position.
         $this->bootstrapFullOrder($server);
 
         $order = $this->enabledFolders($server);
-        $order = array_values(array_filter($order, static fn (string $entry): bool => strcasecmp($entry, $folder) !== 0));
+
+        // Remove entries that reference this mod either by folder name or by its
+        // numeric Workshop ID. When the startup command still contains the raw
+        // numeric ID (e.g. 1797720064) instead of the renamed folder name
+        // (e.g. @CF), both forms must be filtered out so the disable takes effect.
+        $order = array_values(array_filter(
+            $order,
+            static function (string $entry) use ($folder, $workshopId): bool {
+                if (strcasecmp($entry, $folder) === 0) {
+                    return false;
+                }
+                if ($workshopId !== '' && ltrim($entry, '@') === $workshopId) {
+                    return false;
+                }
+                return true;
+            },
+        ));
 
         if ($enabled) {
             // Insert at the position saved from a previous disable rather than
@@ -867,8 +933,10 @@ final class DayZWorkshopService
     private function persistOrder(mixed $server, array $order, string $action): array
     {
         $result = $this->startup->saveModList($server, $order);
-        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
+        // Clear the memo before reading the updated Workshop ID list so that
+        // modlist.html reflects the new enabled state, not the stale cache.
         $this->memo = [];
+        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
 
         return [
             'status'            => $result['saved'] ? 'applied' : 'failed',

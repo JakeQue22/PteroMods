@@ -32,6 +32,12 @@ final class DayZManagerSettingsService
          * appropriate permissions to be configured).
          */
         'use_workshop_subscriptions' => false,
+
+        /**
+         * Steam Web API key used for Workshop browsing and metadata lookups.
+         * Can also be supplied via the STEAM_WEB_API_KEY environment variable.
+         */
+        'steam_web_api_key' => '',
     ];
 
     /**
@@ -41,6 +47,15 @@ final class DayZManagerSettingsService
      */
     public const LABELS = [
         'use_workshop_subscriptions' => 'Use Steam account Workshop subscription list',
+    ];
+
+    /**
+     * Human-readable labels for text/string settings shown on the Settings page.
+     *
+     * @var array<string, string>
+     */
+    public const TEXT_LABELS = [
+        'steam_web_api_key' => 'Steam Web API Key',
     ];
 
     /**
@@ -54,6 +69,10 @@ final class DayZManagerSettingsService
             . 'subscription list to suggest or automatically import subscribed mods. '
             . 'Disabled by default — enable only if you want subscribed mods to influence '
             . 'what appears in the manager.',
+        'steam_web_api_key' =>
+            'Your Steam Web API key for browsing the Workshop and resolving mod metadata. '
+            . 'Get a free key at steamcommunity.com/dev/apikey. '
+            . 'Can also be set via the STEAM_WEB_API_KEY environment variable.',
     ];
 
     /**

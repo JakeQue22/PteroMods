@@ -31,9 +31,10 @@ final class DayZManagerSettingsController
         $resolved = $this->context->resolve($server);
 
         $data = [
-            'settings'     => $this->settings->all(),
-            'labels'       => DayZManagerSettingsService::LABELS,
-            'descriptions' => DayZManagerSettingsService::DESCRIPTIONS,
+            'settings'          => $this->settings->all(),
+            'labels'            => DayZManagerSettingsService::LABELS,
+            'descriptions'      => DayZManagerSettingsService::DESCRIPTIONS,
+            'text_labels'       => DayZManagerSettingsService::TEXT_LABELS,
         ];
 
         if ($this->context->expectsJson()) {
@@ -55,11 +56,13 @@ final class DayZManagerSettingsController
         $input = $this->context->input('settings', []);
         $values = is_array($input) ? $input : [];
 
-        // Normalise boolean-like values submitted from an HTML form.
+        // Normalise values: boolean-like strings become bools; plain strings are
+        // kept as strings (e.g. the Steam Web API key setting).
         $normalised = [];
 
         foreach ($values as $key => $value) {
-            $normalised[(string) $key] = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE) ?? $value;
+            $bool = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
+            $normalised[(string) $key] = $bool !== null ? $bool : $value;
         }
 
         $this->settings->saveMany($normalised);
