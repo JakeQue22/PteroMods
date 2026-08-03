@@ -389,7 +389,9 @@ final class DayZServerService
         $normalized = array_values(array_unique(array_filter(array_map(
             static fn (mixed $minute): int => (int) $minute,
             $minutes,
-        ), static fn (int $minute) use ($allowed): bool => isset($allowed[$minute]))));
+        ), static function (int $minute) use ($allowed): bool {
+            return isset($allowed[$minute]);
+        })));
         rsort($normalized);
 
         return $normalized === [] ? self::RESTART_WARNINGS_MINUTES : $normalized;
