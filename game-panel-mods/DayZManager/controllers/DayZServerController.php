@@ -28,6 +28,22 @@ final class DayZServerController
     }
 
     /**
+     * Returns live query status for the server, bypassing the short-lived
+     * cache so the operator can force a fresh result.
+     *
+     * @return array<string, mixed>
+     */
+    public function queryStatus(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+        $this->query->clearCache($resolved['model']);
+        $live = $this->query->query($resolved['model']);
+        $live['player_count'] = $this->dashboard->formatPlayerCount($live);
+
+        return $live;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function restart(mixed $server = null, string $reason = ''): array

@@ -176,6 +176,14 @@ final class DayZWorkshopService
     }
 
     /**
+     * Whether the Steam Web API key needed for Workshop browsing is configured.
+     */
+    public function isBrowseEnabled(): bool
+    {
+        return $this->steamApiKey() !== '';
+    }
+
+    /**
      * Browses the DayZ Workshop by search term (or the current trending
      * items when the term is blank), so mods can be discovered by name.
      *
@@ -248,7 +256,14 @@ final class DayZWorkshopService
         $item = current(array_filter($queue, static fn (array $entry): bool => $entry['workshop_id'] === $workshopId)) ?: null;
 
         $this->persistQueue($server, $queue);
-        $this->announceQueue($server, $queue);
+        $this->gateway->clearFileListingCache($server);
+
+        // Append the new workshop IDs to the egg's MODS variable so the
+        // startup script can pass them to SteamCMD on the next boot.
+        $this->startup->appendWorkshopIds($server, $plan);
+
+        // Restart the server so its startup script downloads the mods.
+        $restarted = $this->gateway->power($server, 'restart');
 
         return [
             'workshop_id' => $workshopId,
@@ -257,12 +272,13 @@ final class DayZWorkshopService
             'file_size' => $item['file_size'] ?? '',
             'install_order' => $plan,
             'queue' => $queue,
+            'restart_triggered' => $restarted,
             'restart_after_update' => true,
             'auto_dependency_installation' => true,
             'status' => 'queued',
-            'message' => 'Install queued. SteamCMD (or your egg\'s update script) downloads the files; '
-                . 'progress below reflects whether each mod has appeared on the server yet. '
-                . 'This queue persists across page reloads and appears in the server console.',
+            'message' => $restarted
+                ? 'Install queued. The server is restarting so its startup script can download the mods via SteamCMD.'
+                : 'Install queued. Start or restart the server to let its startup script download the mods via SteamCMD.',
         ];
     }
 
@@ -285,6 +301,10 @@ final class DayZWorkshopService
         if ($workshopIds === []) {
             $workshopIds = array_column($this->persistedQueue($server), 'workshop_id');
         }
+
+        // Clear the file-listing cache so the status check always reads the
+        // latest files from Wings rather than a 30-second-old snapshot.
+        $this->gateway->clearFileListingCache($server);
 
         $queue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
         $complete = $queue !== [] && !in_array(false, array_column($queue, 'installed'), true);
@@ -412,30 +432,6 @@ final class DayZWorkshopService
     private function serverIdentifier(mixed $server): string
     {
         return $server === null ? '' : $this->context->attribute($server, ['uuid', 'uuidShort', 'id']);
-    }
-
-    /**
-     * Notifies the server console that mods were queued for install, so an
-     * operator watching the console sees the request immediately instead of
-     * only through the panel UI.
-     *
-     * @param list<array<string, mixed>> $queue
-     */
-    private function announceQueue(mixed $server, array $queue): void
-    {
-        if ($server === null || $queue === []) {
-            return;
-        }
-
-        $labels = array_map(
-            static fn (array $entry): string => ($entry['title'] !== '' ? $entry['title'] : $entry['workshop_id']) . ' (' . $entry['workshop_id'] . ')',
-            $queue,
-        );
-
-        $this->gateway->sendCommand(
-            $server,
-            'say [PteroMods] Workshop install queued: ' . implode(', ', $labels),
-        );
     }
 
     /**

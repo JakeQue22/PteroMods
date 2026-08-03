@@ -68,6 +68,21 @@ final class DayZPanelGateway
     }
 
     /**
+     * Clears the cached directory listing for a server's root, so the next
+     * `listDirectory()` call fetches live data from Wings.
+     */
+    public function clearFileListingCache(mixed $server): void
+    {
+        if ($server === null) {
+            return;
+        }
+
+        foreach (['/', '/steamapps/workshop/content/221100'] as $path) {
+            $this->forget($this->cacheKey('files', $server, $this->normalizePath($path)));
+        }
+    }
+
+    /**
      * Lists a directory inside the server container.
      *
      * @return list<array{name: string, directory: bool, file: bool, size: int, mime: string, modified: string}>

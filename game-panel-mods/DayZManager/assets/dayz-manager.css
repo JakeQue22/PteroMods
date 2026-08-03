@@ -291,6 +291,56 @@ body.dz-body {
   font-size: 0.82rem;
 }
 
+.dz-queue-list {
+  margin-top: 0.75rem;
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-radius);
+  overflow: hidden;
+}
+
+.dz-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.82rem;
+  background: var(--dz-surface-alt);
+}
+
+.dz-queue-item + .dz-queue-item {
+  border-top: 1px solid var(--dz-border);
+}
+
+.dz-queue-thumb {
+  width: 2.25rem;
+  height: 2.25rem;
+  object-fit: cover;
+  border-radius: 0.35rem;
+  flex-shrink: 0;
+}
+
+.dz-queue-noimg {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.35rem;
+  background: var(--dz-border);
+  flex-shrink: 0;
+}
+
+.dz-queue-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dz-queue-status {
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
 code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05rem 0.3rem; font-size: 0.78rem; color: var(--dz-green); }
 
 .dz-mod-wrap { display: flex; }

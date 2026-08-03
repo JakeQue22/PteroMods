@@ -151,6 +151,51 @@ final class DayZStartupService
     }
 
     /**
+     * Appends new Workshop IDs to the egg variable that the startup script
+     * reads for its SteamCMD mod-download step (e.g. `MODS`, `MOD_LIST`).
+     *
+     * Only variables whose current value already consists entirely of
+     * Workshop IDs (numeric tokens) are updated, to avoid corrupting
+     * variables that store folder names instead of IDs. If no suitable
+     * variable is found the call is a no-op.
+     *
+     * @param list<string> $workshopIds
+     */
+    public function appendWorkshopIds(mixed $server, array $workshopIds): void
+    {
+        if ($workshopIds === []) {
+            return;
+        }
+
+        $variables = $this->databaseVariables($server);
+
+        foreach (self::MOD_LIST_VARIABLES as $name) {
+            if (!array_key_exists($name, $variables)) {
+                continue;
+            }
+
+            $current = trim($variables[$name]);
+            $tokens = $current === '' ? [] : array_values(array_filter(
+                preg_split('/[;,\s]+/', $current) ?: [],
+                static fn (string $t): bool => $t !== '',
+            ));
+
+            // Only touch the variable when it is empty or already contains
+            // numeric Workshop IDs (not folder names like @CF).
+            $allNumeric = $tokens === [] || !in_array(false, array_map('ctype_digit', $tokens), true);
+
+            if (!$allNumeric) {
+                continue;
+            }
+
+            $merged = array_values(array_unique(array_merge($tokens, $workshopIds)));
+            $this->writeServerVariable($server, $name, implode(';', $merged));
+
+            return;
+        }
+    }
+
+    /**
      * Persists a new mod load order for a server.
      *
      * The list is written to the egg variable the startup command uses for

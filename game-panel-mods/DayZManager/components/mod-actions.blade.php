@@ -30,17 +30,47 @@
         });
     }
 
-    function describeQueue(queue) {
+    // ---------------------------------------------------------------------------
+    // Queue display helpers
+    // ---------------------------------------------------------------------------
+
+    function renderQueueList(queue, complete) {
+        const container = document.getElementById('ptero-install-queue');
+        const status = document.getElementById('ptero-install-status');
+        if (!container) return;
+
         if (!Array.isArray(queue) || queue.length === 0) {
-            return '';
+            container.classList.add('dz-hidden');
+            return;
         }
-        return queue.map(function (entry) {
+
+        container.classList.remove('dz-hidden');
+        container.innerHTML = '';
+
+        queue.forEach(function (entry) {
             const label = entry.title ? (entry.title + ' (' + entry.workshop_id + ')') : entry.workshop_id;
-            return label + ': ' + (entry.installed ? 'installed' : 'downloading…');
-        }).join(' · ');
+            const done = entry.installed;
+            const row = document.createElement('div');
+            row.className = 'dz-queue-item';
+            row.innerHTML = (entry.thumbnail
+                ? '<img src="' + entry.thumbnail + '" alt="" loading="lazy" class="dz-queue-thumb" />'
+                : '<div class="dz-queue-thumb dz-queue-noimg"></div>')
+                + '<span class="dz-queue-label">' + label + '</span>'
+                + '<span class="dz-queue-status ' + (done ? 'dz-text-green' : 'dz-text-amber') + '">'
+                + (done ? '✓ Installed' : '⧗ Downloading…') + '</span>';
+            container.appendChild(row);
+        });
+
+        if (status) {
+            status.classList.remove('dz-hidden');
+            status.textContent = complete
+                ? '✓ All mods installed.'
+                : '⧗ Download in progress — check back or restart the server if this persists.';
+            status.className = 'dz-status ' + (complete ? 'dz-text-green' : 'dz-text-muted');
+        }
     }
 
-    async function pollInstallStatus(status, workshopIds, attemptsLeft) {
+    async function pollInstallStatus(workshopIds, attemptsLeft) {
         if (attemptsLeft <= 0) {
             return;
         }
@@ -50,34 +80,26 @@
             if (!res.ok || !Array.isArray(data.queue)) {
                 return;
             }
-            status.textContent = (data.complete ? '✓ ' : '⧗ ') + describeQueue(data.queue);
-            status.className = 'dz-status ' + (data.complete ? 'dz-text-green' : 'dz-text-muted');
+            renderQueueList(data.queue, data.complete);
             if (!data.complete) {
-                setTimeout(function () { pollInstallStatus(status, workshopIds, attemptsLeft - 1); }, 4000);
+                setTimeout(function () { pollInstallStatus(workshopIds, attemptsLeft - 1); }, 4000);
             }
         } catch (err) {
             // Polling failures are silent; the last known status stays on screen.
         }
     }
 
-    // Restores any install still in progress when the page loads, so a
-    // refresh mid-download shows the persisted queue instead of nothing.
+    // Restores any install still in progress when the page loads.
     async function resumeQueue() {
-        const status = document.getElementById('ptero-install-status');
-        if (!status) {
-            return;
-        }
         try {
             const res = await apiGet('install/queue');
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !Array.isArray(data.queue) || data.queue.length === 0) {
                 return;
             }
-            status.classList.remove('dz-hidden');
-            status.textContent = (data.complete ? '✓ ' : '⧗ ') + describeQueue(data.queue);
-            status.className = 'dz-status ' + (data.complete ? 'dz-text-green' : 'dz-text-muted');
+            renderQueueList(data.queue, data.complete);
             if (!data.complete) {
-                pollInstallStatus(status, data.queue.map(function (entry) { return entry.workshop_id; }), 30);
+                pollInstallStatus(data.queue.map(function (e) { return e.workshop_id; }), 90);
             }
         } catch (err) {
             // No persisted queue, or the request failed; nothing to resume.
@@ -89,6 +111,10 @@
     } else {
         resumeQueue();
     }
+
+    // ---------------------------------------------------------------------------
+    // Lookup dropdown
+    // ---------------------------------------------------------------------------
 
     let lookupTimer = null;
 
@@ -110,10 +136,12 @@
         dropdown.innerHTML = '<button type="button" class="dz-lookup-item">'
             + (info.thumbnail ? '<img src="' + info.thumbnail + '" alt="" loading="lazy" />' : '')
             + '<span>' + (info.title || ('Workshop ' + info.workshop_id)) + ' <small>(' + info.workshop_id + ')</small></span>'
+            + '<span class="dz-text-muted" style="font-size:0.72rem;margin-left:auto;">Click to install</span>'
             + '</button>';
         dropdown.querySelector('.dz-lookup-item').addEventListener('click', function () {
             input.value = info.workshop_id;
             closeLookupDropdown();
+            window.pteroInstallMod();
         });
         input.insertAdjacentElement('afterend', dropdown);
     }
@@ -144,13 +172,18 @@
             }, 400);
         });
         document.addEventListener('click', function (event) {
-            if (event.target !== input) {
+            const dropdown = document.getElementById('ptero-workshop-lookup');
+            if (dropdown && !dropdown.contains(event.target) && event.target !== input) {
                 closeLookupDropdown();
             }
         });
     }
 
     attachLookup();
+
+    // ---------------------------------------------------------------------------
+    // Browse modal
+    // ---------------------------------------------------------------------------
 
     async function loadBrowseResults(term, page) {
         const grid = document.getElementById('ptero-browse-grid');
@@ -196,6 +229,7 @@
                         input.value = item.workshop_id;
                     }
                     window.pteroCloseBrowseModal();
+                    window.pteroInstallMod();
                 });
                 grid.appendChild(card);
             });
@@ -228,6 +262,10 @@
         loadBrowseResults(searchInput ? searchInput.value.trim() : '', 1);
     };
 
+    // ---------------------------------------------------------------------------
+    // Install
+    // ---------------------------------------------------------------------------
+
     window.pteroInstallMod = async function () {
         const input = document.getElementById('ptero-workshop-ref');
         const status = document.getElementById('ptero-install-status');
@@ -235,30 +273,39 @@
         if (!ref) {
             return;
         }
-        status.classList.remove('dz-hidden');
-        status.textContent = 'Looking up Workshop ID ' + ref + '…';
-        status.className = 'dz-status dz-text-muted';
+        if (input) { input.value = ''; }
+        closeLookupDropdown();
+        if (status) {
+            status.classList.remove('dz-hidden');
+            status.textContent = 'Queueing install for ' + ref + '…';
+            status.className = 'dz-status dz-text-muted';
+        }
         try {
             const res = await apiPost('install', { reference: ref });
             const data = await res.json().catch(() => ({}));
             if (res.ok) {
-                const label = data.title ? (data.title + ' (' + data.workshop_id + ')') : (data.workshop_id || ref);
-                status.textContent = '⧗ Queued ' + label + '. ' + describeQueue(data.queue);
-                status.className = 'dz-status dz-text-muted';
-                if (input) {
-                    input.value = '';
+                if (status) {
+                    status.textContent = data.message || '⧗ Install queued.';
+                    status.className = 'dz-status dz-text-muted';
+                }
+                if (Array.isArray(data.queue) && data.queue.length > 0) {
+                    renderQueueList(data.queue, false);
                 }
                 const ids = Array.isArray(data.install_order) && data.install_order.length > 0
                     ? data.install_order
                     : [data.workshop_id || ref];
-                pollInstallStatus(status, ids, 30);
+                pollInstallStatus(ids, 90);
             } else {
-                status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
-                status.className = 'dz-status dz-text-red';
+                if (status) {
+                    status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                    status.className = 'dz-status dz-text-red';
+                }
             }
         } catch (err) {
-            status.textContent = '✗ Network error: ' + err.message;
-            status.className = 'dz-status dz-text-red';
+            if (status) {
+                status.textContent = '✗ Network error: ' + err.message;
+                status.className = 'dz-status dz-text-red';
+            }
         }
     };
 

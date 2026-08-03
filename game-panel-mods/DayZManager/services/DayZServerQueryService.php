@@ -54,6 +54,34 @@ final class DayZServerQueryService
     }
 
     /**
+     * Clears the cached query result for a server so the next `query()` call
+     * fetches live data from the game server.
+     */
+    public function clearCache(mixed $server): void
+    {
+        $candidates = $this->resolveEndpointCandidates($server);
+
+        if ($candidates === []) {
+            return;
+        }
+
+        $cacheKey = 'pteromods.dayz.query.' . md5(implode(',', array_map(
+            static fn (array $candidate): string => $candidate[0] . ':' . $candidate[1],
+            $candidates,
+        )));
+
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget($cacheKey);
+        } catch (Throwable) {
+            // Best-effort cache clearing.
+        }
+    }
+
+    /**
      * Queries the game server.
      *
      * Several candidate query ports are tried (in order of confidence) because

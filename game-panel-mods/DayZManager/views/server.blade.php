@@ -2,15 +2,19 @@
     <h2>Server Control</h2>
     <p class="dz-sub">Power the server and review the launch parameters Pterodactyl actually starts it with.</p>
     @if (!empty($live))
-        <dl class="dz-grid">
+        <dl class="dz-grid" id="dz-query-stats">
             <div class="dz-stat">
                 <dt>Query Status</dt>
-                <dd class="{{ $live['online'] ? 'dz-text-green' : 'dz-text-red' }}">{{ $live['online'] ? 'Online' : 'Offline' }}</dd>
+                <dd id="dz-query-status" class="{{ $live['online'] ? 'dz-text-green' : 'dz-text-red' }}">{{ $live['online'] ? 'Online' : 'Offline' }}</dd>
             </div>
-            <div class="dz-stat"><dt>Query Endpoint</dt><dd>{{ $live['endpoint'] ?? 'Unknown' }}</dd></div>
-            <div class="dz-stat"><dt>Players</dt><dd>{{ $live['player_count'] ?? (($live['players'] ?? 0) . ' / ' . ($live['max_players'] ?? 64)) }}</dd></div>
-            <div class="dz-stat"><dt>Version</dt><dd>{{ $live['version'] ?? 'N/A' }}</dd></div>
+            <div class="dz-stat"><dt>Query Endpoint</dt><dd id="dz-query-endpoint">{{ $live['endpoint'] ?? 'Unknown' }}</dd></div>
+            <div class="dz-stat"><dt>Players</dt><dd id="dz-query-players">{{ $live['player_count'] ?? (($live['players'] ?? 0) . ' / ' . ($live['max_players'] ?? 64)) }}</dd></div>
+            <div class="dz-stat"><dt>Version</dt><dd id="dz-query-version">{{ $live['version'] ?? 'N/A' }}</dd></div>
         </dl>
+        <div class="dz-form" style="margin-top:0.75rem;">
+            <button class="dz-btn dz-btn-sm dz-btn-ghost" onclick="pteroRefreshQueryStatus()" id="dz-query-refresh-btn">Refresh Status</button>
+            <span id="dz-query-refresh-msg" class="dz-status dz-hidden"></span>
+        </div>
     @endif
 </section>
 
@@ -78,6 +82,66 @@
 <script>
 (function () {
     const SERVER_ID = @json($server_id);
+
+    window.pteroRefreshQueryStatus = async function () {
+        const btn = document.getElementById('dz-query-refresh-btn');
+        const msg = document.getElementById('dz-query-refresh-msg');
+        const statusEl = document.getElementById('dz-query-status');
+        const endpointEl = document.getElementById('dz-query-endpoint');
+        const playersEl = document.getElementById('dz-query-players');
+        const versionEl = document.getElementById('dz-query-version');
+
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Refreshing…';
+        }
+        if (msg) {
+            msg.classList.remove('dz-hidden');
+            msg.textContent = 'Querying server…';
+            msg.className = 'dz-status dz-text-muted';
+        }
+
+        try {
+            const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/query-status', {
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (res.ok) {
+                const online = !!data.online;
+                if (statusEl) {
+                    statusEl.textContent = online ? 'Online' : 'Offline';
+                    statusEl.className = online ? 'dz-text-green' : 'dz-text-red';
+                }
+                if (endpointEl) { endpointEl.textContent = data.endpoint || 'Unknown'; }
+                if (playersEl) {
+                    const pc = data.player_count || ((data.players || 0) + ' / ' + (data.max_players || 64));
+                    playersEl.textContent = pc;
+                }
+                if (versionEl) { versionEl.textContent = data.version || 'N/A'; }
+                if (msg) {
+                    msg.textContent = online ? '✓ Server is online.' : '✗ Server is offline or unreachable.';
+                    msg.className = 'dz-status ' + (online ? 'dz-text-green' : 'dz-text-red');
+                }
+            } else {
+                if (msg) {
+                    msg.textContent = '✗ Query failed (' + res.status + ')';
+                    msg.className = 'dz-status dz-text-red';
+                }
+            }
+        } catch (err) {
+            if (msg) {
+                msg.textContent = '✗ Network error: ' + err.message;
+                msg.className = 'dz-status dz-text-red';
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Refresh Status';
+            }
+        }
+    };
 
     window.pteroPowerSignal = async function (signal) {
         const status = document.getElementById('dz-restart-status');

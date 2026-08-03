@@ -33,6 +33,7 @@ final class DayZWorkshopController
                 'client_id'      => $this->context->clientIdentifier($resolved['model'], $resolved['id']),
                 'settings'       => $this->service->settings($resolved['model']),
                 'installed_mods' => $this->service->installedMods($resolved['model']),
+                'browse_enabled' => $this->service->isBrowseEnabled(),
             ];
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'mods', $resolved['id'], $resolved['name']);
