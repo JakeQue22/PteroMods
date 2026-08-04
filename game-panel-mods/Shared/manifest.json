@@ -1,0 +1,9 @@
+{
+  "name": "Shared Module Infrastructure",
+  "slug": "shared",
+  "version": "1.0.0",
+  "author": "JakeQue22",
+  "description": "Shared administration metadata, permissions, and UI resources for Game Panel Mods.",
+  "supports": ["all"],
+  "tabs": ["Game Panel Mods"]
+}
