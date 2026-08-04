@@ -521,6 +521,16 @@ final class DayZWorkshopService
         // syncInstalledTypesExtra() once the mod is detected on disk.
         $this->startup->appendWorkshopIds($server, $plan);
 
+        // appendWorkshopIds() only writes modlist.html with the *newly*
+        // queued IDs when it falls back to its own internal sync (no egg
+        // variable matched), which would overwrite modlist.html and drop
+        // every already-installed/queued mod from it. Explicitly rewrite
+        // modlist.html here with the full accumulated set (installed +
+        // queued + newly-planned) so the file the server/egg reads for mod
+        // downloads always reflects everything currently queued, not just
+        // this single request's IDs.
+        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
+
         // Restart only when explicitly requested by the operator.
         $restarted = $forceRestart ? $this->gateway->power($server, 'restart') : false;
 
