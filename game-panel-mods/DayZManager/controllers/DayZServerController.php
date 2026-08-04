@@ -123,6 +123,21 @@ final class DayZServerController
     }
 
     /**
+     * Progresses the pending follow-up restart / DZSA Launcher submission
+     * after queued mods finish installing. See
+     * DayZServerService::tickModInstallFollowUp() for the state machine.
+     *
+     * @return array<string, mixed>
+     */
+    public function tickModInstallFollowUp(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->service->tickModInstallFollowUp($model);
+    }
+
+    /**
      * Schedules a one-time timed restart with countdown warnings.
      *
      * @return array<string, mixed>

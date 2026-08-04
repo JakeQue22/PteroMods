@@ -55,6 +55,33 @@ final class DayZManagerSettingsService
          * mod under `@<id>` on every restart once its folder is renamed.
          */
         'rename_mods_to_friendly_names' => false,
+
+        /**
+         * When false (the default) DayZ Manager never contacts the DZSA
+         * Launcher service on its own. Mods installed while a server is
+         * offline are not picked up by DZSA until the server restarts a
+         * second time (once to download the mod, once more for the egg's
+         * startup script to actually enable it) — set this to true so DayZ
+         * Manager automatically submits a server-check request to
+         * https://dayzsalauncher.com once that second restart finishes and
+         * the server reports itself running, instead of requiring an
+         * operator to click "Update DZSA Server Listing" manually.
+         */
+        'auto_submit_dzsa' => false,
+
+        /**
+         * When false (the default) DayZ Manager never restarts a server on
+         * its own after mods finish downloading. The DayZ egg's startup
+         * script only picks up newly-downloaded mods on the boot *after*
+         * they land on disk, so a mod queued and installed during a restart
+         * still needs a second restart before it is actually active.
+         *
+         * Set to true to have DayZ Manager automatically trigger that
+         * second restart as soon as it detects the queued mods have
+         * finished downloading and been added to the load order, instead of
+         * requiring an operator to notice and restart manually.
+         */
+        'auto_restart_after_mod_install' => false,
     ];
 
     /**
@@ -65,6 +92,8 @@ final class DayZManagerSettingsService
     public const LABELS = [
         'use_workshop_subscriptions' => 'Use Steam account Workshop subscription list',
         'rename_mods_to_friendly_names' => 'Rename mod folders to their friendly Workshop name',
+        'auto_submit_dzsa' => 'Automatically submit to DZSA Launcher after mod installs',
+        'auto_restart_after_mod_install' => 'Automatically restart the server once queued mods finish installing',
     ];
 
     /**
@@ -101,6 +130,23 @@ final class DayZManagerSettingsService
             . 'will re-download that mod into a new duplicate "@<id>" folder on every '
             . 'server restart. Only enable this if your egg/image has its own logic that '
             . 'tolerates renamed mod folders.',
+        'auto_submit_dzsa' =>
+            'Disabled by default. New mods only start downloading after the server restarts, '
+            . 'and the DayZ egg\'s startup script needs a second restart before it actually '
+            . 'enables them — DZSA Launcher will not show the correct mod list until then. '
+            . 'When enabled, DayZ Manager watches for a mod-install restart to complete and, '
+            . 'once the server reports itself running again, automatically sends a '
+            . 'server-check request to dayzsalauncher.com so the launcher refreshes the '
+            . 'mod listing without you needing to open the DZSA tab and click the button '
+            . 'yourself.',
+        'auto_restart_after_mod_install' =>
+            'Disabled by default. The DayZ egg only downloads newly queued mods on the boot '
+            . 'right after they are added, then needs one more restart before its startup '
+            . 'script actually enables them. When enabled, DayZ Manager watches the install '
+            . 'queue and, as soon as it detects the queued mods have finished downloading '
+            . 'and been added to the enabled load order, automatically triggers that second '
+            . 'restart for you (connected players will be disconnected). Leave disabled if '
+            . 'you would rather restart manually when convenient.',
     ];
 
     /**

@@ -627,12 +627,57 @@ final class DayZWorkshopService
             // to manually enable each one. This must happen after queue/startup
             // cleanup so the order reflects the final on-disk state.
             $this->appendToEnabledLoadOrder($server, $installedIds);
+
+            // The mods are now downloaded and enabled in the load order, but the
+            // DayZ egg's startup script only actually launches with them after a
+            // restart that happens *after* this point. Mark the server as
+            // needing a follow-up restart (and, once running again, a DZSA
+            // Launcher submission) so DayZServerService::tickModInstallFollowUp()
+            // can act on it without the operator needing to notice manually.
+            $this->markPendingModInstallFollowUp($server);
         }
 
         return [
             'queue' => $queue,
             'complete' => $complete || $queue === [],
         ];
+    }
+
+    /**
+     * Records that this server has newly-installed mods waiting for a
+     * follow-up restart (and DZSA submission) so
+     * DayZServerService::tickModInstallFollowUp() can process it later.
+     */
+    private function markPendingModInstallFollowUp(mixed $server): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return;
+            }
+
+            $exists = \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')
+                ->where('server_id', $serverId)
+                ->exists();
+
+            \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')->updateOrInsert(
+                ['server_id' => $serverId],
+                array_merge(
+                    ['status' => 'waiting', 'updated_at' => date('Y-m-d H:i:s')],
+                    $exists ? [] : ['created_at' => date('Y-m-d H:i:s')],
+                ),
+            );
+        } catch (Throwable) {
+            // Best-effort bookkeeping; missing this only means the operator
+            // needs to notice and restart/refresh DZSA manually.
+        }
     }
 
     /**

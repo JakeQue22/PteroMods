@@ -294,6 +294,171 @@ final class DayZServerService
     }
 
     /**
+     * Handles the follow-up restart and DZSA Launcher submission after
+     * queued mods finish installing. Called periodically by client-side
+     * polling (mirroring tickRestartSchedule()) so DayZ Manager can react
+     * to state changes without a page reload.
+     *
+     * Behaviour is gated by two independent settings:
+     * - `auto_restart_after_mod_install`: once mods have been marked pending
+     *   (see DayZWorkshopService::markPendingModInstallFollowUp()), restart
+     *   the server so the egg's startup script actually loads them.
+     * - `auto_submit_dzsa`: once the server is confirmed running again,
+     *   best-effort submit a server-check request to DZSA Launcher.
+     *
+     * @return array<string, mixed>
+     */
+    public function tickModInstallFollowUp(mixed $server): array
+    {
+        $serverId = $this->serverIdentifier($server);
+        $pending = $this->pendingModInstallRow($serverId);
+
+        if ($pending === null) {
+            return ['status' => 'idle'];
+        }
+
+        $settings = new DayZManagerSettingsService();
+        $status = (string) ($pending['status'] ?? 'waiting');
+        $state = $this->gateway->state($server);
+
+        if ($status === 'waiting') {
+            if (!(bool) $settings->get('auto_restart_after_mod_install', false)) {
+                // Auto-restart disabled: leave the row as a marker for the
+                // operator (dzsa.blade.php / mods page can surface it) but
+                // do nothing further until they restart manually.
+                return ['status' => 'awaiting_manual_restart'];
+            }
+
+            // Restart regardless of current reported state (offline/running/
+            // unknown) — power('restart') is safe to call, and Wings/the
+            // egg will start the server if it isn't already running.
+            $this->gateway->sendCommand(
+                $server,
+                "say -1 <t color='#ff0000'>Restarting to enable newly installed mods.</t>",
+            );
+            $this->gateway->power($server, 'restart');
+            $this->storePendingModInstallStatus($serverId, 'restarting');
+
+            return ['status' => 'restarted'];
+        }
+
+        if ($status === 'restarting') {
+            if ($state !== 'running') {
+                return ['status' => 'waiting_for_running'];
+            }
+
+            if (!(bool) $settings->get('auto_submit_dzsa', false)) {
+                $this->clearPendingModInstall($serverId);
+
+                return ['status' => 'restart_complete'];
+            }
+
+            $submitted = $this->submitDzsa($server);
+            $this->clearPendingModInstall($serverId);
+
+            return ['status' => $submitted ? 'dzsa_submitted' : 'dzsa_submit_failed'];
+        }
+
+        $this->clearPendingModInstall($serverId);
+
+        return ['status' => 'idle'];
+    }
+
+    /**
+     * Best-effort GET to the DZSA Launcher server-check page so the
+     * launcher re-scans this server's mod listing without requiring the
+     * operator to open the tab manually.
+     */
+    private function submitDzsa(mixed $server): bool
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Http')) {
+            return false;
+        }
+
+        $endpoint = (new DayZServerQueryService())->dzsaEndpoint($server);
+
+        if ($endpoint === null) {
+            return false;
+        }
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(5)->get(
+                'https://dayzsalauncher.com/#/servercheck/' . $endpoint['ip'] . ':' . $endpoint['query_port'],
+            );
+
+            return $response->successful();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function pendingModInstallRow(string $serverId): ?array
+    {
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return null;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return null;
+            }
+
+            $row = \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')
+                ->where('server_id', $serverId)
+                ->first();
+
+            return $row === null ? null : (array) $row;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function storePendingModInstallStatus(string $serverId, string $status): void
+    {
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return;
+            }
+
+            \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')
+                ->where('server_id', $serverId)
+                ->update(['status' => $status, 'updated_at' => date('Y-m-d H:i:s')]);
+        } catch (Throwable) {
+            // Best-effort; worst case the next tick re-evaluates from 'waiting'.
+        }
+    }
+
+    private function clearPendingModInstall(string $serverId): void
+    {
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return;
+            }
+
+            \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')->where('server_id', $serverId)->delete();
+        } catch (Throwable) {
+            // Best-effort cleanup only.
+        }
+    }
+
+    /**
      * Schedules a one-time timed restart that will send warnings in the global
      * chat and restart the server after `$minutes` minutes.
      *
