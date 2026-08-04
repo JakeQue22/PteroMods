@@ -529,10 +529,28 @@ final class DayZWorkshopService
         // queued + newly-planned) so the file the server/egg reads for mod
         // downloads always reflects everything currently queued, not just
         // this single request's IDs.
-        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
+        //
+        // This write is the *only* mechanism that actually reaches SteamCMD
+        // for eggs whose mod variable (e.g. `MODIFICATIONS`) is not one of
+        // DayZStartupService::MOD_LIST_VARIABLES, so a silent failure here
+        // (Wings unreachable, container not yet created, etc.) means the
+        // Workshop ID never gets communicated to the startup script at all —
+        // the mod would then sit in the queue forever, since nothing ever
+        // asked SteamCMD to fetch it. Surface that failure in the response
+        // instead of swallowing it, so the operator knows to retry.
+        $modlistSynced = $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
 
         // Restart only when explicitly requested by the operator.
         $restarted = $forceRestart ? $this->gateway->power($server, 'restart') : false;
+
+        $message = $restarted
+            ? 'Install queued. The server is restarting so its startup script can download queued mods via SteamCMD.'
+            : 'Install queued. Restart the server when you are ready to download queued mods via SteamCMD.';
+
+        if (!$modlistSynced) {
+            $message = 'Install queued, but the modlist could not be updated on the server (the node may be offline). '
+                . 'The mod will stay in the queue until you retry the install so SteamCMD is actually told to download it.';
+        }
 
         return [
             'workshop_id' => $workshopId,
@@ -545,10 +563,8 @@ final class DayZWorkshopService
             'restart_after_update' => $restarted,
             'restart_required' => true,
             'auto_dependency_installation' => true,
-            'status' => 'queued',
-            'message' => $restarted
-                ? 'Install queued. The server is restarting so its startup script can download queued mods via SteamCMD.'
-                : 'Install queued. Restart the server when you are ready to download queued mods via SteamCMD.',
+            'status' => $modlistSynced ? 'queued' : 'failed',
+            'message' => $message,
         ];
     }
 
