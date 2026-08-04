@@ -391,11 +391,7 @@
         const installButton = controls.details.querySelector('[data-browse-install]');
         if (installButton && !disabled) {
             installButton.addEventListener('click', function () {
-                const input = document.getElementById('ptero-workshop-ref');
-                if (input) {
-                    input.value = workshopId;
-                }
-                window.pteroInstallMod();
+                pteroQueueFromBrowse(workshopId);
             });
         }
     }
@@ -452,11 +448,7 @@
             const installButton = card.querySelector('[data-browse-install]');
             if (installButton && !disabled) {
                 installButton.addEventListener('click', function () {
-                    const input = document.getElementById('ptero-workshop-ref');
-                    if (input) {
-                        input.value = workshopId;
-                    }
-                    window.pteroInstallMod();
+                    pteroQueueFromBrowse(workshopId);
                 });
             }
         });
@@ -616,6 +608,65 @@
     };
 
     bindBrowseModalClose();
+
+    // Queues a mod directly from the Browse Workshop modal without touching the
+    // shared input field, so multiple mods can be stacked without racing.
+    async function pteroQueueFromBrowse(workshopId) {
+        if (!workshopId) {
+            return;
+        }
+        // Optimistically mark as queued so the button updates immediately.
+        queuedWorkshopIds.add(workshopId);
+        renderBrowseGrid();
+
+        const status = document.getElementById('ptero-install-status');
+        if (status) {
+            status.classList.remove('dz-hidden');
+            status.textContent = 'Queueing install for ' + workshopId + '…';
+            status.className = 'dz-status dz-text-muted';
+        }
+        try {
+            const res = await apiPost('install', { reference: workshopId, force_restart: false });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                if (status) {
+                    status.textContent = data.message || '⧗ Install queued.';
+                    status.className = 'dz-status dz-text-muted';
+                }
+                if (Array.isArray(data.queue)) {
+                    renderQueueList(data.queue, data.complete);
+                }
+                const ids = Array.isArray(data.install_order) && data.install_order.length > 0
+                    ? data.install_order
+                    : [data.workshop_id || workshopId];
+                if (ids.length > 0) {
+                    startInstallPolling(ids);
+                }
+                if (isBrowseModalOpen()) {
+                    renderBrowseGrid();
+                }
+            } else {
+                // Rollback the optimistic mark on failure.
+                queuedWorkshopIds.delete(workshopId);
+                if (status) {
+                    status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                    status.className = 'dz-status dz-text-red';
+                }
+                if (isBrowseModalOpen()) {
+                    renderBrowseGrid();
+                }
+            }
+        } catch (err) {
+            queuedWorkshopIds.delete(workshopId);
+            if (status) {
+                status.textContent = '✗ Network error: ' + err.message;
+                status.className = 'dz-status dz-text-red';
+            }
+            if (isBrowseModalOpen()) {
+                renderBrowseGrid();
+            }
+        }
+    }
 
     window.pteroInstallMod = async function (forceRestart) {
         const input = document.getElementById('ptero-workshop-ref');

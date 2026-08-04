@@ -604,9 +604,16 @@ final class DayZWorkshopService
         $mod = $server === null ? null : $this->findMod($workshopId, $server);
         $info = $this->workshopInfo($workshopId);
 
+        // Prefer the Steam API title over the mod's title when the mod title is
+        // just the numeric folder name (e.g. "1559212036"), which is a fallback
+        // and would cause the queue to display "ID (ID)" instead of "Name (ID)".
+        $modTitle = (string) ($mod['title'] ?? '');
+        $apiTitle = (string) ($info['title'] ?? '');
+        $title = ($apiTitle !== '') ? $apiTitle : ($modTitle !== $workshopId ? $modTitle : '');
+
         return [
             'workshop_id' => $workshopId,
-            'title'       => $mod['title'] ?? $info['title'] ?? '',
+            'title'       => $title,
             'thumbnail'   => $info['thumbnail'] ?? '',
             'file_size'   => $info['file_size'] ?? 0,
             'installed'   => $mod !== null && ($mod['installed'] ?? false),
