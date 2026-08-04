@@ -40,6 +40,7 @@ final class DayZWorkshopService
         private readonly ModMetaParser $meta = new ModMetaParser(),
         private readonly WorkshopInfoClient $info = new WorkshopInfoClient(),
         private readonly WorkshopBrowseClient $browseClient = new WorkshopBrowseClient(),
+        private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
     ) {
     }
 
@@ -111,7 +112,16 @@ final class DayZWorkshopService
         // externally edited modlist.html, etc.) kept its numeric folder name
         // forever, which made every subsequent scan treat it as "not
         // installed" and re-queue/re-download it into a duplicate @ID folder.
-        if ($this->renameNumericModFolders($server, $folders)) {
+        //
+        // Gated behind the `rename_mods_to_friendly_names` setting (default
+        // off): the DayZ egg's container startup script only recognises a
+        // mod as installed by checking for a folder literally named
+        // `@<numericWorkshopId>`. Renaming that folder away from the numeric
+        // ID makes the egg's own check fail and re-download the mod into a
+        // fresh duplicate `@<id>` folder on the next restart, which is the
+        // exact bug this setting avoids by leaving folders untouched.
+        if ($this->settings->get('rename_mods_to_friendly_names', false)
+            && $this->renameNumericModFolders($server, $folders)) {
             $this->gateway->clearFileListingCache($server);
             $startup = $this->startup->startup($server);
             $loadOrder = $startup['mods'];
@@ -1499,7 +1509,12 @@ final class DayZWorkshopService
 
             // Rename folders still using the numeric Workshop ID as their name
             // (e.g. `@1797720064`) to the proper mod name (`@WindstridesClothingPack`).
-            $folderName = $this->maybeRenameFolderToModName($server, $folderName, $title, (string) $workshopId);
+            // Gated behind `rename_mods_to_friendly_names` (default off) — see
+            // installedMods() for why renaming breaks the egg's own
+            // "already installed" detection and causes duplicate re-downloads.
+            if ($this->settings->get('rename_mods_to_friendly_names', false)) {
+                $folderName = $this->maybeRenameFolderToModName($server, $folderName, $title, (string) $workshopId);
+            }
 
             // When the folder was successfully renamed away from the numeric Workshop ID,
             // remove that ID from the SteamCMD download variable so the next server

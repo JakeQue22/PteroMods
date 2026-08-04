@@ -38,6 +38,23 @@ final class DayZManagerSettingsService
          * Can also be supplied via the STEAM_WEB_API_KEY environment variable.
          */
         'steam_web_api_key' => '',
+
+        /**
+         * When false (the default) DayZ Manager never renames a mod's
+         * numeric Workshop ID folder (e.g. `@1797720064`) to a friendly
+         * name (e.g. `@CF`). This keeps every mod folder in the exact form
+         * the DayZ egg's container startup script expects when deciding
+         * whether a mod is already installed, so nothing gets silently
+         * re-downloaded into a duplicate `@<id>` folder on restart.
+         *
+         * Set to true to allow DayZ Manager to rename installed mod
+         * folders to their friendly Workshop title for a nicer file
+         * listing/load order — but be aware the game egg's startup script
+         * (running inside the Docker image, outside this panel) only
+         * recognises the numeric folder name, so it will re-download the
+         * mod under `@<id>` on every restart once its folder is renamed.
+         */
+        'rename_mods_to_friendly_names' => false,
     ];
 
     /**
@@ -47,6 +64,7 @@ final class DayZManagerSettingsService
      */
     public const LABELS = [
         'use_workshop_subscriptions' => 'Use Steam account Workshop subscription list',
+        'rename_mods_to_friendly_names' => 'Rename mod folders to their friendly Workshop name',
     ];
 
     /**
@@ -73,6 +91,16 @@ final class DayZManagerSettingsService
             'Your Steam Web API key for browsing the Workshop and resolving mod metadata. '
             . 'Get a free key at steamcommunity.com/dev/apikey. '
             . 'Can also be set via the STEAM_WEB_API_KEY environment variable.',
+        'rename_mods_to_friendly_names' =>
+            'Disabled by default. Keeps every mod folder named after its numeric Steam '
+            . 'Workshop ID (e.g. "@1797720064"), matching what the DayZ egg\'s container '
+            . 'startup script expects when it checks whether a mod is already downloaded. '
+            . 'Enabling this lets DayZ Manager rename installed mod folders to their '
+            . 'friendly Workshop title (e.g. "@CF") for a nicer file listing, but the egg\'s '
+            . 'startup script only recognises the numeric folder name — once renamed, it '
+            . 'will re-download that mod into a new duplicate "@<id>" folder on every '
+            . 'server restart. Only enable this if your egg/image has its own logic that '
+            . 'tolerates renamed mod folders.',
     ];
 
     /**
