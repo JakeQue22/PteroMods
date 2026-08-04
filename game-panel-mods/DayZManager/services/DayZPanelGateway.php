@@ -322,6 +322,58 @@ final class DayZPanelGateway
     }
 
     /**
+     * Tail of the server's live console output (stdout/stderr from the game
+     * process), used to confirm specific startup/mod-update log lines have
+     * actually appeared before acting on them (e.g. before restarting again).
+     *
+     * Not cached: callers poll this repeatedly for a short window right
+     * after a restart, and stale data would defeat the purpose.
+     *
+     * @return list<string> Lines, oldest first.
+     */
+    public function consoleLogs(mixed $server): array
+    {
+        if ($server === null) {
+            return [];
+        }
+
+        $repository = $this->serverRepository($server);
+
+        if ($repository !== null && method_exists($repository, 'getLogs')) {
+            try {
+                $logs = $repository->getLogs();
+
+                return $this->normalizeLogs($logs);
+            } catch (Throwable) {
+                // Fall through to the direct daemon call below.
+            }
+        }
+
+        $response = $this->daemonRequest($server, 'GET', '/logs');
+
+        return $this->normalizeLogs($response['data'] ?? $response ?? []);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function normalizeLogs(mixed $logs): array
+    {
+        if (is_string($logs)) {
+            $logs = preg_split('/\r\n|\r|\n/', $logs) ?: [];
+        }
+
+        if (!is_array($logs)) {
+            return [];
+        }
+
+        return array_values(array_map(
+            static fn (mixed $line): string => (string) $line,
+            array_filter($logs, static fn (mixed $line): bool => is_scalar($line)),
+        ));
+    }
+
+    /**
      * @return array{state: string, is_suspended: bool, utilization: array<string, mixed>}|null
      */
     private function fetchDetails(mixed $server): ?array

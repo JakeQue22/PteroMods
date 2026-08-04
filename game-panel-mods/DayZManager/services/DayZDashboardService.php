@@ -78,15 +78,54 @@ final class DayZDashboardService
             return $this->gatherStats($model);
         }
 
+        // Stale-while-revalidate: whatever is stored is served immediately,
+        // even once it has aged past STATS_CACHE_SECONDS — a tab must never
+        // block waiting on a synchronous refresh. The stored envelope is kept
+        // alive far longer than the "fresh" window purely as a safety net, and
+        // a single in-flight request refreshes it in the background (via a
+        // short-lived lock so concurrent tabs don't all recompute at once).
         try {
-            return \Illuminate\Support\Facades\Cache::remember(
-                $key,
-                self::STATS_CACHE_SECONDS,
-                fn (): array => $this->gatherStats($model),
-            );
+            $envelope = \Illuminate\Support\Facades\Cache::get($key);
         } catch (Throwable) {
             return $this->gatherStats($model);
         }
+
+        $stale = is_array($envelope) ? ($envelope['stats'] ?? null) : null;
+        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
+        $isFresh = $stale !== null && (time() - $generatedAt) < self::STATS_CACHE_SECONDS;
+
+        if ($isFresh) {
+            return $stale;
+        }
+
+        $lockKey = $key . '.lock';
+        $acquiredLock = false;
+
+        try {
+            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::STATS_CACHE_SECONDS);
+        } catch (Throwable) {
+            // If locking isn't supported, fall through and refresh anyway.
+        }
+
+        if ($stale !== null && !$acquiredLock) {
+            // Another request is already refreshing this key: serve the
+            // slightly stale data instantly rather than waiting.
+            return $stale;
+        }
+
+        $stats = $this->gatherStats($model);
+
+        try {
+            \Illuminate\Support\Facades\Cache::put(
+                $key,
+                ['stats' => $stats, 'generated_at' => time()],
+                self::STATS_CACHE_SECONDS * 20,
+            );
+        } catch (Throwable) {
+            // Caching is best-effort only.
+        }
+
+        return $stats;
     }
 
     /**

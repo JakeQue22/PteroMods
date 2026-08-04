@@ -16,6 +16,21 @@ final class DayZServerService
     private const RESTART_WARNINGS_MINUTES = [180, 120, 60, 30, 20, 15, 10, 5, 2, 1];
     private const FOLLOW_UP_RUNNING_GRACE_SECONDS = 15;
 
+    /**
+     * How long tickModInstallFollowUp() waits for the console to confirm the
+     * mod update finished before restarting anyway. Restarting mid-download
+     * (e.g. because logs are unavailable on this panel fork) would otherwise
+     * interrupt SteamCMD and risk a corrupt/incomplete mod folder, but the
+     * feature must still degrade gracefully rather than never restart.
+     */
+    private const FOLLOW_UP_LOG_CONFIRM_TIMEOUT_SECONDS = 60;
+
+    /** Marks that the previous startup's mod update has finished downloading. */
+    private const LOG_MOD_UPDATE_SUCCESSFUL = '[UPDATE]: Mod download/update successful!';
+
+    /** Marks that SteamCMD is done checking every Workshop mod for updates. */
+    private const LOG_WORKSHOP_CHECK_COMPLETE = '[UPDATE]: Steam Workshop mod update check complete!';
+
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZStartupService $startup = new DayZStartupService(),
@@ -330,9 +345,30 @@ final class DayZServerService
                 return ['status' => 'awaiting_manual_restart'];
             }
 
-            // Restart regardless of current reported state (offline/running/
-            // unknown) — power('restart') is safe to call, and Wings/the
-            // egg will start the server if it isn't already running.
+            // Don't restart yet: wait for the console to confirm the
+            // in-progress mod download/update actually finished first (see
+            // the 'confirming' branch below). Restarting while SteamCMD is
+            // still mid-download risks an incomplete mod folder and a crash
+            // on the next boot.
+            $this->storePendingModInstallStatus($serverId, 'confirming', date('Y-m-d H:i:s'));
+
+            return ['status' => 'awaiting_log_confirmation'];
+        }
+
+        if ($status === 'confirming') {
+            $updatedAt = strtotime((string) ($pending['updated_at'] ?? ''));
+            $elapsed = $updatedAt !== false ? time() - $updatedAt : PHP_INT_MAX;
+
+            $confirmed = $this->modUpdateConfirmedInLogs($server);
+
+            if (!$confirmed && $elapsed < self::FOLLOW_UP_LOG_CONFIRM_TIMEOUT_SECONDS) {
+                return ['status' => 'awaiting_log_confirmation'];
+            }
+
+            // Either the console confirmed the previous mod update/startup
+            // cycle finished, or the timeout elapsed (e.g. logs aren't
+            // available on this panel fork) — restart now so it never gets
+            // stuck waiting forever.
             $this->gateway->sendCommand(
                 $server,
                 "say -1 <t color='#ff0000'>Restarting to enable newly installed mods.</t>",
@@ -369,6 +405,53 @@ final class DayZServerService
         $this->clearPendingModInstall($serverId);
 
         return ['status' => 'idle'];
+    }
+
+    /**
+     * Whether the console log shows the previous startup's mod update cycle
+     * finished — both `[UPDATE]: Mod download/update successful!` and
+     * `[UPDATE]: Steam Workshop mod update check complete!` appearing, which
+     * the egg logs right before its own `[STARTUP]: Starting server with the
+     * following startup command` line. Only the most recent startup cycle is
+     * considered (the search starts from the last `[STARTUP]:` line found),
+     * so a stale confirmation from a much older boot can't be reused.
+     *
+     * Returns true (skip waiting) when logs can't be read at all, since the
+     * feature must degrade gracefully rather than block forever on panel
+     * forks without a console-log endpoint.
+     */
+    private function modUpdateConfirmedInLogs(mixed $server): bool
+    {
+        $lines = $this->gateway->consoleLogs($server);
+
+        if ($lines === []) {
+            return true;
+        }
+
+        $lastStartupIndex = null;
+
+        foreach ($lines as $index => $line) {
+            if (str_contains($line, '[STARTUP]: Starting server with the following startup command')) {
+                $lastStartupIndex = $index;
+            }
+        }
+
+        $window = $lastStartupIndex === null ? $lines : array_slice($lines, 0, $lastStartupIndex + 1);
+
+        $sawModUpdate = false;
+        $sawWorkshopCheck = false;
+
+        foreach ($window as $line) {
+            if (str_contains($line, self::LOG_MOD_UPDATE_SUCCESSFUL)) {
+                $sawModUpdate = true;
+            }
+
+            if (str_contains($line, self::LOG_WORKSHOP_CHECK_COMPLETE)) {
+                $sawWorkshopCheck = true;
+            }
+        }
+
+        return $sawModUpdate && $sawWorkshopCheck;
     }
 
     /**

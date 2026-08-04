@@ -134,7 +134,23 @@ final class DayZWorkshopService
         $known = [];
 
         foreach ($folders as $folder) {
-            $known[strtolower($folder['name'])] = $folder;
+            $folderKey = strtolower($folder['name']);
+            $known[$folderKey] = $folder;
+
+            // Also index by the "other" form (bare numeric <-> @-prefixed) so a
+            // folder on disk always matches regardless of which form the
+            // startup command's load order happens to reference it by. This
+            // is what makes a freshly-installed mod's tile resolve to its
+            // real `@<id>` folder instead of showing as "files missing":
+            // appendToEnabledLoadOrder() (further below) records the bare
+            // numeric Workshop ID in the load order, while the folder on disk
+            // is always named `@<id>` (or renamed to a friendly name).
+            $bareKey = ltrim($folderKey, '@');
+
+            if (ctype_digit($bareKey)) {
+                $known[$bareKey] ??= $folder;
+                $known['@' . $bareKey] ??= $folder;
+            }
         }
 
         // Mods referenced by the startup command come first, in load order, so
@@ -907,15 +923,51 @@ final class DayZWorkshopService
             return $this->info->fetch($workshopId) ?? [];
         }
 
+        $key = 'pteromods.dayz.workshop_info.' . $workshopId;
+
+        // Stale-while-revalidate, same as cachedWorkshopStats(): never block
+        // a page load on the Steam Workshop HTTP call when a (possibly
+        // slightly stale) value is already cached.
         try {
-            return \Illuminate\Support\Facades\Cache::remember(
-                'pteromods.dayz.workshop_info.' . $workshopId,
-                self::INFO_CACHE_SECONDS,
-                fn (): array => $this->info->fetch($workshopId) ?? [],
-            );
+            $envelope = \Illuminate\Support\Facades\Cache::get($key);
         } catch (Throwable) {
             return $this->info->fetch($workshopId) ?? [];
         }
+
+        $stale = is_array($envelope) ? ($envelope['info'] ?? null) : null;
+        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
+        $isFresh = $stale !== null && (time() - $generatedAt) < self::INFO_CACHE_SECONDS;
+
+        if ($isFresh) {
+            return $stale;
+        }
+
+        $lockKey = $key . '.lock';
+        $acquiredLock = false;
+
+        try {
+            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::INFO_CACHE_SECONDS);
+        } catch (Throwable) {
+            // If locking isn't supported, fall through and refresh anyway.
+        }
+
+        if ($stale !== null && !$acquiredLock) {
+            return $stale;
+        }
+
+        $info = $this->info->fetch($workshopId) ?? [];
+
+        try {
+            \Illuminate\Support\Facades\Cache::put(
+                $key,
+                ['info' => $info, 'generated_at' => time()],
+                self::INFO_CACHE_SECONDS * 20,
+            );
+        } catch (Throwable) {
+            // Caching is best-effort only.
+        }
+
+        return $info;
     }
 
     /**
@@ -1361,15 +1413,51 @@ final class DayZWorkshopService
             return $this->gatherWorkshopStats($server);
         }
 
+        // Stale-while-revalidate: always serve instantly from whatever is
+        // cached (even if past STATS_CACHE_SECONDS) instead of blocking the
+        // request on a synchronous SFTP/file listing refresh. A single
+        // request refreshes the cache in the background via a short-lived
+        // lock so concurrent tabs don't all recompute at once.
         try {
-            return \Illuminate\Support\Facades\Cache::remember(
-                $key,
-                self::STATS_CACHE_SECONDS,
-                fn (): array => $this->gatherWorkshopStats($server),
-            );
+            $envelope = \Illuminate\Support\Facades\Cache::get($key);
         } catch (Throwable) {
             return $this->gatherWorkshopStats($server);
         }
+
+        $stale = is_array($envelope) ? ($envelope['stats'] ?? null) : null;
+        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
+        $isFresh = $stale !== null && (time() - $generatedAt) < self::STATS_CACHE_SECONDS;
+
+        if ($isFresh) {
+            return $stale;
+        }
+
+        $lockKey = $key . '.lock';
+        $acquiredLock = false;
+
+        try {
+            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::STATS_CACHE_SECONDS);
+        } catch (Throwable) {
+            // If locking isn't supported, fall through and refresh anyway.
+        }
+
+        if ($stale !== null && !$acquiredLock) {
+            return $stale;
+        }
+
+        $stats = $this->gatherWorkshopStats($server);
+
+        try {
+            \Illuminate\Support\Facades\Cache::put(
+                $key,
+                ['stats' => $stats, 'generated_at' => time()],
+                self::STATS_CACHE_SECONDS * 20,
+            );
+        } catch (Throwable) {
+            // Caching is best-effort only.
+        }
+
+        return $stats;
     }
 
     /**
