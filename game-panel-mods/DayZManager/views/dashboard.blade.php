@@ -62,9 +62,13 @@
     <p id="ptero-install-status" class="dz-status dz-hidden"></p>
 
     @if (count($installed_mods) > 0)
-        <div class="dz-mod-grid">
+        <p class="dz-sub">Drag a mod card to change its load order.</p>
+        <div class="dz-mod-grid" id="dz-dashboard-mod-grid">
             @foreach ($installed_mods as $mod)
-                {!! $component('mod-card', ['mod' => $mod, 'server_id' => $client_id]) !!}
+                <div class="dz-mod-wrap" draggable="true"
+                     data-mod-ref="{{ ($mod['workshop_id'] ?? '') !== '' ? $mod['workshop_id'] : ($mod['folder_name'] ?? '') }}">
+                    {!! $component('mod-card', ['mod' => $mod, 'server_id' => $client_id]) !!}
+                </div>
             @endforeach
         </div>
     @else
@@ -82,3 +86,61 @@
         $installed_mods,
     ))),
 ]) !!}
+
+<script>
+(function () {
+    const grid = document.getElementById('dz-dashboard-mod-grid');
+    if (!grid) {
+        return;
+    }
+
+    let dragged = null;
+
+    function currentOrder() {
+        return Array.from(grid.querySelectorAll('.dz-mod-wrap')).map(function (wrap) {
+            return wrap.getAttribute('data-mod-ref') || '';
+        }).filter(function (ref) { return ref !== ''; });
+    }
+
+    grid.addEventListener('dragstart', function (event) {
+        const wrap = event.target.closest('.dz-mod-wrap');
+        if (!wrap) {
+            return;
+        }
+        dragged = wrap;
+        wrap.classList.add('dz-dragging');
+        event.dataTransfer.effectAllowed = 'move';
+    });
+
+    grid.addEventListener('dragover', function (event) {
+        if (!dragged) {
+            return;
+        }
+        event.preventDefault();
+        const target = event.target.closest('.dz-mod-wrap');
+        if (!target || target === dragged) {
+            return;
+        }
+        const rect = target.getBoundingClientRect();
+        const before = (event.clientY - rect.top) < rect.height / 2;
+        grid.insertBefore(dragged, before ? target : target.nextSibling);
+    });
+
+    grid.addEventListener('dragend', async function () {
+        if (!dragged) {
+            return;
+        }
+        dragged.classList.remove('dz-dragging');
+        dragged = null;
+
+        if (typeof window.pteroReorderMods === 'function') {
+            await window.pteroReorderMods(currentOrder());
+        }
+    });
+}());
+</script>
+
+<style>
+.dz-mod-wrap { cursor: grab; }
+.dz-mod-wrap.dz-dragging { opacity: 0.5; cursor: grabbing; }
+</style>

@@ -25,6 +25,7 @@ final class DayZWorkshopService
 {
     /** Upper bound on scanned mod folders, to keep page loads predictable. */
     private const MAX_MODS = 60;
+    private const STATS_CACHE_SECONDS = 15;
 
     /** How long a fetched Workshop item description is cached for. */
     private const INFO_CACHE_SECONDS = 3600;
@@ -65,9 +66,10 @@ final class DayZWorkshopService
     public function settings(mixed $server = null): array
     {
         $server = $this->resolveServer($server);
-        $startup = $this->startup->startup($server);
-        $installed = $this->installedMods($server);
-        $enabled = $this->enabledFolders($server);
+        $stats = $this->cachedWorkshopStats($server);
+        $startup = $stats['startup'];
+        $installed = $stats['installed'];
+        $enabled = $stats['enabled'];
 
         return [
             'mod_directory'          => '/ (server root)',
@@ -1269,7 +1271,7 @@ final class DayZWorkshopService
         foreach ($this->gateway->listDirectory($server, '/') as $entry) {
             $name = $entry['name'];
 
-            if ($name === '' || !str_starts_with($name, '@') || $entry['file']) {
+            if ($name === '' || !str_starts_with($name, '@') || $entry['file'] || $this->isTransientModFolder($name)) {
                 continue;
             }
 
@@ -1294,14 +1296,19 @@ final class DayZWorkshopService
         int $position,
     ): array {
         $meta = $installed ? $this->modMetadata($server, $folder) : [];
-        $workshopId = $meta['publishedid'] ?? '';
+        $workshopId = $this->resolveWorkshopId($folder, $meta);
         $info = $workshopId !== '' ? $this->workshopInfo($workshopId) : [];
+        $author = trim((string) ($meta['author'] ?? ''));
+
+        if ($author === '' && isset($info['author']) && is_string($info['author'])) {
+            $author = trim((string) $info['author']);
+        }
 
         return [
             'workshop_id'     => $workshopId,
             'title'           => $meta['name'] ?? ($info['title'] ?? ltrim($folder, '@')),
             'folder_name'     => $folder,
-            'author'          => $meta['author'] ?? '',
+            'author'          => $author,
             'thumbnail'       => (string) ($info['thumbnail'] ?? ''),
             'current_version' => $meta['version'] ?? '',
             'latest_version'  => '',
@@ -1329,16 +1336,77 @@ final class DayZWorkshopService
         // meta.cpp is read first and owns the Workshop ID; mod.cpp then adds the
         // author and version without overwriting what meta.cpp provided.
         foreach (['meta.cpp', 'mod.cpp'] as $file) {
-            $contents = $this->gateway->readFile($server, '/' . $folder . '/' . $file);
+            foreach (['/' . $folder . '/' . $file, '/' . $folder . '/keys/' . $file] as $path) {
+                $contents = $this->gateway->readFile($server, $path);
 
-            if ($contents === null || $contents === '') {
-                continue;
+                if ($contents === null || $contents === '') {
+                    continue;
+                }
+
+                $metadata += $this->meta->parse($contents);
             }
-
-            $metadata += $this->meta->parse($contents);
         }
 
         return $metadata;
+    }
+
+    /**
+     * @return array{startup: array<string, mixed>, installed: list<array<string, mixed>>, enabled: list<string>}
+     */
+    private function cachedWorkshopStats(mixed $server): array
+    {
+        $key = 'pteromods.dayz.workshop.stats.' . md5($this->serverIdentifier($server));
+
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return $this->gatherWorkshopStats($server);
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Cache::remember(
+                $key,
+                self::STATS_CACHE_SECONDS,
+                fn (): array => $this->gatherWorkshopStats($server),
+            );
+        } catch (Throwable) {
+            return $this->gatherWorkshopStats($server);
+        }
+    }
+
+    /**
+     * @return array{startup: array<string, mixed>, installed: list<array<string, mixed>>, enabled: list<string>}
+     */
+    private function gatherWorkshopStats(mixed $server): array
+    {
+        $installed = $this->installedMods($server);
+
+        return [
+            'startup' => $this->startup->startup($server),
+            'installed' => $installed,
+            'enabled' => array_values(array_filter(array_map(
+                static fn (array $mod): string => ($mod['enabled'] ?? false) ? (string) ($mod['folder_name'] ?? '') : '',
+                $installed,
+            ))),
+        ];
+    }
+
+    private function resolveWorkshopId(string $folder, array $meta): string
+    {
+        $publishedId = trim((string) ($meta['publishedid'] ?? ''));
+
+        if ($publishedId !== '') {
+            return $publishedId;
+        }
+
+        $bare = ltrim($folder, '@');
+
+        return ctype_digit($bare) ? $bare : '';
+    }
+
+    private function isTransientModFolder(string $folder): bool
+    {
+        $bare = ltrim($folder, '@');
+
+        return str_ends_with(strtolower($bare), '.tmp') || str_ends_with(strtolower($bare), '.temp');
     }
 
     /**

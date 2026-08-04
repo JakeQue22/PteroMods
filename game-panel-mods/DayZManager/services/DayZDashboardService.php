@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Services;
 
+use Throwable;
+
 /**
  * Builds DayZ dashboard card data.
  *
@@ -16,6 +18,7 @@ final class DayZDashboardService
     /** DayZ's default slot count, used when the max player count is unknown. */
     private const DEFAULT_MAX_PLAYERS = 64;
     private const DEFAULT_MAP = 'ChernarusPlus';
+    private const STATS_CACHE_SECONDS = 15;
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
@@ -32,9 +35,10 @@ final class DayZDashboardService
     {
         $resolved = $this->context->resolve($server);
         $model = $resolved['model'];
-        $installedMods = $this->workshop->installedMods($model);
-        $live = $this->query->query($model);
-        $details = $this->gateway->details($model);
+        $stats = $this->cachedStats($model);
+        $installedMods = $stats['installed_mods'];
+        $live = $stats['live'];
+        $details = $stats['details'];
         $usage = is_array($details['utilization'] ?? null) ? $details['utilization'] : [];
 
         $cpuLimit = $this->context->attribute($model, ['cpu', 'cpu_limit']);
@@ -60,6 +64,40 @@ final class DayZDashboardService
             'connection_address'   => $this->query->connectionAddress($model) ?? 'Unknown',
             'query_endpoint'       => $live['endpoint'] ?? 'Unknown',
             'query_online'         => $live['online'],
+        ];
+    }
+
+    /**
+     * @return array{installed_mods: list<array<string, mixed>>, live: array<string, mixed>, details: array<string, mixed>|null}
+     */
+    private function cachedStats(mixed $model): array
+    {
+        $key = 'pteromods.dayz.dashboard.stats.' . md5($this->context->attribute($model, ['uuid', 'uuidShort', 'id']));
+
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return $this->gatherStats($model);
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Cache::remember(
+                $key,
+                self::STATS_CACHE_SECONDS,
+                fn (): array => $this->gatherStats($model),
+            );
+        } catch (Throwable) {
+            return $this->gatherStats($model);
+        }
+    }
+
+    /**
+     * @return array{installed_mods: list<array<string, mixed>>, live: array<string, mixed>, details: array<string, mixed>|null}
+     */
+    private function gatherStats(mixed $model): array
+    {
+        return [
+            'installed_mods' => $this->workshop->installedMods($model),
+            'live' => $this->query->query($model),
+            'details' => $this->gateway->details($model),
         ];
     }
 

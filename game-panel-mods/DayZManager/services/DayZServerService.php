@@ -14,6 +14,7 @@ final class DayZServerService
 {
     /** @var list<int> */
     private const RESTART_WARNINGS_MINUTES = [180, 120, 60, 30, 20, 15, 10, 5, 2, 1];
+    private const FOLLOW_UP_RUNNING_GRACE_SECONDS = 15;
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
@@ -337,13 +338,19 @@ final class DayZServerService
                 "say -1 <t color='#ff0000'>Restarting to enable newly installed mods.</t>",
             );
             $this->gateway->power($server, 'restart');
-            $this->storePendingModInstallStatus($serverId, 'restarting');
+            $this->storePendingModInstallStatus($serverId, 'restarting', date('Y-m-d H:i:s'));
 
             return ['status' => 'restarted'];
         }
 
         if ($status === 'restarting') {
             if ($state !== 'running') {
+                return ['status' => 'waiting_for_running'];
+            }
+
+            $updatedAt = strtotime((string) ($pending['updated_at'] ?? ''));
+
+            if ($updatedAt !== false && (time() - $updatedAt) < self::FOLLOW_UP_RUNNING_GRACE_SECONDS) {
                 return ['status' => 'waiting_for_running'];
             }
 
@@ -418,7 +425,7 @@ final class DayZServerService
         }
     }
 
-    private function storePendingModInstallStatus(string $serverId, string $status): void
+    private function storePendingModInstallStatus(string $serverId, string $status, ?string $updatedAt = null): void
     {
         if ($serverId === ''
             || !class_exists('Illuminate\\Support\\Facades\\Schema')
@@ -433,7 +440,7 @@ final class DayZServerService
 
             \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')
                 ->where('server_id', $serverId)
-                ->update(['status' => $status, 'updated_at' => date('Y-m-d H:i:s')]);
+                ->update(['status' => $status, 'updated_at' => $updatedAt ?? date('Y-m-d H:i:s')]);
         } catch (Throwable) {
             // Best-effort; worst case the next tick re-evaluates from 'waiting'.
         }
