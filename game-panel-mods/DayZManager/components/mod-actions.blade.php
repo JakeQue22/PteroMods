@@ -14,6 +14,7 @@
         filters: { type: '', mod_type: '', required_dlc: '' },
         items: [],
         selectedId: '',
+        checkedIds: new Set(),
     };
 
     function csrfToken() {
@@ -307,7 +308,18 @@
             type: document.getElementById('ptero-browse-filter-type'),
             modType: document.getElementById('ptero-browse-filter-mod-type'),
             requiredDlc: document.getElementById('ptero-browse-filter-required-dlc'),
+            queueSelected: document.getElementById('ptero-browse-queue-selected'),
         };
+    }
+
+    function refreshBrowseQueueButton() {
+        const btn = document.getElementById('ptero-browse-queue-selected');
+        if (!btn) {
+            return;
+        }
+        const count = browseState.checkedIds.size;
+        btn.textContent = count > 0 ? 'Queue selected (' + count + ')' : 'Queue selected';
+        btn.disabled = count === 0;
     }
 
     function selectedBrowseItem() {
@@ -415,9 +427,15 @@
             const alreadyQueued = workshopId !== '' && queuedWorkshopIds.has(workshopId);
             const alreadyInstalled = (workshopId !== '' && installedWorkshopIds.has(workshopId)) || !!item.installed;
             const disabled = alreadyQueued || alreadyInstalled;
+            // Remove from checked set if the mod became queued/installed.
+            if (disabled) {
+                browseState.checkedIds.delete(workshopId);
+            }
+            const isChecked = !disabled && browseState.checkedIds.has(workshopId);
             const card = document.createElement('div');
-            card.className = 'dz-browse-card' + (browseState.selectedId === workshopId ? ' is-selected' : '') + (disabled ? ' is-disabled' : '');
+            card.className = 'dz-browse-card' + (browseState.selectedId === workshopId ? ' is-selected' : '') + (disabled ? ' is-disabled' : '') + (isChecked ? ' is-checked' : '');
             card.innerHTML = ''
+                + (!disabled ? '<label class="dz-browse-check" title="Select for batch queue"><input type="checkbox" data-browse-checkbox' + (isChecked ? ' checked' : '') + ' /><span></span></label>' : '')
                 + (item.thumbnail ? '<img src="' + escapeHtml(item.thumbnail) + '" alt="" loading="lazy" />' : '<div class="dz-browse-noimg"></div>')
                 + '<div class="dz-browse-card-body">'
                 + '<strong>' + escapeHtml(item.title || ('Workshop ' + workshopId)) + '</strong>'
@@ -445,6 +463,20 @@
 
             card.querySelector('img, .dz-browse-noimg, .dz-browse-card-body')?.addEventListener('click', select);
 
+            const checkbox = card.querySelector('[data-browse-checkbox]');
+            if (checkbox) {
+                checkbox.addEventListener('change', function () {
+                    if (checkbox.checked) {
+                        browseState.checkedIds.add(workshopId);
+                        card.classList.add('is-checked');
+                    } else {
+                        browseState.checkedIds.delete(workshopId);
+                        card.classList.remove('is-checked');
+                    }
+                    refreshBrowseQueueButton();
+                });
+            }
+
             const installButton = card.querySelector('[data-browse-install]');
             if (installButton && !disabled) {
                 installButton.addEventListener('click', function () {
@@ -452,6 +484,8 @@
                 });
             }
         });
+
+        refreshBrowseQueueButton();
 
         renderBrowseDetails(selectedBrowseItem());
     }
@@ -527,6 +561,9 @@
             browseState.selectedId = browseState.items.some(function (item) {
                 return normalizeWorkshopId(item.workshop_id) === browseState.selectedId;
             }) ? browseState.selectedId : '';
+            // Clear selections when the results change so the checked set does not
+            // hold IDs that are no longer visible on the current page.
+            browseState.checkedIds.clear();
 
             if (controls.sort) {
                 controls.sort.value = browseState.sort;
@@ -667,6 +704,20 @@
             }
         }
     }
+
+    // Queues all checked (multi-selected) mods from the Browse Workshop modal
+    // sequentially so the server receives one install request per mod.
+    window.pteroQueueCheckedMods = async function () {
+        const ids = Array.from(browseState.checkedIds);
+        if (ids.length === 0) {
+            return;
+        }
+        browseState.checkedIds.clear();
+        refreshBrowseQueueButton();
+        for (const workshopId of ids) {
+            await pteroQueueFromBrowse(workshopId);
+        }
+    };
 
     window.pteroInstallMod = async function (forceRestart) {
         const input = document.getElementById('ptero-workshop-ref');

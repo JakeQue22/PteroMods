@@ -504,8 +504,12 @@ final class DayZWorkshopService
 
         // Append the new workshop IDs to the egg's MODS variable so the
         // startup script can pass them to SteamCMD on the next boot.
+        // NOTE: Do NOT add the IDs to the enabled load order here – the mod
+        // files have not been downloaded yet, so adding them to -mod= would
+        // create a "missing files" placeholder in the installed mods list
+        // before the server ever boots. The load order is updated by
+        // syncInstalledTypesExtra() once the mod is detected on disk.
         $this->startup->appendWorkshopIds($server, $plan);
-        $this->appendToEnabledLoadOrder($server, $plan);
 
         // Restart only when explicitly requested by the operator.
         $restarted = $forceRestart ? $this->gateway->power($server, 'restart') : false;
@@ -574,6 +578,15 @@ final class DayZWorkshopService
         }
 
         $this->syncInstalledTypesExtra($server, $workshopIds);
+
+        if ($installedIds !== []) {
+            // Now that the mods are on disk (and folders may have been renamed by
+            // syncInstalledTypesExtra above), add them to the enabled load order so
+            // they become active on the next server boot without the operator needing
+            // to manually enable each one. This must happen after queue/startup
+            // cleanup so the order reflects the final on-disk state.
+            $this->appendToEnabledLoadOrder($server, $installedIds);
+        }
 
         return [
             'queue' => $queue,

@@ -343,6 +343,7 @@ body.dz-body {
 
 .dz-browse-card:hover { border-color: var(--dz-accent, var(--dz-border)); }
 .dz-browse-card.is-selected { border-color: var(--dz-accent); box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.35) inset; }
+.dz-browse-card.is-checked { border-color: var(--dz-amber, #f59e0b); box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35) inset; }
 .dz-browse-card.is-disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -351,6 +352,17 @@ body.dz-body {
 .dz-browse-card.is-disabled:hover { border-color: var(--dz-border); }
 .dz-browse-card img { width: 100%; height: 7rem; object-fit: contain; border-radius: 0.35rem; background: #0f1524; }
 .dz-browse-noimg { width: 100%; height: 7rem; border-radius: 0.35rem; background: var(--dz-border); }
+
+.dz-browse-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: var(--dz-muted);
+  user-select: none;
+}
+.dz-browse-check input[type="checkbox"] { accent-color: var(--dz-amber, #f59e0b); width: 1rem; height: 1rem; cursor: pointer; }
 
 .dz-browse-card-body {
   display: flex;

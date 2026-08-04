@@ -51,6 +51,7 @@
                 <option value="new">New</option>
             </select>
             <button class="dz-btn" onclick="pteroBrowseSearch()">Search</button>
+            <button id="ptero-browse-queue-selected" class="dz-btn dz-btn-amber" onclick="pteroQueueCheckedMods()" disabled>Queue selected</button>
         </div>
         <p id="ptero-browse-message" class="dz-sub"></p>
         <div class="dz-browse-layout">
