@@ -96,6 +96,77 @@ final class DayZWorkshopService
             return $this->memo[$memoKey];
         }
 
+        return $this->memo[$memoKey] = $this->cachedInstalledMods($server, $memoKey);
+    }
+
+    /**
+     * Stale-while-revalidate cache around the expensive mod scan (file
+     * listing + per-folder meta.cpp reads + per-mod Workshop API lookups),
+     * whose cost grows with the number of installed mods. Without this, the
+     * Workshop Mods page recomputed the full scan from scratch on every
+     * request, which made `/dayz/mods` progressively slower to load the more
+     * mods were active. `settings()` already benefited from this caching via
+     * `cachedWorkshopStats()`, but `installedMods()` itself (used directly by
+     * the mods page and dashboard) did not, so the expensive work still ran
+     * on every request that only needed the mod list.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function cachedInstalledMods(mixed $server, string $memoKey): array
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return $this->scanInstalledMods($server);
+        }
+
+        $key = 'pteromods.dayz.workshop.installed_mods.' . md5($memoKey);
+
+        try {
+            $envelope = \Illuminate\Support\Facades\Cache::get($key);
+        } catch (Throwable) {
+            return $this->scanInstalledMods($server);
+        }
+
+        $stale = is_array($envelope) ? ($envelope['mods'] ?? null) : null;
+        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
+        $isFresh = is_array($stale) && (time() - $generatedAt) < self::STATS_CACHE_SECONDS;
+
+        if ($isFresh) {
+            return $stale;
+        }
+
+        $lockKey = $key . '.lock';
+        $acquiredLock = false;
+
+        try {
+            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::STATS_CACHE_SECONDS);
+        } catch (Throwable) {
+            // If locking isn't supported, fall through and refresh anyway.
+        }
+
+        if (is_array($stale) && !$acquiredLock) {
+            return $stale;
+        }
+
+        $mods = $this->scanInstalledMods($server);
+
+        try {
+            \Illuminate\Support\Facades\Cache::put(
+                $key,
+                ['mods' => $mods, 'generated_at' => time()],
+                self::STATS_CACHE_SECONDS * 20,
+            );
+        } catch (Throwable) {
+            // Caching is best-effort only.
+        }
+
+        return $mods;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function scanInstalledMods(mixed $server): array
+    {
         $startup = $this->startup->startup($server);
         $loadOrder = $startup['mods'];
         $serverMods = $startup['server_mods'];
@@ -103,7 +174,7 @@ final class DayZWorkshopService
         $folders = $this->modFolders($server);
 
         if ($folders === [] && $loadOrder === [] && $serverMods === []) {
-            return $this->memo[$memoKey] = $this->databaseMods();
+            return $this->databaseMods();
         }
 
         // Proactively rename any folder still using its numeric Workshop ID
@@ -316,7 +387,7 @@ final class DayZWorkshopService
             $mods[$idx]['position'] = $idx;
         }
 
-        return $this->memo[$memoKey] = $mods;
+        return $mods;
     }
 
     /**
@@ -529,6 +600,7 @@ final class DayZWorkshopService
 
         $this->persistQueue($server, $queue);
         $this->gateway->clearFileListingCache($server);
+        $this->invalidateModsCache($server);
 
         // Append the new workshop IDs to the egg's MODS variable so the
         // startup script can pass them to SteamCMD on the next boot.
@@ -621,6 +693,7 @@ final class DayZWorkshopService
         // Clear the file-listing cache so the status check always reads the
         // latest files from Wings rather than a 30-second-old snapshot.
         $this->gateway->clearFileListingCache($server);
+        $this->invalidateModsCache($server);
 
         $statusQueue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
         $complete = $statusQueue !== [] && !in_array(false, array_column($statusQueue, 'installed'), true);
@@ -869,6 +942,34 @@ final class DayZWorkshopService
     }
 
     /**
+     * Clears both the per-request memo and the persistent stale-while-
+     * revalidate cache for a server's installed-mods list, so a mutation
+     * (install/remove/enable/disable/rename) is reflected immediately
+     * instead of waiting up to STATS_CACHE_SECONDS for the cache to expire.
+     */
+    private function invalidateModsCache(mixed $server): void
+    {
+        $this->memo = [];
+
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        $memoKey = $this->serverIdentifier($server);
+
+        if ($memoKey === '') {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.workshop.installed_mods.' . md5($memoKey));
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.workshop.stats.' . md5($memoKey));
+        } catch (Throwable) {
+            // Best-effort invalidation only.
+        }
+    }
+
+    /**
      * Ensures newly queued Workshop IDs are present in the `-mod=` load order
      * so they stay enabled after install unless explicitly disabled.
      *
@@ -906,7 +1007,7 @@ final class DayZWorkshopService
 
         if ($changed) {
             $this->startup->saveModList($server, $order);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
     }
 
@@ -1037,7 +1138,7 @@ final class DayZWorkshopService
 
         if ($deleteFiles && ($mod['installed'] ?? false)) {
             $filesDeleted = $this->gateway->deletePath($server, '/' . $folder);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
 
         // Remove the mod from the persisted full-order table so re-installing
@@ -1274,7 +1375,7 @@ final class DayZWorkshopService
         $result = $this->startup->saveModList($server, $order);
         // Clear the memo before reading the updated Workshop ID list so that
         // modlist.html reflects the new enabled state, not the stale cache.
-        $this->memo = [];
+        $this->invalidateModsCache($server);
         $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
 
         return [
@@ -1712,7 +1813,7 @@ final class DayZWorkshopService
         }
 
         if ($renamed) {
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
 
         return $renamed;
@@ -1792,7 +1893,7 @@ final class DayZWorkshopService
             // can no longer read save data written by the newer one, crashing the
             // server in a restart loop.
             $this->gateway->clearFileListingCache($server);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
             $existingFolders = $this->modFolders($server);
             $targetExists = array_filter(
                 $existingFolders,
@@ -1806,7 +1907,7 @@ final class DayZWorkshopService
                     return $folderName;
                 }
 
-                $this->memo = [];
+                $this->invalidateModsCache($server);
 
                 if (!$this->gateway->renameFile($server, '/', $folderName, $newFolderName)) {
                     // The rename still failed after clearing the stale folder; leave
@@ -1814,7 +1915,7 @@ final class DayZWorkshopService
                     return $folderName;
                 }
 
-                $this->memo = [];
+                $this->invalidateModsCache($server);
 
                 // Rewrite the load order to use the named folder so the numeric
                 // Workshop ID is removed from startup variables (preventing the
@@ -1827,7 +1928,7 @@ final class DayZWorkshopService
 
                 if ($updated !== $order) {
                     $this->startup->saveModList($server, $updated);
-                    $this->memo = [];
+                    $this->invalidateModsCache($server);
                 }
 
                 $this->renameInFullOrder($server, $folderName, $newFolderName);
@@ -1839,7 +1940,7 @@ final class DayZWorkshopService
         }
 
         // Clear the per-request memo so the next call re-reads the server root.
-        $this->memo = [];
+        $this->invalidateModsCache($server);
 
         // Rewrite the load order to use the new folder name.
         $order = $this->enabledFolders($server);
@@ -1850,7 +1951,7 @@ final class DayZWorkshopService
 
         if ($updated !== $order) {
             $this->startup->saveModList($server, $updated);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
 
         // Keep the persisted full-order table in sync with the renamed folder.
