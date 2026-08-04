@@ -553,11 +553,16 @@ final class DayZWorkshopService
             $persistedQueue,
         ), static fn (string $id): bool => $id !== ''));
 
-        if ($workshopIds === []) {
-            $workshopIds = $persistedIds;
-        } elseif ($persistedIds !== []) {
-            $workshopIds = array_values(array_intersect($workshopIds, $persistedIds));
-        }
+        // Always fold in the full persisted queue rather than restricting to
+        // just the IDs the caller happened to pass in. A poll started for one
+        // freshly-queued mod (e.g. via startInstallPolling() after a single
+        // install request) previously only checked/persisted that one mod's
+        // status, and persistQueue() then deleted every other still-queued
+        // mod from `dayz_mod_install_queue` because they were not in that
+        // narrower list. That made the queue UI collapse down to whichever
+        // mod was queued (or polled) most recently instead of showing every
+        // mod still waiting to install.
+        $workshopIds = array_values(array_unique(array_merge($persistedIds, $workshopIds)));
 
         // Clear the file-listing cache so the status check always reads the
         // latest files from Wings rather than a 30-second-old snapshot.
