@@ -272,7 +272,7 @@ final class DayZStartupService
     {
         $workshopIds = $this->normalizeWorkshopIds($workshopIds);
 
-        return $this->gateway->writeFile($server, self::MODLIST_PATH, $this->buildModlistHtml($workshopIds));
+        return $this->gateway->writeFile($server, self::MODLIST_PATH, $this->buildModlistHtml($server, $workshopIds));
     }
 
     /**
@@ -459,7 +459,7 @@ final class DayZStartupService
     /**
      * @param list<string> $workshopIds
      */
-    private function buildModlistHtml(array $workshopIds): string
+    private function buildModlistHtml(mixed $server, array $workshopIds): string
     {
         $lines = [
             '<!-- Created by DayZ Launcher -->',
@@ -469,12 +469,32 @@ final class DayZStartupService
 
         foreach ($workshopIds as $workshopId) {
             $url = 'https://steamcommunity.com/sharedfiles/filedetails/?id=' . rawurlencode($workshopId);
-            $lines[] = sprintf('<a href="%s">%s</a><br />', $url, $workshopId);
+            $label = $this->modlistLabel($server, $workshopId);
+            $lines[] = sprintf('<a href="%s">%s</a><br />', $url, htmlspecialchars($label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'));
         }
 
         $lines[] = '</body>';
         $lines[] = '</html>';
 
         return implode("\n", $lines) . "\n";
+    }
+
+    private function modlistLabel(mixed $server, string $workshopId): string
+    {
+        foreach ($this->installedMods($server) as $mod) {
+            if ((string) ($mod['workshop_id'] ?? '') !== $workshopId) {
+                continue;
+            }
+
+            $title = trim((string) ($mod['title'] ?? ''));
+
+            if ($title !== '' && strcasecmp($title, $workshopId) !== 0) {
+                return $title;
+            }
+
+            break;
+        }
+
+        return $workshopId;
     }
 }
