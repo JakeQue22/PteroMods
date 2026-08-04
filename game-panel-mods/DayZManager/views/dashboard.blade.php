@@ -57,7 +57,7 @@
     <div class="dz-form">
         <input id="ptero-workshop-ref" class="dz-input" type="text"
                placeholder="Workshop ID (e.g. 1559212036) or Steam Workshop URL" />
-        <button class="dz-btn" onclick="pteroInstallMod()">Install</button>
+        <button class="dz-btn" onclick="pteroInstallMod()">Queue</button>
     </div>
     <p id="ptero-install-status" class="dz-status dz-hidden"></p>
 
