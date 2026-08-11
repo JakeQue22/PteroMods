@@ -98,3 +98,25 @@ ALTER TABLE `dayz_restart_schedules`
     ADD COLUMN IF NOT EXISTS `timed_warnings_sent`   VARCHAR(255)  NOT NULL DEFAULT '' AFTER `timed_restart_at`,
     ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1' AFTER `warnings_sent`,
     ADD COLUMN IF NOT EXISTS `warning_messages`      TEXT          NULL AFTER `warning_minutes_enabled`;
+
+CREATE TABLE IF NOT EXISTS `dayz_dzsa_pending` (
+    `id`           INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`    VARCHAR(64)   NOT NULL,
+    `status`       VARCHAR(16)   NOT NULL DEFAULT 'waiting',
+    `created_at`   TIMESTAMP     NULL DEFAULT NULL,
+    `updated_at`   TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_dayz_dzsa_pending_server` (`server_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dayz_backups` (
+    `id`          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`   VARCHAR(64)   NOT NULL,
+    `label`       VARCHAR(255)  NOT NULL DEFAULT '',
+    `trigger`     VARCHAR(32)   NOT NULL DEFAULT 'manual',
+    `payload`     LONGTEXT      NOT NULL,
+    `created_at`  TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_dayz_backups_server` (`server_id`),
+    KEY `idx_dayz_backups_created` (`server_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

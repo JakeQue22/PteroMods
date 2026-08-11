@@ -108,6 +108,24 @@ final class DayZManagerSettingsService
          * Shared secret used by the optional server-side DayZ live-map bridge.
          */
         'live_map_bridge_secret' => '',
+
+        /**
+         * When true, DayZ Manager automatically takes a database backup at the
+         * configured interval.
+         */
+        'auto_backup_enabled' => false,
+
+        /**
+         * Interval between automatic backups (in minutes).
+         * Useful values: 60, 360, 720, 1440 (daily).
+         */
+        'auto_backup_interval_minutes' => 1440,
+
+        /**
+         * Maximum number of backups to keep per server.  Oldest backups are
+         * pruned automatically after every create (manual or auto).
+         */
+        'auto_backup_keep' => 10,
     ];
 
     /**

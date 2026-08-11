@@ -70,17 +70,25 @@ final class DayZPanelGateway
     }
 
     /**
-     * Clears the cached directory listing for a server's root, so the next
-     * `listDirectory()` call fetches live data from Wings.
+     * Clears the cached directory listing for a server.
+     *
+     * Pass an explicit `$path` to clear only that directory's listing (e.g.
+     * `/profiles` after a log-scrub run).  When `$path` is `null` the default
+     * well-known paths (server root and the Workshop download directory) are
+     * cleared, which is the behaviour used by the mod-install pipeline.
      */
-    public function clearFileListingCache(mixed $server): void
+    public function clearFileListingCache(mixed $server, ?string $path = null): void
     {
         if ($server === null) {
             return;
         }
 
-        foreach (['/', '/steamapps/workshop/content/221100'] as $path) {
-            $this->forget($this->cacheKey('files', $server, $this->normalizePath($path)));
+        $paths = $path !== null
+            ? [$path]
+            : ['/', '/steamapps/workshop/content/221100'];
+
+        foreach ($paths as $p) {
+            $this->forget($this->cacheKey('files', $server, $this->normalizePath($p)));
         }
     }
 

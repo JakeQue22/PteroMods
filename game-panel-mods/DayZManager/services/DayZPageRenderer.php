@@ -24,6 +24,7 @@ final class DayZPageRenderer
         ['key' => 'configuration', 'label' => 'Configuration', 'path' => '/configuration'],
         ['key' => 'dzsa',          'label' => 'DZSA Launcher',  'path' => '/dzsa'],
         ['key' => 'live-map',      'label' => 'Live Map',       'path' => '/live-map'],
+        ['key' => 'backups',       'label' => 'Backups',        'path' => '/backups'],
         ['key' => 'settings',      'label' => 'Settings',       'path' => '/settings'],
     ];
 

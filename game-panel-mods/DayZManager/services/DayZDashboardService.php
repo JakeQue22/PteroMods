@@ -35,10 +35,14 @@ final class DayZDashboardService
         $resolved = $this->context->resolve($server);
         $model = $resolved['model'];
         $stats = $this->cachedStats($model);
-        $installedMods = $stats['installed_mods'];
         $live = $stats['live'];
         $details = $stats['details'];
         $usage = is_array($details['utilization'] ?? null) ? $details['utilization'] : [];
+
+        // Delegate to the workshop service directly so that the dashboard and
+        // the Workshop Mods page share the same stale-while-revalidate cache,
+        // rather than each maintaining an independent copy that can diverge.
+        $installedMods = $this->workshop->installedMods($model);
 
         $cpuLimit = $this->context->attribute($model, ['cpu', 'cpu_limit']);
         $memoryLimitMb = $this->intValue($model, ['memory', 'memory_limit']);
@@ -67,13 +71,12 @@ final class DayZDashboardService
     }
 
     /**
-     * @return array{installed_mods: list<array<string, mixed>>, live: array<string, mixed>, details: array<string, mixed>|null}
+     * @return array{live: array<string, mixed>, details: array<string, mixed>|null}
      */
     private function cachedStats(mixed $model): array
     {
         $key = 'pteromods.dayz.dashboard.stats.' . md5($this->context->attribute($model, ['uuid', 'uuidShort', 'id']));
         $fallback = [
-            'installed_mods' => [],
             'live' => $this->query->query($model),
             'details' => null,
         ];
@@ -89,12 +92,11 @@ final class DayZDashboardService
     }
 
     /**
-     * @return array{installed_mods: list<array<string, mixed>>, live: array<string, mixed>, details: array<string, mixed>|null}
+     * @return array{live: array<string, mixed>, details: array<string, mixed>|null}
      */
     private function gatherStats(mixed $model): array
     {
         return [
-            'installed_mods' => $this->workshop->installedMods($model),
             'live' => $this->query->query($model),
             'details' => $this->gateway->details($model),
         ];

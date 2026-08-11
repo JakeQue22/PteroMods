@@ -54,8 +54,14 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/install/queue', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@queue'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/lookup', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@lookup'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/browse', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@browse'];
-    $routes[] = ['method' => 'GET',  'uri' => $prefix . '/settings',      'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@index'];
-    $routes[] = ['method' => 'POST', 'uri' => $prefix . '/settings/save', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@save'];
+    $routes[] = ['method' => 'GET',    'uri' => $prefix . '/settings',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@index'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/settings/save',           'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@save'];
+    $routes[] = ['method' => 'GET',    'uri' => $prefix . '/backups',                 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@index'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/create',          'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@create'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/restore',         'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@restore'];
+    $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/backups/{backup_id}',     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@delete'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/tick',            'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@tick'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/settings',        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@saveSettings'];
 }
 
 return $routes;

@@ -269,16 +269,15 @@ else
     warn "Re-run install.sh or manually copy:"
     warn "  game-panel-mods/DayZManager/assets/bridge/pteromods_live_map.sqf"
     warn "  → $BRIDGE_TEMPLATE"
+    echo ""
+    echo "  Once the template is in place the bridge script will be deployed to"
+    echo "  each DayZ server's /profiles/PteroMods/ directory automatically when"
+    echo "  you first open the Live Map page for that server, or via:"
+    echo "  POST /api/server/{server}/dayz/live-map/setup-bridge"
+    echo ""
+    echo "  After deploying, add this line to your mission's init.sqf:"
+    echo "    if (isServer) then { execVM \"profiles\\PteroMods\\pteromods_live_map.sqf\"; };"
 fi
-
-echo ""
-echo "  The bridge script is deployed to each DayZ server's"
-echo "  /profiles/PteroMods/ directory automatically when you"
-echo "  first open the Live Map page for that server, or via:"
-echo "  POST /api/server/{server}/dayz/live-map/setup-bridge"
-echo ""
-echo "  Once deployed, add this line to your mission's init.sqf:"
-echo "    if (isServer) then { execVM \"profiles\\PteroMods\\pteromods_live_map.sqf\"; };"
 
 # ── step 8: clear caches ─────────────────────────────────────────────────────
 
