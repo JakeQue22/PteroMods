@@ -5,6 +5,9 @@
     <h2>Live Map</h2>
     <p class="dz-sub">
         Live player positions come from a server-side bridge snapshot in <code>/profiles/PteroMods/live_map_players.json</code>.
+        Overlay markers (named locations, animal and infected territories, loot and helicopter crash
+        events, vehicles, and player spawn points) are read from the server's own mission files and can
+        be switched on individually from the layer control in the top-right corner of the map.
         Public viewer: <a href="https://dayz.xam.nu" target="_blank" rel="noopener noreferrer">dayz.xam.nu</a>.
         This panel uses the raw xam.nu tile template behind that viewer
         (configurable via <a href="{{ $base_url }}/settings">Settings → Live Map tile URL</a>).
@@ -37,7 +40,17 @@
 (function () {
     const SERVER_ID   = @json($server_id);
     const SNAPSHOT_URL = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/snapshot';
+    const MARKERS_URL  = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/markers';
+    const PLAYERS_URL  = @json($base_url) + '/players';
     const POLL_MS      = 7000;
+    // Refreshing the mission-derived overlays is expensive (it reads the
+    // server's mission XML through Wings), so they are reloaded far less often
+    // than the player snapshot.
+    const MARKERS_MS   = 300000;
+
+    // ?focus=<steam64|uid> opens the map centred on a single player, which is
+    // what the "Show on live map" links on the player manager page use.
+    const FOCUS_ID = (new URLSearchParams(window.location.search).get('focus') || '').trim();
 
     // Tile URL template from panel settings, e.g.:
     // https://static.xam.nu/dayz/maps/{map}/1.27/satellite/{z}/{x}/{y}.webp
@@ -56,6 +69,11 @@
         tileLayer: null,
         locationLayer: null,
         gridLayer: null,
+        playerLayer: null,
+        markerLayers: {},
+        layerControl: null,
+        directory: new Map(),  // steam64/uid → persisted player record
+        focused: false,
         tileError: false,
         notice: '',
         statusText: '',
@@ -147,7 +165,14 @@
 
         applyTileLayer(state.mapDef);
         applyGridLayer(state.mapDef);
-        applyLocationLayer(state.mapDef);
+
+        // The player overlay is a layer of its own so it can be toggled from
+        // the layer control like every other marker category.
+        state.playerLayer = L.layerGroup().addTo(state.leafletMap);
+        state.layerControl = L.control.layers(null, { '👤 Players': state.playerLayer }, {
+            collapsed: true,
+            position: 'topright',
+        }).addTo(state.leafletMap);
 
         const center = dayzToLatLng(worldSize / 2, worldSize / 2);
         state.leafletMap.setView(center, 0);
@@ -277,6 +302,120 @@
         state.locationLayer.addTo(state.leafletMap);
     }
 
+    // ── Marker overlays ───────────────────────────────────────────────────
+    // Categories (animals, infected, loot, vehicles, helicopter crashes,
+    // player spawns, named locations, …) come from the panel, which reads the
+    // server's own mission files, so every icon option the server actually
+    // provides is offered here.
+    function categoryIcon(icon, color) {
+        return L.divIcon({
+            html: '<span class="dz-map-marker" style="border-color:' + color + '">' + icon + '</span>',
+            className: '',
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+            tooltipAnchor: [0, -11],
+        });
+    }
+
+    function clearMarkerLayers() {
+        Object.keys(state.markerLayers).forEach(function (key) {
+            const layer = state.markerLayers[key];
+
+            if (state.layerControl) {
+                state.layerControl.removeLayer(layer);
+            }
+
+            state.leafletMap.removeLayer(layer);
+        });
+
+        state.markerLayers = {};
+    }
+
+    function applyMarkerGroups(groups) {
+        clearMarkerLayers();
+
+        if (!Array.isArray(groups) || groups.length === 0) {
+            // Nothing came back from the server, so fall back to the built-in
+            // named locations of the map definition.
+            applyLocationLayer(state.mapDef);
+            return;
+        }
+
+        if (state.locationLayer) {
+            state.leafletMap.removeLayer(state.locationLayer);
+            state.locationLayer = null;
+        }
+
+        groups.forEach(function (group) {
+            const layer   = L.layerGroup();
+            const icon    = categoryIcon(group.icon || '📍', group.color || '#fbbf24');
+            const markers = Array.isArray(group.markers) ? group.markers : [];
+
+            markers.forEach(function (marker) {
+                const latlng = dayzToLatLng(Number(marker.x || 0), Number(marker.z || 0));
+                const name   = escapeHtml(marker.name || group.label);
+                const detail = escapeHtml(marker.detail || group.label);
+
+                L.marker(latlng, { icon: icon })
+                    .bindTooltip(name, { direction: 'top' })
+                    .bindPopup('<strong>' + name + '</strong><br>' + detail
+                        + '<br>' + Number(marker.x || 0).toFixed(0) + ', ' + Number(marker.z || 0).toFixed(0)
+                        + (marker.radius ? '<br>Radius: ' + Number(marker.radius).toFixed(0) + ' m' : ''))
+                    .addTo(layer);
+            });
+
+            state.markerLayers[group.key] = layer;
+            state.layerControl.addOverlay(layer, (group.icon || '📍') + ' ' + (group.label || group.key)
+                + ' (' + (group.count || markers.length) + ')');
+
+            if (group.default) {
+                layer.addTo(state.leafletMap);
+            }
+        });
+    }
+
+    function applyDirectory(entries) {
+        state.directory.clear();
+
+        (Array.isArray(entries) ? entries : []).forEach(function (entry) {
+            if (!entry) {
+                return;
+            }
+
+            [entry.steam64, entry.player_id, entry.player_uid].forEach(function (key) {
+                if (key) {
+                    state.directory.set(String(key), entry);
+                }
+            });
+        });
+    }
+
+    async function fetchMarkers() {
+        try {
+            const res = await fetch(MARKERS_URL, {
+                method:      'GET',
+                credentials: 'same-origin',
+                headers:     { 'Accept': 'application/json' },
+            });
+
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
+            }
+
+            const payload = await res.json();
+            applyMarkerGroups(payload.groups);
+            applyDirectory(payload.player_directory);
+            renderSelection();
+        } catch (err) {
+            applyMarkerGroups([]);
+        }
+    }
+
+    async function loadMarkers() {
+        await fetchMarkers();
+        setTimeout(loadMarkers, MARKERS_MS);
+    }
+
     // ── Snapshot application ─────────────────────────────────────────────
     function applySnapshot(payload) {
         const incomingMapDef = payload.map_definition || null;
@@ -289,11 +428,11 @@
             state.leafletMap.options.crs = buildCRS(worldSize);
             applyTileLayer(state.mapDef);
             applyGridLayer(state.mapDef);
-            applyLocationLayer(state.mapDef);
+            fetchMarkers();
             state.leafletMap.fitBounds(worldBounds(state.mapDef));
 
             // Remove all existing markers (they belong to the old map).
-            state.markers.forEach(function (m) { m.remove(); });
+            state.playerLayer.clearLayers();
             state.markers.clear();
             state.players.clear();
         } else if (incomingMapDef) {
@@ -335,8 +474,9 @@
 
             if (!state.markers.has(player.steam64)) {
                 const marker = L.marker(pos, { icon: icon, zIndexOffset: sel ? 1000 : 0 })
-                    .addTo(state.leafletMap)
-                    .bindTooltip(tooltip, { direction: 'top', permanent: false });
+                    .addTo(state.playerLayer)
+                    .bindTooltip(tooltip, { direction: 'top', permanent: false })
+                    .bindPopup(playerPopupHtml(player));
 
                 marker.on('click', function () {
                     selectPlayer(player.steam64);
@@ -349,13 +489,14 @@
                 marker.setIcon(icon);
                 marker.setZIndexOffset(sel ? 1000 : 0);
                 marker.setTooltipContent(tooltip);
+                marker.setPopupContent(playerPopupHtml(player));
             }
         });
 
         // Remove departed players.
         Array.from(state.markers.keys()).forEach(function (steam64) {
             if (!seen.has(steam64)) {
-                state.markers.get(steam64).remove();
+                state.playerLayer.removeLayer(state.markers.get(steam64));
                 state.markers.delete(steam64);
                 state.players.delete(steam64);
 
@@ -369,6 +510,73 @@
         countEl.textContent = String(players.length);
         renderPlayerList();
         renderSelection();
+
+        // Honour ?focus=… once, as soon as that player shows up.
+        if (FOCUS_ID !== '' && !state.focused && state.markers.has(FOCUS_ID)) {
+            state.focused = true;
+            selectPlayer(FOCUS_ID);
+            focusPlayer(FOCUS_ID);
+            state.leafletMap.setZoom(Math.max(state.leafletMap.getZoom(), 3));
+            state.markers.get(FOCUS_ID).openPopup();
+        }
+    }
+
+    // ── Player details ────────────────────────────────────────────────────
+    // Live snapshot data is merged with the persisted record of the same
+    // player (nickname, Steam64, DayZ UID, ban/whitelist state) so the map
+    // shows exactly the same information as the player manager page.
+    function directoryEntry(player) {
+        return state.directory.get(String(player.steam64))
+            || state.directory.get(String(player.name))
+            || null;
+    }
+
+    function playerRow(label, value) {
+        return '<div><dt>' + escapeHtml(label) + '</dt><dd>' + value + '</dd></div>';
+    }
+
+    function playerDetailRows(player) {
+        const entry   = directoryEntry(player) || {};
+        const steam64 = escapeHtml(player.steam64 || entry.steam64 || '');
+        const lists   = Object.keys(entry.lists || {}).filter(function (key) { return entry.lists[key]; });
+
+        let html = playerRow('Steam64', steam64 !== ''
+            ? '<a href="https://steamcommunity.com/profiles/' + steam64 + '" target="_blank" rel="noopener noreferrer">' + steam64 + '</a>'
+            : 'Unknown');
+
+        if (entry.player_uid) {
+            html += playerRow('DayZ UID', '<code>' + escapeHtml(entry.player_uid) + '</code>');
+        }
+
+        html += playerRow('Position', Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1));
+        html += playerRow('Height', Number(player.y || 0).toFixed(1));
+        html += playerRow('Direction', Number(player.direction || 0).toFixed(1) + '°');
+        html += playerRow('Status', player.alive !== false ? 'Alive' : 'Dead');
+        html += playerRow('Health', player.health == null ? 'N/A' : Number(player.health).toFixed(1));
+
+        if (entry.last_seen_at) {
+            html += playerRow('Last seen', escapeHtml(entry.last_seen_at));
+        }
+
+        if (lists.length > 0) {
+            html += playerRow('Lists', escapeHtml(lists.join(', ')));
+        }
+
+        return html;
+    }
+
+    function managementLink(player) {
+        const needle = String(player.steam64 || player.name || '');
+
+        return '<a class="dz-map-popup-link" href="'
+            + escapeHtml(PLAYERS_URL + '?search=' + encodeURIComponent(needle))
+            + '">Manage in Player Manager</a>';
+    }
+
+    function playerPopupHtml(player) {
+        return '<div class="dz-map-popup"><strong>' + escapeHtml(player.name || player.steam64) + '</strong>'
+            + '<dl class="dz-browse-meta">' + playerDetailRows(player) + '</dl>'
+            + managementLink(player) + '</div>';
     }
 
     // ── Player list ───────────────────────────────────────────────────────
@@ -404,14 +612,8 @@
 
         detailEl.innerHTML =
             '<h4>' + escapeHtml(player.name) + '</h4>'
-            + '<dl class="dz-browse-meta">'
-            + '<div><dt>Steam64</dt><dd>' + escapeHtml(player.steam64) + '</dd></div>'
-            + '<div><dt>Position</dt><dd>' + Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1) + '</dd></div>'
-            + '<div><dt>Height</dt><dd>' + Number(player.y || 0).toFixed(1) + '</dd></div>'
-            + '<div><dt>Direction</dt><dd>' + Number(player.direction || 0).toFixed(1) + '°</dd></div>'
-            + '<div><dt>Status</dt><dd>' + (player.alive !== false ? 'Alive' : 'Dead') + '</dd></div>'
-            + '<div><dt>Health</dt><dd>' + (player.health == null ? 'N/A' : Number(player.health).toFixed(1)) + '</dd></div>'
-            + '</dl>';
+            + '<dl class="dz-browse-meta">' + playerDetailRows(player) + '</dl>'
+            + managementLink(player);
     }
 
     function selectPlayer(steam64) {
@@ -569,6 +771,7 @@
         }
 
         poll();
+        loadMarkers();
     }
 
     window.pteroLiveMapResetCamera = resetView;
@@ -624,6 +827,24 @@
     font-size: 0.65rem;
 }
 .leaflet-control-attribution a { color: var(--dz-accent); }
+/* Category markers (locations, animals, loot, vehicles, spawns, …) */
+.dz-map-marker {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 1px solid;
+    border-radius: 50%;
+    background: rgba(11,15,25,0.75);
+    font-size: 11px;
+    line-height: 1;
+}
+.dz-map-popup dl { margin: 0.4rem 0 0.5rem; }
+.dz-map-popup-link {
+    color: var(--dz-accent);
+    font-size: 0.75rem;
+}
 /* Named location labels */
 .dz-map-loc {
     font-size: 0.65rem;

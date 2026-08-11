@@ -26,14 +26,22 @@ final class DayZPersistencePlayerService
     ];
 
     private const COLUMN_PATTERNS = [
-        'uid' => '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i',
-        'name' => '/(name|nickname|playername)/i',
-        'x' => '/(^x$|posx|positionx|worldx|coordx)/i',
-        'y' => '/(^y$|posy|positiony|worldy|coordy|height)/i',
-        'z' => '/(^z$|posz|positionz|worldz|coordz)/i',
-        'vector' => '/(^pos$|position|vector|location)/i',
-        'seen' => '/(last.*(seen|login|played)|updated|created|timestamp|time)/i',
-        'alive' => '/(alive|is_alive|isdead|dead)/i',
+        'uid' => [
+            '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i',
+        ],
+        'name' => [
+            '/^(name|player_?name|nickname|nick|char(acter)?_?name|survivor_?name|display_?name)$/i',
+            '/(name|nickname|playername)/i',
+        ],
+        'x' => ['/^(x|pos_?x|position_?x|world_?x|coord_?x)$/i', '/(^x$|posx|positionx|worldx|coordx)/i'],
+        'y' => ['/^(y|pos_?y|position_?y|world_?y|coord_?y|height)$/i', '/(^y$|posy|positiony|worldy|coordy|height)/i'],
+        'z' => ['/^(z|pos_?z|position_?z|world_?z|coord_?z)$/i', '/(^z$|posz|positionz|worldz|coordz)/i'],
+        'vector' => ['/^(pos|position|vector|location|coords?)$/i', '/(^pos$|position|vector|location)/i'],
+        'seen' => [
+            '/^(last_?seen|last_?login|last_?played|last_?updated|updated_?at|played_?at)$/i',
+            '/(last.*(seen|login|played)|updated|created|timestamp|time)/i',
+        ],
+        'alive' => ['/^(alive|is_?alive|is_?dead|dead)$/i', '/(alive|is_alive|isdead|dead)/i'],
     ];
 
     public function __construct(
@@ -42,11 +50,21 @@ final class DayZPersistencePlayerService
     }
 
     /**
-     * @return array{status: string, source_path: string|null, players: list<array<string, mixed>>}
+     * Reads every readable persistence database and merges the records.
+     *
+     * DayZ splits the data the panel needs across two files: `players.db`
+     * holds the account identity (Bohemia UID / Steam64 and the last known
+     * nickname) while `characters.db` holds the character state (position,
+     * alive flag, last played timestamp).  Both are therefore read and merged
+     * on the player identifier so a record always carries the correct
+     * nickname *and* the correct character information.
+     *
+     * @return array{status: string, source_path: string|null, source_paths: list<string>, players: list<array<string, mixed>>}
      */
     public function snapshot(mixed $server, string $mapName = 'ChernarusPlus'): array
     {
-        $readablePath = null;
+        $readablePaths = [];
+        $merged = [];
 
         foreach ($this->candidatePaths($server) as $path) {
             $raw = $this->gateway->readFile($server, $path);
@@ -61,19 +79,50 @@ final class DayZPersistencePlayerService
                 continue;
             }
 
-            if ($players !== []) {
-                return ['status' => 'ok', 'source_path' => $path, 'players' => $players];
-            }
+            $readablePaths[] = $path;
 
-            // A readable database without player rows (for example an empty
-            // storage folder) is remembered, but the remaining candidate paths
-            // are still checked for one that holds records.
-            $readablePath ??= $path;
+            foreach ($players as $player) {
+                $uid = (string) ($player['player_id'] ?? '');
+
+                if ($uid === '') {
+                    continue;
+                }
+
+                $player['source_paths'] = [$path];
+                $merged[$uid] = isset($merged[$uid])
+                    ? $this->mergeRow($merged[$uid], $player)
+                    : $player;
+            }
         }
 
-        return $readablePath === null
-            ? ['status' => 'not_found', 'source_path' => null, 'players' => []]
-            : ['status' => 'ok', 'source_path' => $readablePath, 'players' => []];
+        if ($readablePaths === []) {
+            return ['status' => 'not_found', 'source_path' => null, 'source_paths' => [], 'players' => []];
+        }
+
+        return [
+            'status' => 'ok',
+            'source_path' => $readablePaths[0],
+            'source_paths' => $readablePaths,
+            'players' => $this->finalize($this->sortMerged($merged)),
+        ];
+    }
+
+    /**
+     * Fills in the fields that can only be decided once every database has
+     * been merged (a record without a nickname falls back to its identifier).
+     *
+     * @param list<array<string, mixed>> $players
+     * @return list<array<string, mixed>>
+     */
+    private function finalize(array $players): array
+    {
+        foreach ($players as $index => $player) {
+            $name = trim((string) ($player['name'] ?? ''));
+            $players[$index]['has_name'] = $name !== '';
+            $players[$index]['name'] = $name !== '' ? $name : (string) ($player['player_id'] ?? '');
+        }
+
+        return $players;
     }
 
     /**
@@ -192,8 +241,8 @@ final class DayZPersistencePlayerService
 
         $mapping = [];
 
-        foreach (self::COLUMN_PATTERNS as $field => $pattern) {
-            $column = $this->firstColumn($columns, $pattern);
+        foreach (self::COLUMN_PATTERNS as $field => $patterns) {
+            $column = $this->firstColumn($columns, $patterns);
 
             if ($column !== null) {
                 $mapping[$field] = $column;
@@ -242,7 +291,7 @@ final class DayZPersistencePlayerService
         return [
             'player_id' => $playerId,
             'steam64' => preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null,
-            'name' => $name !== '' ? $name : $playerId,
+            'name' => $name,
             'x' => $x,
             'y' => $y,
             'z' => $z,
@@ -251,6 +300,7 @@ final class DayZPersistencePlayerService
             'alive' => $this->aliveValue($value('alive')),
             'last_seen_at' => $this->normalizeTimestamp($value('seen')),
             'source_table' => $table,
+            'source_tables' => [$table],
         ];
     }
 
@@ -291,13 +341,19 @@ final class DayZPersistencePlayerService
     }
 
     /**
+     * Returns the first column matching the highest-priority pattern, so an
+     * exact column name (`name`) always wins over a fuzzy one (`firstname`).
+     *
      * @param list<string> $columns
+     * @param list<string> $patterns
      */
-    private function firstColumn(array $columns, string $pattern): ?string
+    private function firstColumn(array $columns, array $patterns): ?string
     {
-        foreach ($columns as $column) {
-            if (preg_match($pattern, $column) === 1) {
-                return $column;
+        foreach ($patterns as $pattern) {
+            foreach ($columns as $column) {
+                if (preg_match($pattern, $column) === 1) {
+                    return $column;
+                }
             }
         }
 
@@ -393,10 +449,25 @@ final class DayZPersistencePlayerService
      */
     private function mergeRow(array $left, array $right): array
     {
-        foreach (['name', 'x', 'y', 'z', 'alive', 'last_seen_at'] as $field) {
+        foreach (['name', 'steam64', 'x', 'y', 'z', 'alive', 'last_seen_at'] as $field) {
             if (($left[$field] ?? null) === null || ($left[$field] ?? '') === '') {
                 $left[$field] = $right[$field] ?? null;
             }
+        }
+
+        foreach (['source_tables', 'source_paths'] as $field) {
+            $left[$field] = array_values(array_unique(array_merge(
+                is_array($left[$field] ?? null) ? $left[$field] : [],
+                is_array($right[$field] ?? null) ? $right[$field] : [],
+            )));
+        }
+
+        // The most recent record wins for the character state.
+        $rightSeen = strtotime((string) ($right['last_seen_at'] ?? '')) ?: 0;
+        $leftSeen = strtotime((string) ($left['last_seen_at'] ?? '')) ?: 0;
+
+        if ($rightSeen > $leftSeen) {
+            $left['last_seen_at'] = $right['last_seen_at'];
         }
 
         if (($left['position_status'] ?? 'missing') !== 'valid' && ($right['position_status'] ?? 'missing') === 'valid') {

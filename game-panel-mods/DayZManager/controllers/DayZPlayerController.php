@@ -8,7 +8,7 @@ use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZObservedPlayerService;
-use GamePanelMods\DayZManager\Services\DayZPersistencePlayerService;
+use GamePanelMods\DayZManager\Services\DayZPlayerDirectoryService;
 use GamePanelMods\DayZManager\Services\DayZPlayerService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
@@ -22,7 +22,7 @@ final class DayZPlayerController
         private readonly DayZPlayerService $service = new DayZPlayerService(),
         private readonly DayZObservedPlayerService $observedPlayers = new DayZObservedPlayerService(),
         private readonly DayZLiveMapService $liveMap = new DayZLiveMapService(),
-        private readonly DayZPersistencePlayerService $persistencePlayers = new DayZPersistencePlayerService(),
+        private readonly DayZPlayerDirectoryService $directory = new DayZPlayerDirectoryService(),
         private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
@@ -49,7 +49,8 @@ final class DayZPlayerController
 
             $snapshot = $this->liveMap->snapshot($resolved['model']);
             $livePlayers = is_array($snapshot['players'] ?? null) ? $snapshot['players'] : [];
-            $persisted = $this->persistencePlayers->snapshot($resolved['model'], (string) ($snapshot['map'] ?? 'ChernarusPlus'));
+            $mapName = (string) ($snapshot['map'] ?? 'ChernarusPlus');
+            $persisted = $this->directory->directory($resolved['model'], $mapName, $livePlayers);
             $playerLists = $this->service->allLists();
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'players', $resolved['id'], $resolved['name']);
@@ -63,6 +64,7 @@ final class DayZPlayerController
                 'player_lists' => $playerLists,
                 'persistence_status' => $persisted['status'] ?? 'not_found',
                 'persistence_source_path' => $persisted['source_path'] ?? null,
+                'persistence_source_paths' => $persisted['source_paths'] ?? [],
                 'map_definition' => $snapshot['map_definition'] ?? null,
             ];
         }
@@ -73,6 +75,7 @@ final class DayZPlayerController
             'live_players' => $livePlayers,
             'persistence_status' => $persisted['status'] ?? 'not_found',
             'persistence_source_path' => $persisted['source_path'] ?? null,
+            'persistence_source_paths' => $persisted['source_paths'] ?? [],
             'map_definition' => $snapshot['map_definition'] ?? ['name' => 'ChernarusPlus', 'locations' => []],
             'online_count' => count($livePlayers),
         ], 'players', $resolved['id'], $resolved['name']);

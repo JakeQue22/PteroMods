@@ -7,7 +7,9 @@ namespace GamePanelMods\DayZManager\Controllers;
 use GamePanelMods\DayZManager\Services\DayZLiveBridgeService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZManagerSettingsService;
+use GamePanelMods\DayZManager\Services\DayZMapMarkerService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZPlayerDirectoryService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
 
@@ -20,6 +22,8 @@ final class DayZLiveMapController
         private readonly DayZLiveMapService $service = new DayZLiveMapService(),
         private readonly DayZLiveBridgeService $bridge = new DayZLiveBridgeService(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
+        private readonly DayZMapMarkerService $mapMarkers = new DayZMapMarkerService(),
+        private readonly DayZPlayerDirectoryService $directory = new DayZPlayerDirectoryService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
     ) {
@@ -78,6 +82,45 @@ final class DayZLiveMapController
                 'locations' => [],
             ],
         ], 'live-map', $resolved['id'], $resolved['name']);
+    }
+
+    /**
+     * Returns the categorised map overlays (named locations, animal and
+     * infected territories, event spawns, loot, vehicles, player spawns) and
+     * the player directory used to enrich the player overlay popups.
+     *
+     * @return array<string, mixed>
+     */
+    public function markers(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+
+        try {
+            $snapshot = $this->service->snapshot($resolved['model']);
+            $mapName = (string) ($snapshot['map'] ?? 'ChernarusPlus');
+            $livePlayers = is_array($snapshot['players'] ?? null) ? $snapshot['players'] : [];
+            $markers = $this->mapMarkers->markers($resolved['model'], $mapName);
+            $directory = $this->directory->directory($resolved['model'], $mapName, $livePlayers);
+
+            return [
+                'server_id' => $resolved['id'],
+                'status' => $markers['status'],
+                'map' => $mapName,
+                'groups' => $markers['groups'],
+                'sources' => $markers['sources'],
+                'player_directory' => $directory['players'],
+                'persistence_status' => $directory['status'],
+            ];
+        } catch (Throwable $exception) {
+            return [
+                'server_id' => $resolved['id'],
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+                'groups' => [],
+                'sources' => [],
+                'player_directory' => [],
+            ];
+        }
     }
 
     /**

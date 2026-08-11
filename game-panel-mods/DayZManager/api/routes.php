@@ -49,6 +49,7 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dzsa',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@dzsa'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/live-map',                  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@index'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/live-map/snapshot',          'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@snapshot'];
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/live-map/markers',           'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@markers'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/live-map/ingest',           'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@ingest'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/live-map/setup-bridge',     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@setupBridge'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/live-map/remove-bridge',    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@removeBridge'];
