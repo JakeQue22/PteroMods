@@ -17,6 +17,12 @@
         <button class="dz-btn dz-btn-ghost" type="button" onclick="window.pteroLiveMapResetCamera()">Reset View</button>
         <button class="dz-btn dz-btn-ghost" type="button" onclick="window.pteroLiveMapFullscreen()">Fullscreen</button>
     </div>
+    <div class="dz-form" style="margin-top:0.65rem;">
+        <button id="dz-live-map-bridge-refresh" class="dz-btn dz-btn-ghost" type="button">Bridge Status</button>
+        <button id="dz-live-map-bridge-deploy" class="dz-btn" type="button">Deploy Bridge</button>
+        <button id="dz-live-map-bridge-remove" class="dz-btn dz-btn-red" type="button">Remove Bridge</button>
+        <span id="dz-live-map-bridge-msg" class="dz-status dz-hidden"></span>
+    </div>
     <p class="dz-sub" id="dz-live-map-meta">
         <span id="dz-live-map-count">0</span> player(s) online ·
         Last update: <span id="dz-live-map-updated">—</span> ·
@@ -41,6 +47,9 @@
     const SERVER_ID   = @json($server_id);
     const SNAPSHOT_URL = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/snapshot';
     const MARKERS_URL  = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/markers';
+    const BRIDGE_STATUS_URL = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/bridge-status';
+    const BRIDGE_DEPLOY_URL = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/setup-bridge';
+    const BRIDGE_REMOVE_URL = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/remove-bridge';
     const PLAYERS_URL  = @json($base_url) + '/players';
     const POLL_MS      = 7000;
     // Refreshing the mission-derived overlays is expensive (it reads the
@@ -87,6 +96,10 @@
     const updatedEl = document.getElementById('dz-live-map-updated');
     const mapNameEl = document.getElementById('dz-live-map-name');
     const searchEl  = document.getElementById('dz-live-map-search');
+    const bridgeRefreshBtn = document.getElementById('dz-live-map-bridge-refresh');
+    const bridgeDeployBtn  = document.getElementById('dz-live-map-bridge-deploy');
+    const bridgeRemoveBtn  = document.getElementById('dz-live-map-bridge-remove');
+    const bridgeMsgEl      = document.getElementById('dz-live-map-bridge-msg');
 
     // ── Coordinate system ────────────────────────────────────────────────────
     // DayZ uses a flat world grid: x = east, z = south (increasing).
@@ -719,6 +732,108 @@
         document.exitFullscreen && document.exitFullscreen();
     }
 
+    function csrfToken() {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? String(meta.getAttribute('content') || '') : '';
+    }
+
+    function setBridgeMessage(text, kind) {
+        if (!bridgeMsgEl) {
+            return;
+        }
+
+        bridgeMsgEl.classList.remove('dz-hidden');
+        bridgeMsgEl.className = 'dz-status';
+
+        if (kind === 'success') {
+            bridgeMsgEl.classList.add('dz-text-green');
+        } else if (kind === 'error') {
+            bridgeMsgEl.classList.add('dz-text-red');
+        } else {
+            bridgeMsgEl.classList.add('dz-text-muted');
+        }
+
+        bridgeMsgEl.textContent = text;
+    }
+
+    function setBridgeButtonsBusy(busy) {
+        if (bridgeRefreshBtn) {
+            bridgeRefreshBtn.disabled = busy;
+        }
+        if (bridgeDeployBtn) {
+            bridgeDeployBtn.disabled = busy;
+        }
+        if (bridgeRemoveBtn) {
+            bridgeRemoveBtn.disabled = busy;
+        }
+    }
+
+    async function refreshBridgeStatus() {
+        try {
+            const res = await fetch(BRIDGE_STATUS_URL, {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            });
+            const data = await res.json().catch(function () { return {}; });
+
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
+            }
+
+            const script = !!data.script;
+            const initC  = !!data.init_c;
+            const snapshot = !!data.snapshot;
+            const legacy = !!data.init_c_legacy;
+
+            if (data.deployed) {
+                setBridgeMessage('Bridge deployed (script, init.c, snapshot all present).', 'success');
+                return;
+            }
+
+            if (legacy) {
+                setBridgeMessage('Legacy bridge block detected in init.c — remove and redeploy bridge.', 'error');
+                return;
+            }
+
+            const parts = [];
+            parts.push('script: ' + (script ? 'yes' : 'no'));
+            parts.push('init.c: ' + (initC ? 'yes' : 'no'));
+            parts.push('snapshot: ' + (snapshot ? 'yes' : 'no'));
+            setBridgeMessage('Bridge not fully deployed (' + parts.join(', ') + ').', 'warn');
+        } catch (err) {
+            setBridgeMessage('Failed to load bridge status.', 'error');
+        }
+    }
+
+    async function postBridge(url, actionLabel) {
+        setBridgeButtonsBusy(true);
+        setBridgeMessage(actionLabel + '…', 'warn');
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrfToken(),
+                },
+            });
+            const data = await res.json().catch(function () { return {}; });
+
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
+            }
+
+            setBridgeMessage(String(data.message || (actionLabel + ' complete.')), data.deployed === false || data.undeployed === false ? 'error' : 'success');
+            await refreshBridgeStatus();
+        } catch (err) {
+            setBridgeMessage(actionLabel + ' failed.', 'error');
+        } finally {
+            setBridgeButtonsBusy(false);
+        }
+    }
+
     // ── Poll loop ─────────────────────────────────────────────────────────
     async function poll() {
         try {
@@ -806,8 +921,22 @@
         state.search = searchEl.value || '';
         renderPlayerList();
     });
+    if (bridgeRefreshBtn) {
+        bridgeRefreshBtn.addEventListener('click', refreshBridgeStatus);
+    }
+    if (bridgeDeployBtn) {
+        bridgeDeployBtn.addEventListener('click', function () {
+            postBridge(BRIDGE_DEPLOY_URL, 'Deploying bridge');
+        });
+    }
+    if (bridgeRemoveBtn) {
+        bridgeRemoveBtn.addEventListener('click', function () {
+            postBridge(BRIDGE_REMOVE_URL, 'Removing bridge');
+        });
+    }
 
     setStatusText('Loading map…');
+    refreshBridgeStatus();
     loadLeaflet(0);
 }());
 </script>
