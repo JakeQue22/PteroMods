@@ -6,11 +6,21 @@
  * by running the panel's install.sh.
  *
  * ── HOW TO ACTIVATE ──────────────────────────────────────────────────────────
- * The PteroMods panel automatically appends the following block to your mission's
- * init.c (mpmissions/dayzOffline.chernarusplus/init.c):
+ * The PteroMods panel edits your mission's init.c
+ * (mpmissions/dayzOffline.chernarusplus/init.c) in two places.
  *
- *     #include "pteromods_live_map.c"
- *     PteroMods_LiveMap_Init();
+ * 1. At the very top of the file:
+ *
+ *        #include "pteromods_live_map.c"
+ *
+ * 2. Inside the existing main() function (EnfScript does not allow a bare call
+ *    at file scope — that makes the mission fail to compile):
+ *
+ *        void main()
+ *        {
+ *            PteroMods_LiveMap_Init();
+ *            ...
+ *        }
  *
  * The bridge registers a periodic callback that writes a JSON snapshot of all
  * online players to:
@@ -155,8 +165,8 @@ class PteroMods_LiveMapBridge : Managed
 
 /**
  * Entry point called from init.c.
- * The PteroMods panel appends  PteroMods_LiveMap_Init();  to init.c so that
- * this function is invoked once when the mission loads on the server.
+ * The PteroMods panel injects  PteroMods_LiveMap_Init();  into the mission's
+ * main() function so that this runs once when the mission loads on the server.
  */
 void PteroMods_LiveMap_Init()
 {

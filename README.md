@@ -377,7 +377,7 @@ The response includes the updated `-mod=` launch parameter string built from ena
 
 URL: `GET /servers/{server}/dayz/players`
 
-The **Players** tab shows persisted DayZ player records loaded from `characters.db` / `players.db` and a separate **Live Players** section for currently online players from the live-map bridge snapshot. Ban/whitelist/priority list changes are persisted to `dayz_player_lists`.
+The **Players** tab shows a single merged player directory: persisted DayZ records loaded from `characters.db` / `players.db` are combined with the currently online players from the live-map bridge snapshot, so each player appears once with their nickname, Steam64 (linked to their Steam profile), DayZ UID, last seen time, position and list membership. Each entry links straight to that player on the Live Map. Ban/whitelist/priority list changes are persisted to `dayz_player_lists`.
 
 | Action | Method | Endpoint |
 |---|---|---|
@@ -500,7 +500,38 @@ The **Live Map** tab shows an interactive Leaflet map of live player positions. 
 
 #### Server-side bridge setup (required for live data)
 
-You need a DayZ server-side script that writes player positions to the bridge file every few seconds. The file must contain valid JSON matching this schema:
+The panel ships an EnfScript bridge (`assets/bridge/pteromods_live_map.c`) that writes the snapshot for you. **DayZ Manager → Live Map → Deploy Bridge** copies it to `mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c` and wires it into the mission's `init.c`. Restart the server afterwards — the bridge only starts when the mission is (re)loaded.
+
+##### The two init.c lines (required)
+
+Without these lines nothing is ever written to the snapshot file and the Live Map stays empty, even though the map itself loads. If you removed them, add them back exactly like this:
+
+1. At the very top of `mpmissions/dayzOffline.chernarusplus/init.c`:
+
+   ```c
+   #include "pteromods_live_map.c"
+   ```
+
+2. Inside the **existing** `main()` function of the same file:
+
+   ```c
+   void main()
+   {
+       PteroMods_LiveMap_Init();
+
+       // ... the rest of your existing main() body stays unchanged ...
+   }
+   ```
+
+> ⚠️ `PteroMods_LiveMap_Init();` must be **inside** `main()`. EnfScript only allows declarations at file scope, so putting the call next to the `#include` makes the mission fail to compile and the server will not start. (Panel versions before this fix appended it at file scope — redeploy the bridge to have it corrected automatically.)
+>
+> The `#include` also requires `pteromods_live_map.c` to exist in the same mission folder, otherwise the server logs `Can't find file 'pteromods_live_map.c'`. Deploy the bridge first, or remove the `#include` again.
+
+Use **Live Map → Remove Bridge** to strip both lines and delete the script if you ever need to roll back.
+
+##### Writing the snapshot yourself
+
+If you prefer your own mod or script, write the bridge file every few seconds instead. It must contain valid JSON matching this schema:
 
 ```json
 {
@@ -527,7 +558,7 @@ Write this file to `/profiles/PteroMods/live_map_players.json` inside the server
 
 | Status shown | Meaning |
 |---|---|
-| **Waiting for bridge data at `/profiles/PteroMods/live_map_players.json`** | The endpoint is working but no bridge file has been written yet. Set up the server-side script above. |
+| **Waiting for bridge data at `/profiles/PteroMods/live_map_players.json`** | The endpoint is working but no bridge file has been written yet. Deploy the bridge, check the two `init.c` lines above, and restart the server. |
 | **Live snapshot received.** | Data is flowing — player markers will appear on the map. |
 | **Bridge snapshot exists but is invalid (or signature check failed).** | The file exists but is not valid JSON, or the optional HMAC signature did not match the configured secret. |
 | **Failed to fetch live map snapshot.** | The HTTP request to the snapshot endpoint itself failed (network error or the server returned a non-JSON response). Check that the module routes are registered and that you are logged in. |

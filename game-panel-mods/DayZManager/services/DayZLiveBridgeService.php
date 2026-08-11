@@ -40,10 +40,27 @@ final class DayZLiveBridgeService
     private const INIT_C_MARKER = 'PteroMods_LiveMap_Init';
 
     /**
-     * Block appended to init.c to include the bridge and call the init function.
-     * The #include must precede the call so EnfScript can resolve the symbol.
+     * Include directive placed at the very top of init.c.
+     *
+     * EnfScript only allows declarations at file scope, so the bridge is
+     * activated by a call inside main() (see INIT_C_CALL) rather than by a
+     * statement next to the include — a bare call at file scope makes the
+     * mission fail to compile and the server refuses to load it.
      */
-    private const INIT_C_BLOCK = "\n// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this block (and pteromods_live_map.c) to disable the live map.\n#include \"pteromods_live_map.c\"\nPteroMods_LiveMap_Init();\n";
+    private const INIT_C_INCLUDE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"pteromods_live_map.c\"\n";
+
+    /** Activation call injected at the start of the mission's main() function. */
+    private const INIT_C_CALL = "\n\t// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n\tPteroMods_LiveMap_Init();\n";
+
+    /** Matches the mission's main() entry point so the call can be injected into it. */
+    private const INIT_C_MAIN_PATTERN = '/\bvoid\s+main\s*\(\s*\)\s*\{/';
+
+    /**
+     * Matches the broken activation block written by panel versions that put the
+     * call at file scope, which makes the mission fail to compile. Detecting it
+     * lets the panel repair such servers automatically.
+     */
+    private const INIT_C_LEGACY_PATTERN = '/#include\s+"pteromods_live_map\.c"\s*\n\s*PteroMods_LiveMap_Init\(\);/';
 
     /** Path inside the container where the JSON snapshot lives. */
     private const SNAPSHOT_PATH = '/profiles/PteroMods/live_map_players.json';
@@ -100,14 +117,15 @@ final class DayZLiveBridgeService
         $deployed = $scriptOk && $initCOk && $snapshotOk;
 
         if ($deployed) {
-            $message = 'Bridge deployed. The activation block has been appended to init.c — '
+            $message = 'Bridge deployed. The activation block has been added to init.c — '
                 . 'restart the server to start writing player snapshots.';
         } elseif ($scriptOk && $initCOk) {
             $message = 'Bridge script and init.c updated, but snapshot initialisation failed '
                 . '(check Wings connectivity and /profiles/PteroMods/ directory permissions).';
         } elseif ($scriptOk) {
-            $message = 'Bridge script written but init.c could not be updated '
-                . '(check Wings connectivity and that the mission folder exists).';
+            $message = 'Bridge script written but init.c could not be updated automatically '
+                . '(no "void main()" was found, or Wings is unreachable). Add the #include line at the '
+                . 'top of init.c and call PteroMods_LiveMap_Init(); inside main() manually — see the README.';
         } else {
             $message = 'Bridge deployment failed. Check that Wings is reachable and the server is not suspended.';
         }
@@ -121,7 +139,8 @@ final class DayZLiveBridgeService
             'script_path'     => self::MISSION_SCRIPT_PATH,
             'init_c_path'     => self::INIT_C_PATH,
             'snapshot_path'   => self::SNAPSHOT_PATH,
-            'init_c_block'    => trim(self::INIT_C_BLOCK),
+            'init_c_include'  => trim(self::INIT_C_INCLUDE),
+            'init_c_call'     => trim(self::INIT_C_CALL),
         ];
     }
 
@@ -158,7 +177,7 @@ final class DayZLiveBridgeService
     /**
      * Returns the deployment status for a server without writing anything.
      *
-     * @return array{deployed: bool, script: bool, init_c: bool, snapshot: bool}
+     * @return array{deployed: bool, script: bool, init_c: bool, init_c_legacy: bool, snapshot: bool}
      */
     public function status(mixed $server): array
     {
@@ -170,10 +189,13 @@ final class DayZLiveBridgeService
         $initCActivated  = is_string($initC)    && str_contains($initC, self::INIT_C_MARKER);
         $snapshotPresent = is_string($snapshot)  && trim($snapshot) !== '';
 
+        $initCLegacy = is_string($initC) && preg_match(self::INIT_C_LEGACY_PATTERN, $initC) === 1;
+
         return [
-            'deployed'      => $scriptPresent && $initCActivated && $snapshotPresent,
+            'deployed'      => $scriptPresent && $initCActivated && $snapshotPresent && !$initCLegacy,
             'script'        => $scriptPresent,
             'init_c'        => $initCActivated,
+            'init_c_legacy' => $initCLegacy,
             'snapshot'      => $snapshotPresent,
             'script_path'   => self::MISSION_SCRIPT_PATH,
             'init_c_path'   => self::INIT_C_PATH,
@@ -193,21 +215,18 @@ final class DayZLiveBridgeService
             return true;
         }
 
-        // Remove every line that belongs to the appended block.  The block
-        // begins with the comment line and ends after PteroMods_LiveMap_Init();
-        $stripped = preg_replace(
-            '/\n\/\/ PteroMods Live Map Bridge[^\n]*\n\/\/ Remove this block[^\n]*\n#include "pteromods_live_map\.c"\nPteroMods_LiveMap_Init\(\);\n/',
-            '',
-            $existing,
-        );
-
-        if ($stripped === null || str_contains($stripped, self::INIT_C_MARKER)) {
-            // Regex did not match (block was edited by hand) — fall back to a
-            // line-by-line filter that removes every line containing the marker.
-            $lines   = explode("\n", $existing);
-            $kept    = array_filter($lines, static fn (string $l): bool => !str_contains($l, 'PteroMods_LiveMap') && !str_contains($l, 'pteromods_live_map'));
-            $stripped = implode("\n", $kept);
-        }
+        // Remove every line PteroMods added: the include, the activation call
+        // and the explanatory comments around them. This also cleans up blocks
+        // written by older panel versions that appended the call at file scope.
+        $lines = explode("\n", $existing);
+        $kept  = array_filter($lines, static function (string $line): bool {
+            return !str_contains($line, 'PteroMods_LiveMap')
+                && !str_contains($line, 'pteromods_live_map')
+                && !str_contains($line, 'PteroMods Live Map Bridge')
+                && !str_contains($line, '// Remove this block')
+                && !str_contains($line, '// Remove this line, the');
+        });
+        $stripped = implode("\n", $kept);
 
         return $this->gateway->writeFile($server, self::INIT_C_PATH, $stripped);
     }
@@ -241,7 +260,18 @@ final class DayZLiveBridgeService
             return true;
         }
 
-        $updated = $content . self::INIT_C_BLOCK;
+        // The activation call must live inside main(); without it the mission
+        // either fails to compile (bare call at file scope) or never starts the
+        // bridge, which is why the panel refuses to write a half-finished block.
+        if (preg_match(self::INIT_C_MAIN_PATTERN, $content, $match, PREG_OFFSET_CAPTURE) !== 1) {
+            return false;
+        }
+
+        $insertAt = (int) $match[0][1] + strlen((string) $match[0][0]);
+        $updated  = self::INIT_C_INCLUDE
+            . substr($content, 0, $insertAt)
+            . self::INIT_C_CALL
+            . substr($content, $insertAt);
 
         return $this->gateway->writeFile($server, self::INIT_C_PATH, $updated);
     }

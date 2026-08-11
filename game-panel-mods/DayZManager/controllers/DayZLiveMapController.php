@@ -44,11 +44,13 @@ final class DayZLiveMapController
         // If the bridge script is missing but the activation block is already
         // in init.c, strip the block so that a subsequent server start does not
         // crash with "Can't find file 'pteromods_live_map.c'".  A full re-deploy
-        // is then attempted so the server can be restarted cleanly.
+        // is then attempted so the server can be restarted cleanly.  The same
+        // repair runs when init.c still carries the legacy activation block that
+        // called PteroMods_LiveMap_Init() at file scope, which does not compile.
         try {
             $status = $this->bridge->status($resolved['model']);
 
-            if (!$status['script']) {
+            if (!$status['script'] || !empty($status['init_c_legacy'])) {
                 if ($status['init_c']) {
                     // Broken state: include present but file missing.  Remove the
                     // include first so the server won't crash, then re-deploy.
