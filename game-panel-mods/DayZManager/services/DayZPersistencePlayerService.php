@@ -186,7 +186,7 @@ final class DayZPersistencePlayerService
             return [];
         }
 
-        $uidColumn = $this->firstColumn($columns, '/(^uid$|player_?uid|steam|bohemia|identity|owner|player_?id)/i');
+        $uidColumn = $this->firstColumn($columns, '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i');
         $nameColumn = $this->firstColumn($columns, '/(name|nickname|playername)/i');
         $xColumn = $this->firstColumn($columns, '/(^x$|posx|positionx|worldx|coordx)/i');
         $yColumn = $this->firstColumn($columns, '/(^y$|posy|positiony|worldy|coordy|height)/i');
@@ -282,7 +282,7 @@ final class DayZPersistencePlayerService
      */
     private function columns(SQLite3 $db, string $table): array
     {
-        $query = $db->query(sprintf('PRAGMA table_info("%s")', str_replace('"', '""', $table)));
+        $query = $db->query(sprintf("PRAGMA table_info('%s')", str_replace("'", "''", $table)));
 
         if (!$query) {
             return [];
