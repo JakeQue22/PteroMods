@@ -272,13 +272,9 @@ final class DayZLiveBridgeService
         $content = preg_replace('/^\s*#include\s+"(?:\$CurrentDir:mpmissions\/dayzOffline\.chernarusplus\/)?pteromods_live_map\.c"\s*;?\s*\R?/mi', '', $content) ?? $content;
         $content = preg_replace('/^\s*\/\/\s*PteroMods Live Map Bridge.*\R?/mi', '', $content) ?? $content;
         $content = preg_replace('/^\s*\/\/\s*Remove this line, the.*\R?/mi', '', $content) ?? $content;
+        $content = preg_replace(self::INIT_C_CALL_PATTERN, '', $content) ?? $content;
 
         $content = self::INIT_C_INCLUDE . ltrim($content);
-
-        // If main() already contains the call, just ensure include normalization.
-        if (preg_match(self::INIT_C_CALL_PATTERN, $content) === 1) {
-            return $this->gateway->writeFile($server, self::INIT_C_PATH, $content);
-        }
 
         // The activation call must live inside main(); without it the mission
         // either fails to compile (bare call at file scope) or never starts the
