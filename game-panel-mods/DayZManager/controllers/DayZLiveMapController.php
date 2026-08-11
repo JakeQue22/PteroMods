@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Controllers;
 
+use GamePanelMods\DayZManager\Services\DayZLiveBridgeService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
@@ -16,6 +17,7 @@ final class DayZLiveMapController
 {
     public function __construct(
         private readonly DayZLiveMapService $service = new DayZLiveMapService(),
+        private readonly DayZLiveBridgeService $bridge = new DayZLiveBridgeService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
     ) {
@@ -27,6 +29,20 @@ final class DayZLiveMapController
     public function index(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+
+        // Auto-deploy the bridge script the first time the live map page is
+        // opened for a server (i.e. during server setup) if it is not already
+        // present in the container.  Failures are intentionally silent so a
+        // Wings connectivity issue never blocks the page from rendering.
+        try {
+            $status = $this->bridge->status($resolved['model']);
+
+            if (!$status['script']) {
+                $this->bridge->deploy($resolved['model']);
+            }
+        } catch (Throwable) {
+            // Best-effort; never block the page render.
+        }
 
         try {
             $snapshot = $this->service->snapshot($resolved['model']);
@@ -91,5 +107,52 @@ final class DayZLiveMapController
         }
 
         return $this->service->ingest($resolved['model'], $payload, $signature);
+    }
+
+    /**
+     * Deploys the server-side bridge script to the server container.
+     *
+     * Called automatically on the first live map page load, and available as
+     * an explicit POST endpoint so the UI can offer a "Re-deploy bridge" button.
+     *
+     * @return array<string, mixed>
+     */
+    public function setupBridge(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+        $this->context->authorizeManage($resolved['model']);
+
+        try {
+            return $this->bridge->deploy($resolved['model']);
+        } catch (Throwable $exception) {
+            return [
+                'deployed' => false,
+                'script'   => false,
+                'snapshot' => false,
+                'message'  => $exception->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Returns the current bridge deployment status for the server without
+     * writing any files.
+     *
+     * @return array<string, mixed>
+     */
+    public function bridgeStatus(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+
+        try {
+            return $this->bridge->status($resolved['model']);
+        } catch (Throwable $exception) {
+            return [
+                'deployed' => false,
+                'script'   => false,
+                'snapshot' => false,
+                'message'  => $exception->getMessage(),
+            ];
+        }
     }
 }
