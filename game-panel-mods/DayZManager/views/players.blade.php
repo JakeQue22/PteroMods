@@ -60,7 +60,7 @@
                 </dl>
 
                 <div class="dz-mod-actions" style="margin-top:0.9rem;">
-                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer('{{ $player['player_id'] ?? $player['steam64'] }}')">Ban</button>
+                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode((string) ($player['player_id'] ?? $player['steam64'] ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
                 </div>
             </div>
         @empty

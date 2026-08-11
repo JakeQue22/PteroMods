@@ -472,7 +472,7 @@
     function showFatal(message) {
         root.innerHTML = '<p class="dz-live-map-fallback-message">' + escapeHtml(message) + '</p>';
         setStatusText('');
-        setNotice(message);
+        setNotice('');
     }
 
     function resetView() {
