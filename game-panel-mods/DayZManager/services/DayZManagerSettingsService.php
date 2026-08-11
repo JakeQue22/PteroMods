@@ -116,11 +116,11 @@ final class DayZManagerSettingsService
          *   {x}    – tile column
          *   {y}    – tile row
          *
-         * The default points to Bohemia Interactive's official DayZ tile CDN.
+         * The default points to the xam.nu community DayZ tile CDN.
          * Set to an empty string to disable tile loading (shows a plain dark
          * background with named locations only).
          */
-        'live_map_tile_url' => 'https://tiles.dayz.bohemia.com/{map}/{z}/{x}/{y}.jpg',
+        'live_map_tile_url' => 'https://static.xam.nu/dayz/maps/{map}/1.29/satellite/{z}/{x}/{y}.webp',
 
         /**
          * When true, DayZ Manager automatically takes a database backup at the
@@ -227,8 +227,8 @@ final class DayZManagerSettingsService
         'live_map_tile_url' =>
             'Leaflet tile URL template for the Live Map. '
             . 'Placeholders: {map} (map id, e.g. chernarusplus), {z} (zoom), {x} (column), {y} (row). '
-            . 'Default uses the xam.nu community CDN at DayZ 1.27 — update the version number '
-            . 'after each DayZ update, e.g. replace "1.27" with "1.29". '
+            . 'Default uses the xam.nu community CDN at DayZ 1.29 — update the version number '
+            . 'after each DayZ update when newer tiles are published. '
             . 'Leave empty to disable tile loading (shows a plain dark background).',
     ];
 

@@ -44,7 +44,7 @@
     const TILE_URL_TPL = @json($tile_url ?? '');
 
     const state = {
-        mapDef: @json($map_definition ?? ['id' => 'chernarusplus', 'name' => 'ChernarusPlus', 'world_size' => 15360, 'locations' => []]),
+        mapDef: @json($map_definition),
         players: new Map(),   // steam64 → player data
         markers: new Map(),   // steam64 → L.Marker
         selected: '',
