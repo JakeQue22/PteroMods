@@ -509,7 +509,7 @@ Without these lines nothing is ever written to the snapshot file and the Live Ma
 1. At the very top of `mpmissions/dayzOffline.chernarusplus/init.c`:
 
    ```c
-   #include "pteromods_live_map.c"
+   #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c"
    ```
 
 2. Inside the **existing** `main()` function of the same file:
@@ -525,7 +525,7 @@ Without these lines nothing is ever written to the snapshot file and the Live Ma
 
 > ⚠️ `PteroMods_LiveMap_Init();` must be **inside** `main()`. EnfScript only allows declarations at file scope, so putting the call next to the `#include` makes the mission fail to compile and the server will not start. (Panel versions before this fix appended it at file scope — redeploy the bridge to have it corrected automatically.)
 >
-> The `#include` also requires `pteromods_live_map.c` to exist in the same mission folder, otherwise the server logs `Can't find file 'pteromods_live_map.c'`. Deploy the bridge first, or remove the `#include` again.
+> The `#include` also requires `mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c` to exist, otherwise the server logs `Can't find file 'pteromods_live_map.c'`. Deploy the bridge first, or remove the `#include` again.
 
 Use **Live Map → Remove Bridge** to strip both lines and delete the script if you ever need to roll back.
 

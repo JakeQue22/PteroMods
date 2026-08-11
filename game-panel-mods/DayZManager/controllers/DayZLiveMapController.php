@@ -50,7 +50,11 @@ final class DayZLiveMapController
         try {
             $status = $this->bridge->status($resolved['model']);
 
-            if (!$status['script'] || !empty($status['init_c_legacy'])) {
+            if (
+                !$status['script']
+                || empty($status['init_c_include'])
+                || !empty($status['init_c_legacy'])
+            ) {
                 if ($status['init_c']) {
                     // Broken state: include present but file missing.  Remove the
                     // include first so the server won't crash, then re-deploy.

@@ -11,7 +11,7 @@
  *
  * 1. At the very top of the file:
  *
- *        #include "pteromods_live_map.c"
+ *        #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c"
  *
  * 2. Inside the existing main() function (EnfScript does not allow a bare call
  *    at file scope — that makes the mission fail to compile):
@@ -57,6 +57,19 @@ const string PTEROMODS_LIVEMAP_PATH = "$profile:PteroMods/live_map_players.json"
 
 // Directory that must exist before the output file can be written.
 const string PTEROMODS_LIVEMAP_DIR  = "$profile:PteroMods";
+
+string PteroMods_LiveMap_SanitizePlayerName( string value )
+{
+    string safe = value;
+
+    safe.Replace( AsciiToString(92), "\\\\" );
+    safe.Replace( AsciiToString(34), "'" );
+    safe.Replace( AsciiToString(10), " " );
+    safe.Replace( AsciiToString(13), " " );
+    safe.Replace( AsciiToString(9),  " " );
+
+    return safe;
+}
 
 // ── Bridge class ──────────────────────────────────────────────────────────────
 
@@ -112,10 +125,9 @@ class PteroMods_LiveMapBridge : Managed
             if ( playerId == "" )
                 continue;
 
-            // Some DayZ builds reject escaped-quote string literals in Replace()
-            // calls ("quoted string not closed"). Keep the live-map payload
-            // parser-safe by using a stable identifier as display name.
-            string playerName = playerId;
+            string playerName = PteroMods_LiveMap_SanitizePlayerName( identity.GetName() );
+            if ( playerName == "" )
+                playerName = playerId;
 
             vector pos   = man.GetPosition();
             float  yaw   = man.GetOrientation()[0];

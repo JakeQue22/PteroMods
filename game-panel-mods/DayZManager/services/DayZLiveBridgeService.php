@@ -20,7 +20,7 @@ namespace GamePanelMods\DayZManager\Services;
  *   /profiles/PteroMods/live_map_players.json                   ← initialised empty snapshot
  *
  * The activation block appended to init.c (only when not already present):
- *   #include "pteromods_live_map.c"
+ *   #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c"
  *   PteroMods_LiveMap_Init();
  *
  * No database tables are used; everything is file-based.
@@ -47,7 +47,7 @@ final class DayZLiveBridgeService
      * statement next to the include — a bare call at file scope makes the
      * mission fail to compile and the server refuses to load it.
      */
-    private const INIT_C_INCLUDE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"pteromods_live_map.c\"\n";
+    private const INIT_C_INCLUDE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c\"\n";
 
     /** Activation call injected at the start of the mission's main() function. */
     private const INIT_C_CALL = "\n\t// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n\tPteroMods_LiveMap_Init();\n";
@@ -60,7 +60,9 @@ final class DayZLiveBridgeService
      * call at file scope, which makes the mission fail to compile. Detecting it
      * lets the panel repair such servers automatically.
      */
-    private const INIT_C_LEGACY_PATTERN = '/#include\s+"pteromods_live_map\.c"\s*\n\s*PteroMods_LiveMap_Init\(\);/';
+    private const INIT_C_INCLUDE_PATTERN = '/^\s*#include\s+"(?:\$CurrentDir:mpmissions\/dayzOffline\.chernarusplus\/)?pteromods_live_map\.c"\s*$/mi';
+
+    private const INIT_C_LEGACY_PATTERN = '/#include\s+"(?:\$CurrentDir:mpmissions\/dayzOffline\.chernarusplus\/)?pteromods_live_map\.c"\s*\n\s*PteroMods_LiveMap_Init\(\);/';
 
     /** Path inside the container where the JSON snapshot lives. */
     private const SNAPSHOT_PATH = '/profiles/PteroMods/live_map_players.json';
@@ -177,7 +179,7 @@ final class DayZLiveBridgeService
     /**
      * Returns the deployment status for a server without writing anything.
      *
-     * @return array{deployed: bool, script: bool, init_c: bool, init_c_legacy: bool, snapshot: bool}
+     * @return array{deployed: bool, script: bool, init_c: bool, init_c_include: bool, init_c_legacy: bool, snapshot: bool}
      */
     public function status(mixed $server): array
     {
@@ -187,14 +189,16 @@ final class DayZLiveBridgeService
 
         $scriptPresent   = is_string($script)   && trim($script)   !== '';
         $initCActivated  = is_string($initC)    && str_contains($initC, self::INIT_C_MARKER);
+        $initCInclude    = is_string($initC)    && preg_match(self::INIT_C_INCLUDE_PATTERN, $initC) === 1;
         $snapshotPresent = is_string($snapshot)  && trim($snapshot) !== '';
 
         $initCLegacy = is_string($initC) && preg_match(self::INIT_C_LEGACY_PATTERN, $initC) === 1;
 
         return [
-            'deployed'      => $scriptPresent && $initCActivated && $snapshotPresent && !$initCLegacy,
+            'deployed'      => $scriptPresent && $initCActivated && $initCInclude && $snapshotPresent && !$initCLegacy,
             'script'        => $scriptPresent,
             'init_c'        => $initCActivated,
+            'init_c_include'=> $initCInclude,
             'init_c_legacy' => $initCLegacy,
             'snapshot'      => $snapshotPresent,
             'script_path'   => self::MISSION_SCRIPT_PATH,
@@ -255,9 +259,15 @@ final class DayZLiveBridgeService
         $existing = $this->gateway->readFile($server, self::INIT_C_PATH);
         $content  = is_string($existing) ? $existing : '';
 
-        // Nothing to do if the marker is already present.
+        $content = preg_replace('/^\s*#include\s+"(?:\$CurrentDir:mpmissions\/dayzOffline\.chernarusplus\/)?pteromods_live_map\.c"\s*\R?/mi', '', $content) ?? $content;
+        $content = preg_replace('/^\s*\/\/\s*PteroMods Live Map Bridge.*\R?/mi', '', $content) ?? $content;
+        $content = preg_replace('/^\s*\/\/\s*Remove this line, the.*\R?/mi', '', $content) ?? $content;
+
+        $content = self::INIT_C_INCLUDE . ltrim($content);
+
+        // If main() already contains the call, just ensure include normalization.
         if (str_contains($content, self::INIT_C_MARKER)) {
-            return true;
+            return $this->gateway->writeFile($server, self::INIT_C_PATH, $content);
         }
 
         // The activation call must live inside main(); without it the mission
@@ -268,8 +278,7 @@ final class DayZLiveBridgeService
         }
 
         $insertAt = (int) $match[0][1] + strlen((string) $match[0][0]);
-        $updated  = self::INIT_C_INCLUDE
-            . substr($content, 0, $insertAt)
+        $updated  = substr($content, 0, $insertAt)
             . self::INIT_C_CALL
             . substr($content, $insertAt);
 
