@@ -48,7 +48,17 @@ final class DayZLiveMapController
     {
         $resolved = $this->context->resolve($server);
 
-        return ['server_id' => $resolved['id']] + $this->service->snapshot($resolved['model']);
+        try {
+            return ['server_id' => $resolved['id']] + $this->service->snapshot($resolved['model']);
+        } catch (Throwable $exception) {
+            return [
+                'server_id' => $resolved['id'],
+                'status'    => 'error',
+                'message'   => $exception->getMessage(),
+                'players'   => [],
+                'online_count' => 0,
+            ];
+        }
     }
 
     /**

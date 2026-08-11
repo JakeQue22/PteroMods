@@ -61,7 +61,7 @@ final class DayZManagerSettingsController
         $normalised = [];
 
         foreach ($values as $key => $value) {
-            if ((string) $key === 'profile_log_retention_days') {
+            if (in_array((string) $key, ['script_log_retention_days', 'crash_log_retention_days', 'tm_general_log_retention_days'], true)) {
                 $normalised[(string) $key] = max(1, min(3650, (int) $value));
                 continue;
             }

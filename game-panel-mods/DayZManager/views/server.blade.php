@@ -137,15 +137,6 @@
     <h2>Current Launch Parameters</h2>
     @if ($startup_source === 'pterodactyl')
         <p class="dz-sub">Loaded from the Pterodactyl startup command and this server's egg variables.</p>
-        <pre class="dz-pre">{{ $startup_rendered !== '' ? $startup_rendered : $startup_raw }}</pre>
-
-        @if (count($startup_parameters) > 0)
-            <ul class="dz-tags">
-                @foreach ($startup_parameters as $parameter)
-                    <li>{{ $parameter }}</li>
-                @endforeach
-            </ul>
-        @endif
 
         <dl class="dz-grid">
             <div class="dz-stat">

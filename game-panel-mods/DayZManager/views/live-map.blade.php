@@ -93,7 +93,12 @@
                 'Accept': 'application/json',
                 'X-CSRF-TOKEN': csrfToken(),
             },
-        }).then(function (res) { return res.json(); });
+        }).then(function (res) {
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
+            }
+            return res.json();
+        });
     }
 
     function worldToScene(x, z) {
@@ -166,7 +171,9 @@
             ? 'Waiting for bridge data at ' + (payload.bridge_format && payload.bridge_format.path ? payload.bridge_format.path : '/profiles/PteroMods/live_map_players.json')
             : (payload.status === 'invalid_bridge_payload'
                 ? 'Bridge snapshot exists but is invalid (or signature check failed).'
-                : 'Live snapshot received.');
+                : (payload.status === 'error'
+                    ? 'Snapshot error: ' + (payload.message || 'Unknown error.')
+                    : 'Live snapshot received.'));
 
         const seen = new Set();
         const players = Array.isArray(payload.players) ? payload.players : [];

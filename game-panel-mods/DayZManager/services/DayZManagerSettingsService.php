@@ -90,9 +90,19 @@ final class DayZManagerSettingsService
         'auto_scrub_profile_logs' => false,
 
         /**
-         * Number of days profile logs are kept before auto-scrub deletes them.
+         * Number of days `script_*.log` files are kept before auto-scrub deletes them.
          */
-        'profile_log_retention_days' => 14,
+        'script_log_retention_days' => 14,
+
+        /**
+         * Number of days `crash_*.log` files are kept before auto-scrub deletes them.
+         */
+        'crash_log_retention_days' => 14,
+
+        /**
+         * Number of days `TM_GeneralLogs_*.log` files are kept before auto-scrub deletes them.
+         */
+        'tm_general_log_retention_days' => 14,
 
         /**
          * Shared secret used by the optional server-side DayZ live-map bridge.
@@ -120,7 +130,9 @@ final class DayZManagerSettingsService
      */
     public const TEXT_LABELS = [
         'steam_web_api_key' => 'Steam Web API Key',
-        'profile_log_retention_days' => 'Profile log retention (days)',
+        'script_log_retention_days' => 'script_*.log retention (days)',
+        'crash_log_retention_days' => 'crash_*.log retention (days)',
+        'tm_general_log_retention_days' => 'TM_GeneralLogs_*.log retention (days)',
         'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
     ];
 
@@ -169,10 +181,13 @@ final class DayZManagerSettingsService
         'auto_scrub_profile_logs' =>
             'Disabled by default. When enabled, DayZ Manager periodically scans `/profiles` and '
             . 'deletes old `script_*.log`, `crash_*.log`, and `TM_GeneralLogs_*.log` files older '
-            . 'than your configured retention window.',
-        'profile_log_retention_days' =>
-            'How many days to keep profile logs (`script_*.log`, `crash_*.log`, '
-            . '`TM_GeneralLogs_*.log`) before automatic cleanup removes them.',
+            . 'than each type\'s configured retention window.',
+        'script_log_retention_days' =>
+            'How many days to keep `script_*.log` files before automatic cleanup removes them.',
+        'crash_log_retention_days' =>
+            'How many days to keep `crash_*.log` files before automatic cleanup removes them.',
+        'tm_general_log_retention_days' =>
+            'How many days to keep `TM_GeneralLogs_*.log` files before automatic cleanup removes them.',
         'live_map_bridge_secret' =>
             'Optional shared secret for a server-side DayZ script to write player snapshots to '
             . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '

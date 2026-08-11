@@ -37,15 +37,19 @@ final class DayZProfileLogScrubService
             return ['status' => 'skipped'];
         }
 
-        $retentionDays = max(1, (int) $this->settings->get('profile_log_retention_days', 14));
+        $retentionByType = [
+            'script'         => max(1, (int) $this->settings->get('script_log_retention_days', 14)),
+            'crash'          => max(1, (int) $this->settings->get('crash_log_retention_days', 14)),
+            'tm_general_log' => max(1, (int) $this->settings->get('tm_general_log_retention_days', 14)),
+        ];
         $cacheKey = 'pteromods.dayz.profile_log_scrub.last_run.' . md5($serverKey);
 
         if ($this->recentlyRan($cacheKey)) {
-            return ['status' => 'throttled', 'retention_days' => $retentionDays];
+            return ['status' => 'throttled', 'retention_by_type' => $retentionByType];
         }
 
         $entries = $this->gateway->listDirectory($server, '/profiles');
-        $cutoff = time() - ($retentionDays * 86400);
+        $now = time();
         $deleted = 0;
         $scanned = 0;
 
@@ -55,13 +59,14 @@ final class DayZProfileLogScrubService
             }
 
             $name = trim((string) ($entry['name'] ?? ''));
-            $timestamp = $this->timestampFromName($name);
+            [$timestamp, $logType] = $this->timestampAndTypeFromName($name);
 
-            if ($timestamp === null) {
+            if ($timestamp === null || $logType === null) {
                 continue;
             }
 
             $scanned++;
+            $cutoff = $now - ($retentionByType[$logType] * 86400);
 
             if ($timestamp >= $cutoff) {
                 continue;
@@ -77,36 +82,35 @@ final class DayZProfileLogScrubService
 
         return [
             'status' => 'scrubbed',
-            'retention_days' => $retentionDays,
+            'retention_by_type' => $retentionByType,
             'scanned' => $scanned,
             'deleted' => $deleted,
         ];
     }
 
-    private function timestampFromName(string $name): ?int
+    /**
+     * Returns [timestamp, logType] for a recognised log file name, or [null, null].
+     *
+     * @return array{0: int|null, 1: string|null}
+     */
+    private function timestampAndTypeFromName(string $name): array
     {
         $patterns = [
-            '/^script_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
-            '/^crash_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
-            '/^TM_GeneralLogs_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
+            'script'         => '/^script_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
+            'crash'          => '/^crash_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
+            'tm_general_log' => '/^TM_GeneralLogs_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
         ];
 
-        $stamp = '';
-
-        foreach ($patterns as $pattern) {
+        foreach ($patterns as $type => $pattern) {
             if (preg_match($pattern, $name, $matches) === 1) {
-                $stamp = $matches[1];
-                break;
+                $date = DateTimeImmutable::createFromFormat('Y-m-d_H-i-s', $matches[1], new DateTimeZone('UTC'));
+                $timestamp = $date === false ? null : $date->getTimestamp();
+
+                return [$timestamp, $type];
             }
         }
 
-        if ($stamp === '') {
-            return null;
-        }
-
-        $date = DateTimeImmutable::createFromFormat('Y-m-d_H-i-s', $stamp, new DateTimeZone('UTC'));
-
-        return $date === false ? null : $date->getTimestamp();
+        return [null, null];
     }
 
     private function recentlyRan(string $cacheKey): bool

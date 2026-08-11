@@ -17,6 +17,7 @@ PteroMods is a modular "Game Panel Mods" framework scaffold for Pterodactyl-styl
    - [Server control](#server-control)
    - [Configuration editor](#configuration-editor)
    - [Navigation tab](#navigation-tab)
+   - [Live Map](#live-map)
    - [API endpoints](#api-endpoints)
    - [Permissions](#permissions)
    - [Database schema](#database-schema)
@@ -481,6 +482,63 @@ The script asks `/api/server/{id}/dayz/tab` whether the server is a DayZ server
 and only injects the link when it is. Existing navigation entries are cloned, so
 the link always matches the active panel theme, and it is re-injected whenever
 the client application re-renders its navigation.
+
+### Live Map
+
+The **Live Map** tab shows an interactive 3-D (or 2-D fallback) map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script.
+
+#### How it works
+
+1. The panel polls `/api/server/{server}/dayz/live-map/snapshot` every 7 seconds.
+2. The snapshot endpoint reads `/profiles/PteroMods/live_map_players.json` (falling back to `/profiles/live_map_players.json`) from the server file system via Wings.
+3. The frontend renders each player as a coloured cone marker on the map.
+
+#### Server-side bridge setup (required for live data)
+
+You need a DayZ server-side script that writes player positions to the bridge file every few seconds. The file must contain valid JSON matching this schema:
+
+```json
+{
+  "updated_at": "2026-08-11T12:00:00Z",
+  "map": "ChernarusPlus",
+  "players": [
+    {
+      "steam64": "76561198000000000",
+      "name": "PlayerName",
+      "x": 7500.0,
+      "y": 50.0,
+      "z": 7200.0,
+      "direction": 180.0,
+      "alive": true,
+      "health": 92.5
+    }
+  ]
+}
+```
+
+Write this file to `/profiles/PteroMods/live_map_players.json` inside the server container (use `FileSystem.WriteFile` or similar from your DayZ script). The panel reads it via Wings on each poll.
+
+#### Status messages
+
+| Status shown | Meaning |
+|---|---|
+| **Waiting for bridge data at `/profiles/PteroMods/live_map_players.json`** | The endpoint is working but no bridge file has been written yet. Set up the server-side script above. |
+| **Live snapshot received.** | Data is flowing — player markers will appear on the map. |
+| **Bridge snapshot exists but is invalid (or signature check failed).** | The file exists but is not valid JSON, or the optional HMAC signature did not match the configured secret. |
+| **Failed to fetch live map snapshot.** | The HTTP request to the snapshot endpoint itself failed (network error or the server returned a non-JSON response). Check that the module routes are registered and that you are logged in. |
+
+#### Optional: signed bridge payloads
+
+If you want to prevent unauthorised writes to the bridge file you can enable HMAC verification. In **DayZ Manager → Settings**, set a value for **Live Map bridge secret**. Your server-side script must then wrap the payload in a signed envelope:
+
+```json
+{
+  "payload": { "updated_at": "...", "map": "...", "players": [...] },
+  "signature": "<hex-HMAC-SHA256(serverUUID + ':' + JSON(payload), secret)>"
+}
+```
+
+Write this envelope to the bridge file instead of the raw payload. Leave the setting blank if you do not need signing.
 
 ### API endpoints
 
