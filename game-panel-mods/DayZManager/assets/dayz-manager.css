@@ -510,7 +510,7 @@ code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05r
 }
 
 .dz-live-map-canvas {
-  min-height: 34rem;
+  height: 34rem;
   background: #090d16;
   border: 1px solid var(--dz-border);
   border-radius: var(--dz-radius);
@@ -586,7 +586,7 @@ code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05r
   .dz-mod-grid { grid-template-columns: minmax(0, 1fr); }
   .dz-browse-grid { grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
   .dz-live-map-layout { grid-template-columns: minmax(0, 1fr); }
-  .dz-live-map-canvas { min-height: 24rem; }
+  .dz-live-map-canvas { height: 24rem; }
 }
 
 @media (max-width: 1080px) {

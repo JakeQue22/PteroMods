@@ -402,8 +402,8 @@
 
     async function boot() {
         try {
-            await loadScript('https://unpkg.com/three@0.162.0/build/three.min.js');
-            await loadScript('https://unpkg.com/three@0.162.0/examples/js/controls/OrbitControls.js');
+            await loadScript('https://unpkg.com/three@0.150.0/build/three.min.js');
+            await loadScript('https://unpkg.com/three@0.150.0/examples/js/controls/OrbitControls.js');
         } catch (err) {
             statusEl.textContent = '3D map assets could not load. Using 2D fallback.';
             const canvas = document.createElement('canvas');

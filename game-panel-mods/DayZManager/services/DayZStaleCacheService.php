@@ -19,7 +19,13 @@ final class DayZStaleCacheService
     private static array $deferred = [];
 
     /**
-     * @param callable(): mixed $resolver
+     * @param callable(): mixed          $resolver
+     * @param (callable(mixed, mixed): bool)|null $validator
+     *        Optional guard called as ($newValue, $existingValue) before every
+     *        cache write.  When the callable returns false the resolved value is
+     *        discarded and the existing cache entry is left untouched.  This
+     *        prevents a transient empty response from overwriting valid cached
+     *        data (e.g. a 0-mod scan replacing a 10-mod list).
      */
     public function remember(
         string $key,
@@ -27,6 +33,7 @@ final class DayZStaleCacheService
         int $retentionSeconds,
         callable $resolver,
         mixed $fallbackWhenEmpty = null,
+        ?callable $validator = null,
     ): mixed {
         if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
             return $resolver();
@@ -52,7 +59,7 @@ final class DayZStaleCacheService
         if ($hasValue) {
             // Stale data exists — serve it immediately and refresh in the background
             // after the response has been sent so the caller is not blocked.
-            $this->deferRefresh($key, $freshSeconds, $retentionSeconds, $resolver);
+            $this->deferRefresh($key, $freshSeconds, $retentionSeconds, $resolver, $validator, $value);
 
             return $value;
         }
@@ -65,7 +72,7 @@ final class DayZStaleCacheService
         // are each populated before their parent caches are written, avoiding
         // the race where an outer cache is persisted with the inner cache's
         // empty fallback.
-        $this->refreshNow($key, $freshSeconds, $retentionSeconds, $resolver);
+        $this->refreshNow($key, $freshSeconds, $retentionSeconds, $resolver, $validator, null);
 
         try {
             $refreshed = \Illuminate\Support\Facades\Cache::get($key);
@@ -84,10 +91,18 @@ final class DayZStaleCacheService
     }
 
     /**
-     * @param callable(): mixed $resolver
+     * @param callable(): mixed                    $resolver
+     * @param (callable(mixed, mixed): bool)|null  $validator
+     * @param mixed                                $existingValue  Current cached value (for validator).
      */
-    public function refreshNow(string $key, int $freshSeconds, int $retentionSeconds, callable $resolver): void
-    {
+    public function refreshNow(
+        string $key,
+        int $freshSeconds,
+        int $retentionSeconds,
+        callable $resolver,
+        ?callable $validator = null,
+        mixed $existingValue = null,
+    ): void {
         if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
             $resolver();
             return;
@@ -105,6 +120,11 @@ final class DayZStaleCacheService
 
         try {
             $value = $resolver();
+
+            if ($validator !== null && !$validator($value, $existingValue)) {
+                return;
+            }
+
             \Illuminate\Support\Facades\Cache::put(
                 $key,
                 ['has_value' => true, 'value' => $value, 'generated_at' => time()],
@@ -122,10 +142,18 @@ final class DayZStaleCacheService
     }
 
     /**
-     * @param callable(): mixed $resolver
+     * @param callable(): mixed                    $resolver
+     * @param (callable(mixed, mixed): bool)|null  $validator
+     * @param mixed                                $existingValue  Current cached value (for validator).
      */
-    private function deferRefresh(string $key, int $freshSeconds, int $retentionSeconds, callable $resolver): void
-    {
+    private function deferRefresh(
+        string $key,
+        int $freshSeconds,
+        int $retentionSeconds,
+        callable $resolver,
+        ?callable $validator,
+        mixed $existingValue,
+    ): void {
         $lockKey = $key . '.lock';
 
         try {
@@ -151,13 +179,18 @@ final class DayZStaleCacheService
 
         self::$deferred[$key] = true;
 
-        register_shutdown_function(function () use ($key, $lockKey, $freshSeconds, $retentionSeconds, $resolver): void {
+        register_shutdown_function(function () use ($key, $lockKey, $freshSeconds, $retentionSeconds, $resolver, $validator, $existingValue): void {
             try {
                 if (function_exists('fastcgi_finish_request')) {
                     fastcgi_finish_request();
                 }
 
                 $value = $resolver();
+
+                if ($validator !== null && !$validator($value, $existingValue)) {
+                    return;
+                }
+
                 \Illuminate\Support\Facades\Cache::put(
                     $key,
                     ['has_value' => true, 'value' => $value, 'generated_at' => time()],

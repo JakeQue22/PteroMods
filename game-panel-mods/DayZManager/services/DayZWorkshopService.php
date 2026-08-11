@@ -122,6 +122,13 @@ final class DayZWorkshopService
             self::STATS_CACHE_SECONDS * 20,
             fn (): array => $this->scanInstalledMods($server),
             [],
+            // Never replace a non-empty mod list with an empty one.  A transient
+            // Wings API error, a race during container startup, or any other
+            // reason the scan returns 0 mods must not wipe out the last known
+            // good list.  Stale mod data is always preferable to showing 0 mods.
+            static fn (mixed $new, mixed $old): bool =>
+                !is_array($old) || count($old) === 0
+                || (is_array($new) && count($new) > 0),
         );
 
         return is_array($mods) ? $mods : [];
@@ -1446,6 +1453,12 @@ final class DayZWorkshopService
             self::STATS_CACHE_SECONDS * 20,
             fn (): array => $this->gatherWorkshopStats($server),
             $fallback,
+            // Mirror the same guard as cachedInstalledMods: never let a
+            // background refresh that returns 0 installed mods overwrite a
+            // previously cached list that had mods in it.
+            static fn (mixed $new, mixed $old): bool =>
+                !is_array($old) || count($old['installed'] ?? []) === 0
+                || (is_array($new) && count($new['installed'] ?? []) > 0),
         );
 
         return is_array($stats) ? $stats : $fallback;
