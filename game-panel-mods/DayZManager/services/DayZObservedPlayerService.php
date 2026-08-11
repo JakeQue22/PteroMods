@@ -195,6 +195,45 @@ final class DayZObservedPlayerService
     }
 
     /**
+     * Deletes a player's tracked record from the observed players table, resetting
+     * all stored data (name, position, health, inventory, seen timestamps).
+     * The record is recreated automatically the next time the player comes online.
+     *
+     * @return array<string, mixed>
+     */
+    public function reset(mixed $server, string $playerId): array
+    {
+        $playerId = trim($playerId);
+
+        if ($playerId === '') {
+            return ['status' => 'error', 'message' => 'Player ID is required.'];
+        }
+
+        $serverId = $this->serverId($server);
+
+        if ($serverId === '' || !$this->tableExists()) {
+            return ['status' => 'error', 'message' => 'Player tracking table is unavailable.'];
+        }
+
+        try {
+            $deleted = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                ->where('server_id', $serverId)
+                ->where('player_id', $playerId)
+                ->delete();
+
+            return [
+                'status'    => 'reset',
+                'player_id' => $playerId,
+                'message'   => $deleted > 0
+                    ? 'Player data has been reset. They will reappear once they next connect.'
+                    : 'No tracked record found for that player.',
+            ];
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function kick(mixed $server, string $playerId): array

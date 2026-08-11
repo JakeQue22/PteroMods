@@ -446,6 +446,9 @@
             case 'waiting_for_bridge':
                 setStatusText('Waiting for bridge snapshot — deploy bridge and restart the server.');
                 break;
+            case 'stale_snapshot':
+                setStatusText('Bridge deployed but the server has not started writing snapshots yet — restart the server so the bridge script runs.');
+                break;
             case 'invalid_bridge_payload':
                 setStatusText('Bridge snapshot exists but could not be decoded (check secret config).');
                 break;

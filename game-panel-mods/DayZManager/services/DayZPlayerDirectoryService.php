@@ -65,6 +65,7 @@ final class DayZPlayerDirectoryService
                 'first_seen_at' => $entry['first_seen_at'] ?? null,
                 'last_seen_at' => $entry['last_seen_at'] ?? null,
                 'map' => $entry['map'] ?? $mapName,
+                'inventory' => $entry['inventory'] ?? null,
                 'sources' => ['observed'],
             ];
 
@@ -102,6 +103,7 @@ final class DayZPlayerDirectoryService
                 'first_seen_at' => $existing['first_seen_at'] ?? null,
                 'last_seen_at' => $existing['last_seen_at'] ?? null,
                 'map' => $existing['map'] ?? $mapName,
+                'inventory' => $live['inventory'] ?? ($existing['inventory'] ?? null),
                 'sources' => array_values(array_unique(array_merge(
                     is_array($existing['sources'] ?? null) ? $existing['sources'] : [],
                     ['live'],
@@ -152,6 +154,7 @@ final class DayZPlayerDirectoryService
                 'first_seen_at' => $existing['first_seen_at'] ?? null,
                 'last_seen_at' => $this->latest($existing['last_seen_at'] ?? null, $record['last_seen_at'] ?? null),
                 'map' => $existing['map'] ?? $mapName,
+                'inventory' => $existing['inventory'] ?? null,
                 'sources' => array_values(array_unique(array_merge(
                     is_array($existing['sources'] ?? null) ? $existing['sources'] : [],
                     is_array($record['source_paths'] ?? null) ? $record['source_paths'] : [],

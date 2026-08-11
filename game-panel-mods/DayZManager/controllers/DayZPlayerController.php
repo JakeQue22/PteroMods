@@ -108,6 +108,21 @@ final class DayZPlayerController
     /**
      * @return array<string, mixed>
      */
+    public function resetObserved(mixed $server = null, string $playerId = ''): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $playerId = $playerId !== '' ? $playerId : $this->context->stringInput('player_id');
+
+            return $this->observedPlayers->reset($model, $playerId);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function kick(mixed $server = null): array
     {
         try {

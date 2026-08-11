@@ -55,6 +55,9 @@ const int PTEROMODS_LIVEMAP_INTERVAL_MS = 5000;
 // server's -profiles command-line argument.
 const string PTEROMODS_LIVEMAP_PATH = "$profile:PteroMods/live_map_players.json";
 
+// Directory that must exist before the output file can be written.
+const string PTEROMODS_LIVEMAP_DIR  = "$profile:PteroMods";
+
 // ── Bridge class ──────────────────────────────────────────────────────────────
 
 /**
@@ -123,8 +126,7 @@ class PteroMods_LiveMapBridge : Managed
             playerName = playerName.Replace( "\"", "\\\"" );
 
             string entry = string.Format(
-                "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6,\"alive\":%7,\"health\":%8}",
-                playerId,
+                "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6,\"alive\":%7,\"health\":%8}",                playerId,
                 playerName,
                 Math.Round( pos[0] * 100.0 ) / 100.0,
                 Math.Round( pos[1] * 100.0 ) / 100.0,
@@ -151,6 +153,11 @@ class PteroMods_LiveMapBridge : Managed
             worldName,
             entries
         );
+
+        // Ensure the output directory exists.  OpenFile does not create
+        // parent directories, so a missing $profile:PteroMods/ folder would
+        // silently discard every snapshot write.
+        MakeDirectory( PTEROMODS_LIVEMAP_DIR );
 
         FileHandle fh = OpenFile( PTEROMODS_LIVEMAP_PATH, FileMode.WRITE );
         if ( fh != 0 )

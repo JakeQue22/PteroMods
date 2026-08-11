@@ -54,7 +54,19 @@ final class DayZLiveMapService
         $this->observedPlayers->trackSnapshot($server, $mapName, $players);
         $updatedAt = $this->normalizeUpdatedAt(is_array($data) ? ($data['updated_at'] ?? '') : '');
 
-        $status = $source === '' ? 'waiting_for_bridge' : (is_array($data) ? 'ok' : 'invalid_bridge_payload');
+        if ($source === '') {
+            $status = 'waiting_for_bridge';
+        } elseif (!is_array($data)) {
+            $status = 'invalid_bridge_payload';
+        } elseif (trim((string) ($data['map'] ?? '')) === '' && ($data['players'] ?? []) === []) {
+            // The snapshot file exists but map is empty and players is empty — this is
+            // the initial placeholder written by the panel deploy step.  The game bridge
+            // has not written a real snapshot yet (likely because the PteroMods output
+            // directory did not exist when the bridge first ran).
+            $status = 'stale_snapshot';
+        } else {
+            $status = 'ok';
+        }
 
         return [
             'status' => $status,

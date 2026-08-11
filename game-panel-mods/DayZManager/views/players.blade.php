@@ -30,6 +30,8 @@
                 $steam64 = $player['steam64'] ?? null;
                 $playerId = (string) ($player['player_id'] ?? $steam64 ?? '');
                 $uid = $player['player_uid'] ?? null;
+                $hasInventory = !empty($player['inventory']) && (is_array($player['inventory']) || (is_string($player['inventory']) && trim($player['inventory']) !== ''));
+                $inventoryJson = $hasInventory ? json_encode($player['inventory'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null;
             @endphp
             <div class="dz-player-card" data-search="{{ strtolower(trim(($player['name'] ?? '') . ' ' . ($steam64 ?? '') . ' ' . $playerId . ' ' . ($uid ?? ''))) }}">
                 <div class="dz-player-card__head">
@@ -45,9 +47,6 @@
                             @if ($uid)
                                 · DayZ UID: <code>{{ $uid }}</code>
                             @endif
-                            @if (!empty($player['last_seen_at']))
-                                · Last seen {{ $player['last_seen_at'] }}
-                            @endif
                         </div>
                     </div>
                     <span class="dz-badge {{ !empty($player['online']) ? 'dz-badge-on' : 'dz-badge-off' }}">
@@ -56,22 +55,54 @@
                 </div>
 
                 <dl class="dz-browse-meta" style="margin-top:0.75rem;">
+                    <div><dt>Nickname</dt><dd>{{ $player['name'] ?: '—' }}</dd></div>
+                    <div><dt>Steam64</dt><dd>
+                        @if ($steam64)
+                            <a href="https://steamcommunity.com/profiles/{{ $steam64 }}" target="_blank" rel="noopener noreferrer">{{ $steam64 }}</a>
+                        @else
+                            Unknown
+                        @endif
+                    </dd></div>
+                    @if ($uid)
+                        <div><dt>DayZ UID</dt><dd><code>{{ $uid }}</code></dd></div>
+                    @endif
                     <div><dt>Coordinates</dt><dd>
                         @if (($player['position_status'] ?? '') === 'valid')
-                            {{ $player['x'] }}, {{ $player['z'] }}
+                            X: {{ number_format((float) $player['x'], 1) }}, Z: {{ number_format((float) $player['z'], 1) }}
                         @else
                             Unknown
                         @endif
                     </dd></div>
-                    <div><dt>Height</dt><dd>{{ $player['y'] ?? '—' }}</dd></div>
+                    <div><dt>Height (Y)</dt><dd>
+                        @if (isset($player['y']) && $player['y'] !== null)
+                            {{ number_format((float) $player['y'], 1) }} m
+                        @else
+                            —
+                        @endif
+                    </dd></div>
+                    @if (isset($player['direction']) && $player['direction'] !== null)
+                        <div><dt>Direction</dt><dd>{{ number_format((float) $player['direction'], 1) }}°</dd></div>
+                    @endif
                     <div><dt>Status</dt><dd>
                         @if (array_key_exists('alive', $player) && $player['alive'] !== null)
-                            {{ !empty($player['alive']) ? 'Alive' : 'Dead / last known dead' }}
+                            {{ !empty($player['alive']) ? '✅ Alive' : '💀 Dead / last known dead' }}
                         @else
                             Unknown
                         @endif
                     </dd></div>
-                    <div><dt>Health</dt><dd>{{ $player['health'] ?? 'N/A' }}</dd></div>
+                    <div><dt>Health</dt><dd>
+                        @if (isset($player['health']) && $player['health'] !== null)
+                            {{ number_format((float) $player['health'], 1) }}%
+                        @else
+                            N/A
+                        @endif
+                    </dd></div>
+                    @if (!empty($player['first_seen_at']))
+                        <div><dt>First seen</dt><dd>{{ $player['first_seen_at'] }}</dd></div>
+                    @endif
+                    @if (!empty($player['last_seen_at']))
+                        <div><dt>Last seen</dt><dd>{{ $player['last_seen_at'] }}</dd></div>
+                    @endif
                     <div><dt>Lists</dt><dd>
                         @php
                             $flags = array_keys(array_filter($player['lists'] ?? []));
@@ -85,10 +116,14 @@
                     @if (($player['position_status'] ?? '') === 'valid')
                         <a class="dz-btn dz-btn-ghost" href="{{ $base_url }}/live-map?focus={{ urlencode($steam64 ?: $playerId) }}">Show on live map</a>
                     @endif
+                    @if ($hasInventory)
+                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroViewInventory({{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($inventoryJson, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">View Inventory</button>
+                    @endif
                     @if (!empty($player['online']) && $steam64)
                         <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
                     @endif
                     <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode($steam64 ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
+                    <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-warn,#f59e0b);" onclick="pteroResetPlayer({{ json_encode($steam64 ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Reset Data</button>
                 </div>
             </div>
         @empty
@@ -104,6 +139,15 @@
 
     <p id="dz-player-action-status" class="dz-status dz-hidden" style="margin-top:0.75rem;"></p>
 </section>
+
+{{-- Inventory viewer modal --}}
+<div id="dz-inventory-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);overflow-y:auto;">
+    <div style="background:var(--dz-surface,#1a1f2e);border:1px solid var(--dz-border,#2d3348);border-radius:0.5rem;max-width:640px;margin:4rem auto;padding:1.5rem;position:relative;">
+        <button type="button" onclick="document.getElementById('dz-inventory-modal').style.display='none'" style="position:absolute;top:0.75rem;right:0.75rem;background:none;border:none;color:inherit;font-size:1.25rem;cursor:pointer;" aria-label="Close">✕</button>
+        <h3 id="dz-inventory-modal-title" style="margin:0 0 1rem;"></h3>
+        <pre id="dz-inventory-modal-body" style="white-space:pre-wrap;word-break:break-all;font-size:0.8rem;max-height:60vh;overflow-y:auto;background:var(--dz-surface-alt,#0b0f19);padding:1rem;border-radius:0.25rem;"></pre>
+    </div>
+</div>
 
 @foreach (['ban' => 'Ban List', 'whitelist' => 'Whitelist', 'priority' => 'Priority Queue'] as $type => $label)
     <section class="dz-card">
@@ -162,6 +206,47 @@
             .catch(function () { setStatus('Kick request failed.', false); });
     };
 
+    window.pteroBanPlayer = function (playerId) {
+        var note = window.prompt('Optional ban note:', '');
+        if (note === null) { return; }
+        setStatus('Adding player to ban list…');
+        req('POST', '/dayz/players/ban', { player_id: playerId, note: note })
+            .then(function (d) { setStatus(d.message || (d.status === 'saved' ? 'Player added to ban list.' : 'Ban failed.'), d.status === 'saved' ? undefined : false); })
+            .catch(function () { setStatus('Ban request failed.', false); });
+    };
+
+    window.pteroResetPlayer = function (playerId, playerName) {
+        var msg = 'Reset all tracked data for "' + playerName + '"?\n\nThis removes their last-seen position, health, inventory and timestamps from the panel database. They will reappear automatically the next time they connect.';
+        if (!confirm(msg)) { return; }
+        setStatus('Resetting player data…');
+        req('DELETE', '/dayz/player-actions/observed/' + encodeURIComponent(playerId), null)
+            .then(function (d) { setStatus(d.message || (d.status === 'reset' ? 'Player data reset.' : 'Reset failed.'), d.status === 'reset' ? undefined : false); })
+            .catch(function () { setStatus('Reset request failed.', false); });
+    };
+
+    window.pteroViewInventory = function (playerName, inventoryJson) {
+        var modal = document.getElementById('dz-inventory-modal');
+        var title = document.getElementById('dz-inventory-modal-title');
+        var body  = document.getElementById('dz-inventory-modal-body');
+        if (!modal || !title || !body) { return; }
+
+        title.textContent = playerName + ' — Inventory';
+
+        var text = inventoryJson;
+        try {
+            var parsed = typeof inventoryJson === 'string' ? JSON.parse(inventoryJson) : inventoryJson;
+            text = JSON.stringify(parsed, null, 2);
+        } catch (e) { /* keep raw string */ }
+
+        body.textContent = text || '(no inventory data)';
+        modal.style.display = 'block';
+    };
+
+    // Close modal on backdrop click.
+    document.getElementById('dz-inventory-modal').addEventListener('click', function (e) {
+        if (e.target === this) { this.style.display = 'none'; }
+    });
+
     var searchEl = document.getElementById('dz-player-search');
 
     function applySearch() {
@@ -186,14 +271,5 @@
 
         searchEl.addEventListener('input', applySearch);
     }
-
-    window.pteroBanPlayer = function (playerId) {
-        var note = window.prompt('Optional ban note:', '');
-        if (note === null) { return; }
-        setStatus('Adding player to ban list…');
-        req('POST', '/dayz/players/ban', { player_id: playerId, note: note })
-            .then(function (d) { setStatus(d.message || (d.status === 'saved' ? 'Player added to ban list.' : 'Ban failed.'), d.status === 'saved' ? undefined : false); })
-            .catch(function () { setStatus('Ban request failed.', false); });
-    };
 }());
 </script>
