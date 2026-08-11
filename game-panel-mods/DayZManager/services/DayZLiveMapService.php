@@ -9,6 +9,7 @@ namespace GamePanelMods\DayZManager\Services;
  */
 final class DayZLiveMapService
 {
+    private const SNAPSHOT_CACHE_SECONDS = 30;
     private const BRIDGE_FILES = [
         '/profiles/PteroMods/live_map_players.json',
         '/profiles/live_map_players.json',
@@ -26,19 +27,26 @@ final class DayZLiveMapService
      */
     public function snapshot(mixed $server): array
     {
-        $raw = null;
-        $source = '';
+        $cached = $this->cachedSnapshot($server);
 
-        foreach (self::BRIDGE_FILES as $path) {
-            $raw = $this->gateway->readFile($server, $path);
+        if (is_array($cached)) {
+            $data = $cached;
+            $source = 'cache';
+        } else {
+            $raw = null;
+            $source = '';
 
-            if (is_string($raw) && trim($raw) !== '') {
-                $source = $path;
-                break;
+            foreach (self::BRIDGE_FILES as $path) {
+                $raw = $this->gateway->readFile($server, $path);
+
+                if (is_string($raw) && trim($raw) !== '') {
+                    $source = $path;
+                    break;
+                }
             }
-        }
 
-        $data = $this->decodeSnapshot($raw, $server);
+            $data = $this->decodeSnapshot($raw, $server);
+        }
         $query = $this->query->query($server);
         $mapName = $this->resolveMapName($data, $query);
         $players = $this->normalizePlayers(is_array($data) ? ($data['players'] ?? []) : []);
@@ -58,6 +66,8 @@ final class DayZLiveMapService
             'query_player_count' => (int) (($query['players'] ?? 0) ?: 0),
             'bridge_format' => [
                 'path' => self::BRIDGE_FILES[0],
+                'ingest_endpoint' => '/api/server/{server}/dayz/live-map/ingest',
+                'signature_header' => 'X-DayZ-Bridge-Signature',
                 'schema' => [
                     'updated_at' => '2026-08-11T11:20:14Z',
                     'map' => 'ChernarusPlus',
@@ -176,6 +186,48 @@ final class DayZLiveMapService
     }
 
     /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function ingest(mixed $server, array $payload, string $signature): array
+    {
+        $secret = trim((string) $this->settings->get('live_map_bridge_secret', ''));
+
+        if ($secret === '') {
+            return ['status' => 'failed', 'message' => 'Live map bridge secret is not configured.'];
+        }
+
+        $serverId = (new DayZServerContext())->attribute($server, ['uuid', 'uuidShort', 'id']);
+        $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
+
+        if ($serverId === '' || !is_string($json)) {
+            return ['status' => 'failed', 'message' => 'Invalid ingest payload.'];
+        }
+
+        $expected = hash_hmac('sha256', $serverId . ':' . $json, $secret);
+
+        if (!hash_equals($expected, strtolower(trim($signature)))) {
+            return ['status' => 'failed', 'message' => 'Invalid bridge signature.'];
+        }
+
+        if (!is_array($payload['players'] ?? null)) {
+            return ['status' => 'failed', 'message' => 'Invalid payload: players must be an array.'];
+        }
+
+        $cacheKey = $this->snapshotCacheKey($serverId);
+
+        if (class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            try {
+                \Illuminate\Support\Facades\Cache::put($cacheKey, $payload, self::SNAPSHOT_CACHE_SECONDS);
+            } catch (\Throwable) {
+                // Ignore and fall through.
+            }
+        }
+
+        return ['status' => 'accepted', 'players' => count($payload['players'])];
+    }
+
+    /**
      * Accepts either a direct payload or a signed envelope:
      * {"payload": {...}, "signature": "hex-hmac-sha256"}.
      *
@@ -214,5 +266,33 @@ final class DayZLiveMapService
         $expected = hash_hmac('sha256', $serverId . ':' . $base, $secret);
 
         return hash_equals($expected, strtolower($signature)) ? $decoded['payload'] : null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function cachedSnapshot(mixed $server): ?array
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return null;
+        }
+
+        $serverId = (new DayZServerContext())->attribute($server, ['uuid', 'uuidShort', 'id']);
+
+        if ($serverId === '') {
+            return null;
+        }
+
+        try {
+            $cached = \Illuminate\Support\Facades\Cache::get($this->snapshotCacheKey($serverId));
+            return is_array($cached) ? $cached : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function snapshotCacheKey(string $serverId): string
+    {
+        return 'pteromods.dayz.live_map.snapshot.' . md5($serverId);
     }
 }

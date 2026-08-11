@@ -50,4 +50,36 @@ final class DayZLiveMapController
 
         return ['server_id' => $resolved['id']] + $this->service->snapshot($resolved['model']);
     }
+
+    /**
+     * Accepts a signed transient player snapshot from a server-side bridge.
+     *
+     * @return array<string, mixed>
+     */
+    public function ingest(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+        $this->context->authorizeManage($resolved['model']);
+
+        $payload = $this->context->input('payload', []);
+
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+
+        $signature = '';
+
+        if (function_exists('request')) {
+            try {
+                $request = request();
+                $signature = is_object($request) && method_exists($request, 'header')
+                    ? trim((string) $request->header('X-DayZ-Bridge-Signature', ''))
+                    : '';
+            } catch (Throwable) {
+                $signature = '';
+            }
+        }
+
+        return $this->service->ingest($resolved['model'], $payload, $signature);
+    }
 }
