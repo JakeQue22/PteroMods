@@ -959,20 +959,39 @@ final class DayZWorkshopService
         }
 
         $order = $this->enabledFolders($server);
+        $resolvedFolders = [];
+
+        foreach ($this->installedMods($server) as $mod) {
+            $id = trim((string) ($mod['workshop_id'] ?? ''));
+            $folder = trim((string) ($mod['folder_name'] ?? ''));
+
+            if ($id !== '' && $folder !== '' && in_array($id, $workshopIds, true)) {
+                $resolvedFolders[$id] = $folder;
+            }
+        }
+
         $changed = false;
 
         foreach ($workshopIds as $workshopId) {
+            $folder = $resolvedFolders[$workshopId] ?? ('@' . $workshopId);
+            $updated = $this->replaceLoadOrderReferences($order, $workshopId, $folder);
+
+            if ($updated !== $order) {
+                $order = $updated;
+                $changed = true;
+            }
+
             $exists = false;
 
             foreach ($order as $entry) {
-                if (ltrim(strtolower($entry), '@') === strtolower($workshopId)) {
+                if (strcasecmp($entry, $folder) === 0 || ltrim(strtolower($entry), '@') === strtolower($workshopId)) {
                     $exists = true;
                     break;
                 }
             }
 
             if (!$exists) {
-                $order[] = $workshopId;
+                $order[] = $folder;
                 $changed = true;
             }
         }
@@ -1824,10 +1843,7 @@ final class DayZWorkshopService
                 // Workshop ID is removed from startup variables (preventing the
                 // egg from re-downloading the mod into @workshopId on every restart).
                 $order = $this->enabledFolders($server);
-                $updated = array_map(
-                    static fn (string $f): string => strcasecmp($f, $folderName) === 0 ? $newFolderName : $f,
-                    $order,
-                );
+                $updated = $this->replaceLoadOrderReferences($order, $workshopId, $newFolderName);
 
                 if ($updated !== $order) {
                     $this->startup->saveModList($server, $updated);
@@ -1847,10 +1863,7 @@ final class DayZWorkshopService
 
         // Rewrite the load order to use the new folder name.
         $order = $this->enabledFolders($server);
-        $updated = array_map(
-            static fn (string $f): string => strcasecmp($f, $folderName) === 0 ? $newFolderName : $f,
-            $order,
-        );
+        $updated = $this->replaceLoadOrderReferences($order, $workshopId, $newFolderName);
 
         if ($updated !== $order) {
             $this->startup->saveModList($server, $updated);
@@ -1878,6 +1891,36 @@ final class DayZWorkshopService
         }
 
         return '@' . $clean;
+    }
+
+    /**
+     * Rewrites every load-order reference for a Workshop ID to the canonical
+     * on-disk folder name, collapsing duplicates when both forms are present.
+     *
+     * @param list<string> $order
+     * @return list<string>
+     */
+    private function replaceLoadOrderReferences(array $order, string $workshopId, string $folderName): array
+    {
+        $updated = [];
+        $seen = [];
+        $needle = strtolower($workshopId);
+
+        foreach ($order as $entry) {
+            $candidate = ltrim(strtolower(trim($entry)), '@') === $needle
+                ? $folderName
+                : $entry;
+            $key = strtolower($candidate);
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $updated[] = $candidate;
+        }
+
+        return $updated;
     }
 
     private function formatBytes(int $bytes): string
