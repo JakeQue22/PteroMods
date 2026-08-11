@@ -88,8 +88,11 @@ final class DayZLiveBridgeService
         // Deploy the EnfScript bridge to the mission folder.
         $scriptOk = $this->gateway->writeFile($server, self::MISSION_SCRIPT_PATH, $template);
 
-        // Append the activation block to init.c if not already there.
-        $initCOk = $this->ensureInitC($server);
+        // Only append the activation block to init.c when the script was
+        // successfully written.  Appending the #include without the file causes
+        // a "Can't find file 'pteromods_live_map.c'" compile error on the next
+        // server start.
+        $initCOk = $scriptOk && $this->ensureInitC($server);
 
         // Initialise the JSON snapshot file (only when absent).
         $snapshotOk = $this->ensureSnapshot($server);
@@ -123,6 +126,36 @@ final class DayZLiveBridgeService
     }
 
     /**
+     * Removes the PteroMods bridge from the server container: strips the
+     * activation block from init.c and deletes the bridge script.
+     *
+     * This is used to recover a server that has the #include line in init.c
+     * but is missing the actual pteromods_live_map.c file, which causes a
+     * "Can't find file 'pteromods_live_map.c'" compile error at server start.
+     *
+     * Safe to call on servers that were never deployed: it is a no-op when
+     * neither the marker nor the script are present.
+     *
+     * @return array{undeployed: bool, init_c: bool, script: bool, message: string}
+     */
+    public function undeploy(mixed $server): array
+    {
+        $initCOk  = $this->stripInitC($server);
+        $scriptOk = $this->gateway->deletePath($server, self::MISSION_SCRIPT_PATH);
+
+        $undeployed = $initCOk && $scriptOk;
+
+        return [
+            'undeployed' => $undeployed,
+            'init_c'     => $initCOk,
+            'script'     => $scriptOk,
+            'message'    => $undeployed
+                ? 'Bridge removed. Restart the server to apply the change.'
+                : 'Partial undeploy — check Wings connectivity and retry.',
+        ];
+    }
+
+    /**
      * Returns the deployment status for a server without writing anything.
      *
      * @return array{deployed: bool, script: bool, init_c: bool, snapshot: bool}
@@ -146,6 +179,37 @@ final class DayZLiveBridgeService
             'init_c_path'   => self::INIT_C_PATH,
             'snapshot_path' => self::SNAPSHOT_PATH,
         ];
+    }
+
+    /**
+     * Strips the PteroMods activation block from init.c if it is present.
+     * Returns true when the block is absent or was successfully removed.
+     */
+    private function stripInitC(mixed $server): bool
+    {
+        $existing = $this->gateway->readFile($server, self::INIT_C_PATH);
+
+        if (!is_string($existing) || !str_contains($existing, self::INIT_C_MARKER)) {
+            return true;
+        }
+
+        // Remove every line that belongs to the appended block.  The block
+        // begins with the comment line and ends after PteroMods_LiveMap_Init();
+        $stripped = preg_replace(
+            '/\n\/\/ PteroMods Live Map Bridge[^\n]*\n\/\/ Remove this block[^\n]*\n#include "pteromods_live_map\.c"\nPteroMods_LiveMap_Init\(\);\n/',
+            '',
+            $existing,
+        );
+
+        if ($stripped === null || str_contains($stripped, self::INIT_C_MARKER)) {
+            // Regex did not match (block was edited by hand) — fall back to a
+            // line-by-line filter that removes every line containing the marker.
+            $lines   = explode("\n", $existing);
+            $kept    = array_filter($lines, static fn (string $l): bool => !str_contains($l, 'PteroMods_LiveMap') && !str_contains($l, 'pteromods_live_map'));
+            $stripped = implode("\n", $kept);
+        }
+
+        return $this->gateway->writeFile($server, self::INIT_C_PATH, $stripped);
     }
 
     /**

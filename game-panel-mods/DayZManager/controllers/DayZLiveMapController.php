@@ -34,10 +34,20 @@ final class DayZLiveMapController
         // opened for a server (i.e. during server setup) if it is not already
         // present in the container.  Failures are intentionally silent so a
         // Wings connectivity issue never blocks the page from rendering.
+        //
+        // If the bridge script is missing but the activation block is already
+        // in init.c, strip the block so that a subsequent server start does not
+        // crash with "Can't find file 'pteromods_live_map.c'".  A full re-deploy
+        // is then attempted so the server can be restarted cleanly.
         try {
             $status = $this->bridge->status($resolved['model']);
 
             if (!$status['script']) {
+                if ($status['init_c']) {
+                    // Broken state: include present but file missing.  Remove the
+                    // include first so the server won't crash, then re-deploy.
+                    $this->bridge->undeploy($resolved['model']);
+                }
                 $this->bridge->deploy($resolved['model']);
             }
         } catch (Throwable) {
@@ -130,6 +140,31 @@ final class DayZLiveMapController
                 'script'   => false,
                 'snapshot' => false,
                 'message'  => $exception->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Removes the server-side bridge script and strips the activation block
+     * from init.c.  Available as an explicit POST endpoint so the UI can offer
+     * a "Remove bridge" button and to recover servers in a broken state
+     * (init.c has the #include but pteromods_live_map.c is missing).
+     *
+     * @return array<string, mixed>
+     */
+    public function removeBridge(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+        $this->context->authorizeManage($resolved['model']);
+
+        try {
+            return $this->bridge->undeploy($resolved['model']);
+        } catch (Throwable $exception) {
+            return [
+                'undeployed' => false,
+                'init_c'     => false,
+                'script'     => false,
+                'message'    => $exception->getMessage(),
             ];
         }
     }
