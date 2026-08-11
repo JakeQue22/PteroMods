@@ -519,7 +519,10 @@
             selectPlayer(focusId);
             focusPlayer(focusId);
             state.leafletMap.setZoom(Math.max(state.leafletMap.getZoom(), 3));
-            state.markers.get(focusId).openPopup();
+            const focusMarker = state.markers.get(focusId);
+            if (focusMarker) {
+                focusMarker.openPopup();
+            }
         }
     }
 

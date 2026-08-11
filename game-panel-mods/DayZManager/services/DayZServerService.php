@@ -966,15 +966,27 @@ final class DayZServerService
             return;
         }
 
+        $now = date('Y-m-d H:i:s');
+
         try {
-            \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')->updateOrInsert(
-                ['server_id' => $serverId],
-                [
+            $updated = \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')
+                ->where('server_id', $serverId)
+                ->update(['last_restart_at' => date('Y-m-d H:i:s', $timestamp), 'updated_at' => $now]);
+
+            if ($updated === 0) {
+                // No schedule row yet: insert a complete disabled row so every
+                // NOT NULL column gets a sane value under strict SQL modes.
+                \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')->insert([
+                    'server_id' => $serverId,
+                    'enabled' => 0,
+                    'interval_minutes' => 360,
+                    'next_restart_at' => null,
                     'last_restart_at' => date('Y-m-d H:i:s', $timestamp),
-                    'updated_at' => date('Y-m-d H:i:s'),
-                    'created_at' => date('Y-m-d H:i:s'),
-                ],
-            );
+                    'warnings_sent' => '',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
         } catch (Throwable) {
             // Best effort.
         }
