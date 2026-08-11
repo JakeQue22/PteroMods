@@ -40,7 +40,6 @@ final class DayZConfigurationController
                 'client_id'       => $clientId,
                 'groups'          => $groups,
                 'files'           => $this->service->files($paths),
-                'editor_features' => $this->service->editorFeatures(),
             ];
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'configuration', $resolved['id'], $resolved['name']);

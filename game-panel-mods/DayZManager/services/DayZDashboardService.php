@@ -18,7 +18,7 @@ final class DayZDashboardService
     /** DayZ's default slot count, used when the max player count is unknown. */
     private const DEFAULT_MAX_PLAYERS = 64;
     private const DEFAULT_MAP = 'ChernarusPlus';
-    private const STATS_CACHE_SECONDS = 15;
+    private const STATS_CACHE_SECONDS = 120;
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
@@ -98,6 +98,10 @@ final class DayZDashboardService
             return $stale;
         }
 
+        if ($stale !== null) {
+            return $stale;
+        }
+
         $lockKey = $key . '.lock';
         $acquiredLock = false;
 
@@ -108,8 +112,6 @@ final class DayZDashboardService
         }
 
         if ($stale !== null && !$acquiredLock) {
-            // Another request is already refreshing this key: serve the
-            // slightly stale data instantly rather than waiting.
             return $stale;
         }
 

@@ -61,6 +61,11 @@ final class DayZManagerSettingsController
         $normalised = [];
 
         foreach ($values as $key => $value) {
+            if ((string) $key === 'profile_log_retention_days') {
+                $normalised[(string) $key] = max(1, min(3650, (int) $value));
+                continue;
+            }
+
             $bool = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
             $normalised[(string) $key] = $bool !== null ? $bool : $value;
         }

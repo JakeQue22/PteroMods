@@ -6,6 +6,7 @@ namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZDashboardService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
 
@@ -18,6 +19,7 @@ final class DayZDashboardController
         private readonly DayZDashboardService $service = new DayZDashboardService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
 
@@ -29,6 +31,7 @@ final class DayZDashboardController
         $resolved = $this->context->resolve($server);
 
         try {
+            $this->logScrub->tick($resolved['model']);
             $dashboard = $this->service->dashboard($resolved['model'] ?? $resolved['id']);
             $dashboard['client_id'] = $this->context->clientIdentifier($resolved['model'], $resolved['id']);
         } catch (Throwable $exception) {

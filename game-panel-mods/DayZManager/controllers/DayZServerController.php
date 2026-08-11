@@ -7,6 +7,7 @@ namespace GamePanelMods\DayZManager\Controllers;
 use GamePanelMods\DayZManager\Services\DayZDashboardService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZPanelGateway;
+use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZServerQueryService;
 use GamePanelMods\DayZManager\Services\DayZServerService;
@@ -26,6 +27,7 @@ final class DayZServerController
         private readonly DayZDashboardService $dashboard = new DayZDashboardService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
 
@@ -135,6 +137,19 @@ final class DayZServerController
         $this->context->authorizeManage($model);
 
         return $this->service->tickModInstallFollowUp($model);
+    }
+
+    /**
+     * Removes old profile logs according to DayZ Manager retention settings.
+     *
+     * @return array<string, mixed>
+     */
+    public function tickProfileLogScrub(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->logScrub->tick($model);
     }
 
     /**

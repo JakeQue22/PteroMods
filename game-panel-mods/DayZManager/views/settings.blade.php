@@ -40,10 +40,11 @@
                         <input
                             id="dz-text-setting-{{ $key }}"
                             class="dz-input"
-                            type="text"
+                            type="{{ str_ends_with($key, '_days') ? 'number' : 'text' }}"
                             data-setting="{{ $key }}"
                             value="{{ $settings[$key] ?? '' }}"
                             placeholder="Enter {{ strtolower($label) }}…"
+                            {{ str_ends_with($key, '_days') ? 'min=1 max=3650 step=1' : '' }}
                             style="flex:1 1 20rem;min-width:0;"
                         />
                         <button class="dz-btn" onclick="pteroDzTextSettingSave('{{ $key }}')">Save</button>

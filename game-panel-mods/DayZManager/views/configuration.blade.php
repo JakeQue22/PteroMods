@@ -45,12 +45,3 @@
         </details>
     </section>
 @endforeach
-
-<section class="dz-card">
-    <h2>Editor Capabilities</h2>
-    <ul class="dz-tags">
-        @foreach ($editor_features as $feature)
-            <li>{{ $feature }}</li>
-        @endforeach
-    </ul>
-</section>

@@ -82,6 +82,22 @@ final class DayZManagerSettingsService
          * requiring an operator to notice and restart manually.
          */
         'auto_restart_after_mod_install' => false,
+
+        /**
+         * When enabled, DayZ Manager periodically removes old profile log files
+         * from `/profiles` using the configured retention window.
+         */
+        'auto_scrub_profile_logs' => false,
+
+        /**
+         * Number of days profile logs are kept before auto-scrub deletes them.
+         */
+        'profile_log_retention_days' => 14,
+
+        /**
+         * Shared secret used by the optional server-side DayZ live-map bridge.
+         */
+        'live_map_bridge_secret' => '',
     ];
 
     /**
@@ -94,6 +110,7 @@ final class DayZManagerSettingsService
         'rename_mods_to_friendly_names' => 'Rename mod folders to their friendly Workshop name',
         'auto_submit_dzsa' => 'Automatically submit to DZSA Launcher after mod installs',
         'auto_restart_after_mod_install' => 'Automatically restart the server once queued mods finish installing',
+        'auto_scrub_profile_logs' => 'Automatically scrub old profile logs in /profiles',
     ];
 
     /**
@@ -103,6 +120,8 @@ final class DayZManagerSettingsService
      */
     public const TEXT_LABELS = [
         'steam_web_api_key' => 'Steam Web API Key',
+        'profile_log_retention_days' => 'Profile log retention (days)',
+        'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
     ];
 
     /**
@@ -147,6 +166,17 @@ final class DayZManagerSettingsService
             . 'and been added to the enabled load order, automatically triggers that second '
             . 'restart for you (connected players will be disconnected). Leave disabled if '
             . 'you would rather restart manually when convenient.',
+        'auto_scrub_profile_logs' =>
+            'Disabled by default. When enabled, DayZ Manager periodically scans `/profiles` and '
+            . 'deletes old `script_*.log`, `crash_*.log`, and `TM_GeneralLogs_*.log` files older '
+            . 'than your configured retention window.',
+        'profile_log_retention_days' =>
+            'How many days to keep profile logs (`script_*.log`, `crash_*.log`, '
+            . '`TM_GeneralLogs_*.log`) before automatic cleanup removes them.',
+        'live_map_bridge_secret' =>
+            'Optional shared secret for a server-side DayZ script to write player snapshots to '
+            . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '
+            . '`/profiles/PteroMods/live_map_players.json` without secret signing.',
     ];
 
     /**

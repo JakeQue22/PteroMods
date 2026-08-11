@@ -25,7 +25,7 @@ final class DayZWorkshopService
 {
     /** Upper bound on scanned mod folders, to keep page loads predictable. */
     private const MAX_MODS = 60;
-    private const STATS_CACHE_SECONDS = 15;
+    private const STATS_CACHE_SECONDS = 120;
 
     /** How long a fetched Workshop item description is cached for. */
     private const INFO_CACHE_SECONDS = 3600;
@@ -131,6 +131,14 @@ final class DayZWorkshopService
         $isFresh = is_array($stale) && (time() - $generatedAt) < self::STATS_CACHE_SECONDS;
 
         if ($isFresh) {
+            return $stale;
+        }
+
+        if ($stale !== null) {
+            return $stale;
+        }
+
+        if (is_array($stale)) {
             return $stale;
         }
 

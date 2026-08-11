@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZWorkshopService;
 use Throwable;
@@ -18,6 +19,7 @@ final class DayZWorkshopController
         private readonly DayZWorkshopService $service = new DayZWorkshopService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
 
@@ -29,6 +31,7 @@ final class DayZWorkshopController
         $resolved = $this->context->resolve($server);
 
         try {
+            $this->logScrub->tick($resolved['model']);
             $data = [
                 'client_id'      => $this->context->clientIdentifier($resolved['model'], $resolved['id']),
                 'settings'       => $this->service->settings($resolved['model']),

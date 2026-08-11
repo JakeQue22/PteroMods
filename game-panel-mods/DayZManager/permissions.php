@@ -14,4 +14,5 @@ return [
     'dayz.players.whitelist' => 'Add and remove entries from the DayZ whitelist.',
     'dayz.players.priority'  => 'Add and remove entries from the DayZ priority queue.',
     'dayz.server.restart' => 'Schedule a DayZ server restart.',
+    'dayz.map.view' => 'View the DayZ live map and active player locations.',
 ];
