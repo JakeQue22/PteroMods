@@ -28,9 +28,9 @@
             <div class="dz-player-card">
                 <div class="dz-player-card__head">
                     <div>
-                        <strong>{{ $player['name'] ?: $player['steam64'] }}</strong>
+                        <strong>{{ $player['name'] ?: ($player['player_id'] ?? $player['steam64']) }}</strong>
                         <div class="dz-sub">
-                            {{ $player['steam64'] }}
+                            {{ $player['player_id'] ?? $player['steam64'] }}
                             @if (!empty($player['last_seen_at']))
                                 · Last seen {{ $player['last_seen_at'] }}
                             @endif
@@ -60,7 +60,7 @@
                 </dl>
 
                 <div class="dz-mod-actions" style="margin-top:0.9rem;">
-                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer('{{ $player['steam64'] }}')">Ban</button>
+                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer('{{ $player['player_id'] ?? $player['steam64'] }}')">Ban</button>
                 </div>
             </div>
         @empty
@@ -118,9 +118,9 @@
 @foreach (['ban' => 'Ban List', 'whitelist' => 'Whitelist', 'priority' => 'Priority Queue'] as $type => $label)
     <section class="dz-card">
         <h2>{{ $label }}</h2>
-        <p class="dz-sub">{{ count($players[$type] ?? []) }} entr(y/ies).</p>
+        <p class="dz-sub">{{ count($player_lists[$type] ?? []) }} entr(y/ies).</p>
         <ul class="dz-list">
-            @forelse ($players[$type] ?? [] as $entry)
+            @forelse ($player_lists[$type] ?? [] as $entry)
                 <li>
                     <span>{{ $entry['player_id'] }}</span>
                     @if (!empty($entry['note']))

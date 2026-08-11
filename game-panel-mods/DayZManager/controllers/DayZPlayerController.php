@@ -68,7 +68,7 @@ final class DayZPlayerController
         }
 
         return $this->renderer->render('players', [
-            'players' => $playerLists,
+            'player_lists' => $playerLists,
             'persisted_players' => $persisted['players'] ?? [],
             'live_players' => $livePlayers,
             'persistence_status' => $persisted['status'] ?? 'not_found',

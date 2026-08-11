@@ -67,7 +67,7 @@ final class DayZPersistencePlayerService
 
                 $name = trim((string) ($entry['name'] ?? ''));
 
-                if ($name === '' || stripos($name, 'dayzoffline.') !== 0) {
+                if ($name === '' || !str_starts_with(strtolower($name), 'dayzoffline.')) {
                     continue;
                 }
 
@@ -94,6 +94,7 @@ final class DayZPersistencePlayerService
             return null;
         }
 
+        @chmod($tmpPath, 0600);
         file_put_contents($tmpPath, $raw);
 
         try {
@@ -242,6 +243,7 @@ final class DayZPersistencePlayerService
                 continue;
             }
 
+            $steam64 = preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null;
             $vector = $this->parseVector($row['__vector'] ?? null);
             $x = $this->floatValue($row['__x'] ?? null) ?? ($vector[0] ?? null);
             $y = $this->floatValue($row['__y'] ?? null) ?? ($vector[1] ?? null);
@@ -251,7 +253,7 @@ final class DayZPersistencePlayerService
 
             $players[] = [
                 'player_id' => $playerId,
-                'steam64' => $playerId,
+                'steam64' => $steam64,
                 'name' => $name !== '' ? $name : $playerId,
                 'x' => $x,
                 'y' => $y,
@@ -400,8 +402,7 @@ final class DayZPersistencePlayerService
         }
 
         $size = match (strtolower($mapName)) {
-            'livonia', 'dayzoffline.enoch', 'enoch' => 12800.0,
-            'sakhal', 'dayzoffline.sakhal' => 12800.0,
+            'livonia', 'dayzoffline.enoch', 'enoch', 'sakhal', 'dayzoffline.sakhal' => 12800.0,
             default => 15360.0,
         };
 
