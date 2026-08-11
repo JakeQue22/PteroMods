@@ -1,4 +1,5 @@
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<link id="dz-leaflet-css" rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous"
+      onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';" />
 
 <section class="dz-card">
     <h2>Live Map</h2>
@@ -32,7 +33,6 @@
     </aside>
 </section>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WPeE=" crossorigin=""></script>
 <script>
 (function () {
     const SERVER_ID   = @json($server_id);
@@ -55,6 +55,10 @@
         leafletMap: null,
         tileLayer: null,
         locationLayer: null,
+        gridLayer: null,
+        tileError: false,
+        notice: '',
+        statusText: '',
     };
 
     const root      = document.getElementById('dz-live-map-canvas');
@@ -85,6 +89,12 @@
 
     function dayzToLatLng(x, z) {
         return L.latLng(z, x);
+    }
+
+    function worldBounds(mapDef) {
+        const worldSize = Number(mapDef.world_size || 15360);
+
+        return L.latLngBounds(dayzToLatLng(0, 0), dayzToLatLng(worldSize, worldSize));
     }
 
     // ── Map name → xam.nu tile ID ─────────────────────────────────────────
@@ -136,16 +146,24 @@
             .addTo(state.leafletMap);
 
         applyTileLayer(state.mapDef);
+        applyGridLayer(state.mapDef);
         applyLocationLayer(state.mapDef);
 
         const center = dayzToLatLng(worldSize / 2, worldSize / 2);
         state.leafletMap.setView(center, 0);
 
         state.leafletMap.whenReady(function () {
-            state.leafletMap.fitBounds([
-                dayzToLatLng(0, 0),
-                dayzToLatLng(worldSize, worldSize),
-            ]);
+            state.leafletMap.invalidateSize(false);
+            state.leafletMap.fitBounds(worldBounds(state.mapDef));
+        });
+
+        // The canvas is laid out by CSS grid, and fullscreen changes its size,
+        // so Leaflet needs to re-measure or it renders an empty viewport.
+        window.addEventListener('resize', function () {
+            state.leafletMap.invalidateSize(false);
+        });
+        document.addEventListener('fullscreenchange', function () {
+            state.leafletMap.invalidateSize(false);
         });
     }
 
@@ -155,10 +173,16 @@
             state.tileLayer = null;
         }
 
+        state.tileError = false;
+
         const url = buildTileUrl(mapDef);
         if (!url) {
+            setNotice('No live map tile URL is configured — showing the coordinate grid only. '
+                + 'Set one in Settings → Live Map tile URL.');
             return;
         }
+
+        setNotice('');
 
         state.tileLayer = L.tileLayer(url, {
             tileSize:        256,
@@ -166,8 +190,54 @@
             maxNativeZoom:   7,
             minZoom:        -2,
             maxZoom:         7,
+            noWrap:          true,
+            // Never request tiles outside the world, so a missing edge tile
+            // cannot be mistaken for a broken tile server.
+            bounds:          worldBounds(mapDef),
             errorTileUrl:    '',
-        }).addTo(state.leafletMap);
+        });
+
+        state.tileLayer.on('tileerror', function () {
+            if (state.tileError) {
+                return;
+            }
+
+            state.tileError = true;
+            setNotice('Map tiles could not be loaded from the configured tile URL — showing the '
+                + 'coordinate grid only. Check Settings → Live Map tile URL.');
+        });
+
+        state.tileLayer.addTo(state.leafletMap);
+    }
+
+    // Always-visible world outline and 1 km grid, so the viewer still shows a
+    // usable map when the external tile server is unreachable or unconfigured.
+    function applyGridLayer(mapDef) {
+        if (state.gridLayer) {
+            state.leafletMap.removeLayer(state.gridLayer);
+            state.gridLayer = null;
+        }
+
+        const worldSize = Number(mapDef.world_size || 15360);
+        const step      = 1000;
+
+        state.gridLayer = L.layerGroup();
+
+        for (let coord = 0; coord <= worldSize; coord += step) {
+            L.polyline([dayzToLatLng(coord, 0), dayzToLatLng(coord, worldSize)], {
+                color: '#1f2937', weight: 1, interactive: false,
+            }).addTo(state.gridLayer);
+
+            L.polyline([dayzToLatLng(0, coord), dayzToLatLng(worldSize, coord)], {
+                color: '#1f2937', weight: 1, interactive: false,
+            }).addTo(state.gridLayer);
+        }
+
+        L.rectangle([dayzToLatLng(0, 0), dayzToLatLng(worldSize, worldSize)], {
+            color: '#334155', weight: 1, fill: false, interactive: false,
+        }).addTo(state.gridLayer);
+
+        state.gridLayer.addTo(state.leafletMap);
     }
 
     function applyLocationLayer(mapDef) {
@@ -218,8 +288,9 @@
             // Rebuild CRS and reinitialise layers for new map.
             state.leafletMap.options.crs = buildCRS(worldSize);
             applyTileLayer(state.mapDef);
+            applyGridLayer(state.mapDef);
             applyLocationLayer(state.mapDef);
-            state.leafletMap.fitBounds([dayzToLatLng(0, 0), dayzToLatLng(worldSize, worldSize)]);
+            state.leafletMap.fitBounds(worldBounds(state.mapDef));
 
             // Remove all existing markers (they belong to the old map).
             state.markers.forEach(function (m) { m.remove(); });
@@ -234,16 +305,16 @@
 
         switch (payload.status) {
             case 'waiting_for_bridge':
-                statusEl.textContent = 'Waiting for bridge snapshot — deploy bridge and restart the server.';
+                setStatusText('Waiting for bridge snapshot — deploy bridge and restart the server.');
                 break;
             case 'invalid_bridge_payload':
-                statusEl.textContent = 'Bridge snapshot exists but could not be decoded (check secret config).';
+                setStatusText('Bridge snapshot exists but could not be decoded (check secret config).');
                 break;
             case 'error':
-                statusEl.textContent = 'Snapshot error: ' + (payload.message || 'Unknown error.');
+                setStatusText('Snapshot error: ' + (payload.message || 'Unknown error.'));
                 break;
             default:
-                statusEl.textContent = '';
+                setStatusText('');
         }
 
         const players = Array.isArray(payload.players) ? payload.players : [];
@@ -382,13 +453,34 @@
             .replace(/'/g, '&#39;');
     }
 
+    // Snapshot status (bridge state) and viewer notices (tiles/library) are
+    // tracked separately so neither overwrites the other.
+    function renderStatus() {
+        statusEl.textContent = [state.statusText, state.notice].filter(Boolean).join(' · ');
+    }
+
+    function setStatusText(text) {
+        state.statusText = text || '';
+        renderStatus();
+    }
+
+    function setNotice(text) {
+        state.notice = text || '';
+        renderStatus();
+    }
+
+    function showFatal(message) {
+        root.innerHTML = '<p class="dz-live-map-fallback-message">' + escapeHtml(message) + '</p>';
+        setStatusText('');
+        setNotice(message);
+    }
+
     function resetView() {
         if (!state.leafletMap) {
             return;
         }
 
-        const worldSize = Number(state.mapDef.world_size || 15360);
-        state.leafletMap.fitBounds([dayzToLatLng(0, 0), dayzToLatLng(worldSize, worldSize)]);
+        state.leafletMap.fitBounds(worldBounds(state.mapDef));
     }
 
     function toggleFullscreen() {
@@ -415,13 +507,70 @@
 
             applySnapshot(await res.json());
         } catch (err) {
-            statusEl.textContent = 'Failed to fetch live map snapshot.';
+            setStatusText('Failed to fetch live map snapshot.');
         } finally {
             setTimeout(poll, POLL_MS);
         }
     }
 
+    // ── Leaflet loader ────────────────────────────────────────────────────
+    // The panel serves module pages standalone, so Leaflet is loaded from a
+    // CDN.  A single hard-coded <script> tag fails silently when the CDN is
+    // blocked (offline panel, CSP, ad blocker) and leaves an empty canvas, so
+    // every mirror is tried in turn and any failure is reported in the UI.
+    const LEAFLET_SOURCES = [
+        'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+        'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js',
+    ];
+    // Verified against the leaflet@1.9.4 npm tarball (dist/leaflet.js), which
+    // is what all three mirrors serve.
+    const LEAFLET_INTEGRITY = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+
+    function loadLeaflet(index) {
+        if (window.L && window.L.map) {
+            boot();
+            return;
+        }
+
+        if (index >= LEAFLET_SOURCES.length) {
+            showFatal('Leaflet could not be loaded from any CDN, so the live map cannot be drawn. '
+                + 'Allow unpkg.com, jsdelivr.net, or cdnjs.cloudflare.com for this panel.');
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = LEAFLET_SOURCES[index];
+        script.integrity = LEAFLET_INTEGRITY;
+        script.crossOrigin = 'anonymous';
+        script.async = false;
+        script.onload = function () {
+            if (window.L && window.L.map) {
+                boot();
+                return;
+            }
+
+            loadLeaflet(index + 1);
+        };
+        script.onerror = function () {
+            loadLeaflet(index + 1);
+        };
+
+        document.head.appendChild(script);
+    }
+
     // ── Boot ──────────────────────────────────────────────────────────────
+    function boot() {
+        try {
+            initLeaflet();
+        } catch (err) {
+            showFatal('The live map failed to initialise: ' + (err && err.message ? err.message : 'unknown error') + '.');
+            return;
+        }
+
+        poll();
+    }
+
     window.pteroLiveMapResetCamera = resetView;
     window.pteroLiveMapFullscreen  = toggleFullscreen;
 
@@ -430,8 +579,8 @@
         renderPlayerList();
     });
 
-    initLeaflet();
-    poll();
+    setStatusText('Loading map…');
+    loadLeaflet(0);
 }());
 </script>
 

@@ -65,9 +65,7 @@
             </div>
         @empty
             <div class="dz-empty">
-                @if (($persistence_status ?? '') === 'sqlite_extension_missing')
-                    SQLite support is not available in the panel PHP runtime, so characters.db cannot be read yet.
-                @elseif (($persistence_status ?? '') === 'not_found')
+                @if (($persistence_status ?? '') === 'not_found')
                     No readable characters.db/players.db file was found in common DayZ persistence paths.
                 @else
                     No persisted player records were found.

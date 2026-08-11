@@ -388,6 +388,8 @@ The **Players** tab shows persisted DayZ player records loaded from `characters.
 
 Persisted players include last-known coordinates and a bounds check against the active map size; live players show current online position/health from the bridge. `{list_type}` must be one of `ban`, `whitelist`, or `priority`.
 
+The persistence database is copied from the container via Wings and read with the first SQLite implementation available in the panel runtime: the `sqlite3` extension, PDO's `sqlite` driver, or the bundled dependency-free `DayZSqliteFileReader`, which parses the SQLite file format directly. **No PHP SQLite extension is required.** Table and column names are matched heuristically, so both vanilla and community persistence layouts are supported.
+
 **Add payload:**
 
 ```json
@@ -486,13 +488,15 @@ the client application re-renders its navigation.
 
 ### Live Map
 
-The **Live Map** tab shows an interactive 3-D (or 2-D fallback) map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. Supported maps render with a self-contained tactical background and labelled major locations so the operator is not left with an empty wireframe plane.
+The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable.
 
 #### How it works
 
-1. The panel polls `/api/server/{server}/dayz/live-map/snapshot` every 7 seconds.
-2. The snapshot endpoint reads `/profiles/PteroMods/live_map_players.json` (falling back to `/profiles/live_map_players.json`) from the server file system via Wings.
-3. The frontend renders each player as a coloured cone marker on the map.
+1. Leaflet 1.9.4 is loaded from unpkg, with jsDelivr and cdnjs as fallbacks (all pinned with the same Subresource Integrity hash). If every mirror is blocked, the map area explains that instead of rendering an empty box.
+2. Map tiles come from the template configured in **DayZ Manager → Settings → Live Map tile URL** (`{map}`, `{z}`, `{x}`, `{y}` placeholders). Leave it blank, or point it at an unreachable host, and the grid-only view is shown with a notice.
+3. The panel polls `/api/server/{server}/dayz/live-map/snapshot` every 7 seconds.
+4. The snapshot endpoint reads `/profiles/PteroMods/live_map_players.json` (falling back to `/profiles/live_map_players.json`) from the server file system via Wings.
+5. Each player is rendered as a marker at `L.latLng(z, x)`, using a `L.CRS.Simple` transformation of `256 / world_size` so DayZ world coordinates line up with the tiles.
 
 #### Server-side bridge setup (required for live data)
 
@@ -767,6 +771,21 @@ Ensure the web server user has write access: `chown www-data:www-data game-panel
 
 **Workshop URL not recognised**
 `WorkshopReferenceParser` accepts a bare numeric ID (e.g. `1559212036`) or a full URL containing `?id=` or `&id=`. Any other format throws `InvalidArgumentException`.
+
+**Live Map is a blank box**
+Earlier builds loaded `dist/leaflet.min.js`, a file that does not exist in the
+Leaflet 1.9.4 distribution, so the library never initialised and the map area
+stayed empty. Update to this version and run `php artisan view:clear`. If the
+map still does not draw, open the browser console: the viewer now reports
+whether Leaflet itself was blocked (allow `unpkg.com`, `cdn.jsdelivr.net`, or
+`cdnjs.cloudflare.com`) or only the tiles failed, in which case the coordinate
+grid is drawn and **Settings → Live Map tile URL** needs to be corrected.
+
+**Players tab reports that SQLite is unavailable**
+That message is obsolete. `characters.db` / `players.db` are now read with the
+bundled `DayZSqliteFileReader` when neither the `sqlite3` extension nor
+`pdo_sqlite` is present. If no records appear, the file was not found: check
+that persistence exists under `/mpmissions/dayzOffline.*/storage_1/`.
 
 **Player list type rejected**
 `DayZPlayerService` only accepts `ban`, `whitelist`, or `priority` as the list type. Any other value throws `InvalidArgumentException`.

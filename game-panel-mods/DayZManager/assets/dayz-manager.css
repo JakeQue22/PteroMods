@@ -524,6 +524,14 @@ code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05r
   display: block;
 }
 
+.dz-live-map-fallback-message {
+  margin: 0;
+  padding: 1.25rem;
+  color: var(--dz-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .dz-live-map-sidebar {
   background: var(--dz-surface-alt);
   border: 1px solid var(--dz-border);

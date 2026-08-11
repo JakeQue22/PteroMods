@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Services;
 
-use PDO;
-use PDOException;
-use SQLite3;
 use Throwable;
 
 /**
  * Reads persisted DayZ player records from characters.db / players.db.
+ *
+ * The database is read through the first available {@see DayZSqliteSource}:
+ * the native `sqlite3` extension, PDO's `sqlite` driver, or the bundled
+ * dependency-free {@see DayZSqliteFileReader}. The last one guarantees the
+ * feature works on panel images whose PHP runtime ships no SQLite support.
  */
 final class DayZPersistencePlayerService
 {
@@ -23,6 +25,17 @@ final class DayZPersistencePlayerService
         '/storage_1/data/players.db',
     ];
 
+    private const COLUMN_PATTERNS = [
+        'uid' => '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i',
+        'name' => '/(name|nickname|playername)/i',
+        'x' => '/(^x$|posx|positionx|worldx|coordx)/i',
+        'y' => '/(^y$|posy|positiony|worldy|coordy|height)/i',
+        'z' => '/(^z$|posz|positionz|worldz|coordz)/i',
+        'vector' => '/(^pos$|position|vector|location)/i',
+        'seen' => '/(last.*(seen|login|played)|updated|created|timestamp|time)/i',
+        'alive' => '/(alive|is_alive|isdead|dead)/i',
+    ];
+
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
     ) {
@@ -33,25 +46,34 @@ final class DayZPersistencePlayerService
      */
     public function snapshot(mixed $server, string $mapName = 'ChernarusPlus'): array
     {
-        if (!$this->sqliteAvailable()) {
-            return ['status' => 'sqlite_extension_missing', 'source_path' => null, 'players' => []];
-        }
+        $readablePath = null;
 
         foreach ($this->candidatePaths($server) as $path) {
             $raw = $this->gateway->readFile($server, $path);
 
-            if (!is_string($raw) || $raw === '') {
+            if (!is_string($raw) || !str_starts_with($raw, "SQLite format 3\0")) {
                 continue;
             }
 
             $players = $this->extractPlayers($raw, $mapName);
 
-            if (is_array($players)) {
+            if (!is_array($players)) {
+                continue;
+            }
+
+            if ($players !== []) {
                 return ['status' => 'ok', 'source_path' => $path, 'players' => $players];
             }
+
+            // A readable database without player rows (for example an empty
+            // storage folder) is remembered, but the remaining candidate paths
+            // are still checked for one that holds records.
+            $readablePath ??= $path;
         }
 
-        return ['status' => 'not_found', 'source_path' => null, 'players' => []];
+        return $readablePath === null
+            ? ['status' => 'not_found', 'source_path' => null, 'players' => []]
+            : ['status' => 'ok', 'source_path' => $readablePath, 'players' => []];
     }
 
     /**
@@ -88,28 +110,6 @@ final class DayZPersistencePlayerService
     }
 
     /**
-     * Returns true when at least one usable SQLite driver is present in the
-     * PHP runtime.  The `SQLite3` extension and the `pdo_sqlite` PDO driver
-     * are separate; many panel images ship one but not both.
-     */
-    private function sqliteAvailable(): bool
-    {
-        if (class_exists(SQLite3::class)) {
-            return true;
-        }
-
-        if (class_exists(PDO::class)) {
-            try {
-                return in_array('sqlite', PDO::getAvailableDrivers(), true);
-            } catch (Throwable) {
-                return false;
-            }
-        }
-
-        return false;
-    }
-
-    /**
      * @return list<array<string, mixed>>|null
      */
     private function extractPlayers(string $raw, string $mapName): ?array
@@ -120,111 +120,154 @@ final class DayZPersistencePlayerService
             return null;
         }
 
-        if (!str_starts_with($raw, "SQLite format 3\000")) {
-            @unlink($tmpPath);
-            return null;
-        }
-
         @chmod($tmpPath, 0600);
-        file_put_contents($tmpPath, $raw);
 
-        // Prefer the native SQLite3 extension; fall back to PDO sqlite.
-        if (class_exists(SQLite3::class)) {
-            return $this->extractViaSqlite3($tmpPath, $mapName);
+        if (file_put_contents($tmpPath, $raw) === false) {
+            @unlink($tmpPath);
+
+            return null;
         }
 
-        return $this->extractViaPdo($tmpPath, $mapName);
-    }
+        $source = $this->openSource($tmpPath);
 
-    /**
-     * Extracts players using the native SQLite3 extension.
-     *
-     * @return list<array<string, mixed>>|null
-     */
-    private function extractViaSqlite3(string $tmpPath, string $mapName): ?array
-    {
-        try {
-            $db = new SQLite3($tmpPath, SQLITE3_OPEN_READONLY);
-        } catch (Throwable) {
+        if ($source === null) {
             @unlink($tmpPath);
+
             return null;
         }
 
         try {
-            $merged = [];
-
-            foreach ($this->tables($db) as $table) {
-                $rows = $this->extractFromTable($db, $table, $mapName);
-
-                foreach ($rows as $row) {
-                    $uid = (string) ($row['player_id'] ?? '');
-
-                    if ($uid === '') {
-                        continue;
-                    }
-
-                    if (!isset($merged[$uid])) {
-                        $merged[$uid] = $row;
-                        continue;
-                    }
-
-                    $merged[$uid] = $this->mergeRow($merged[$uid], $row);
-                }
-            }
-
-            return $this->sortMerged($merged);
+            return $this->readPlayers($source, $mapName);
+        } catch (Throwable) {
+            return null;
         } finally {
-            $db->close();
+            $source->close();
             @unlink($tmpPath);
         }
     }
 
     /**
-     * Extracts players using PDO with the sqlite driver, as a fallback when
-     * the native SQLite3 PHP extension is not loaded.
-     *
-     * @return list<array<string, mixed>>|null
+     * Opens the database with the first SQLite implementation available in the
+     * current PHP runtime.
      */
-    private function extractViaPdo(string $tmpPath, string $mapName): ?array
+    private function openSource(string $path): ?DayZSqliteSource
     {
-        try {
-            $pdo = new PDO('sqlite:' . $tmpPath, null, null, [
-                PDO::ATTR_ERRMODE  => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_TIMEOUT  => 5,
-            ]);
-        } catch (Throwable) {
-            @unlink($tmpPath);
-            return null;
-        }
+        return DayZSqliteExtensionSource::open($path)
+            ?? DayZSqlitePdoSource::open($path)
+            ?? DayZSqliteFileReader::open($path);
+    }
 
-        try {
-            $merged = [];
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function readPlayers(DayZSqliteSource $source, string $mapName): array
+    {
+        $merged = [];
 
-            foreach ($this->tablesPdo($pdo) as $table) {
-                $rows = $this->extractFromTablePdo($pdo, $table, $mapName);
+        foreach ($source->tables() as $table) {
+            foreach ($this->extractFromTable($source, $table, $mapName) as $row) {
+                $uid = (string) ($row['player_id'] ?? '');
 
-                foreach ($rows as $row) {
-                    $uid = (string) ($row['player_id'] ?? '');
-
-                    if ($uid === '') {
-                        continue;
-                    }
-
-                    if (!isset($merged[$uid])) {
-                        $merged[$uid] = $row;
-                        continue;
-                    }
-
-                    $merged[$uid] = $this->mergeRow($merged[$uid], $row);
+                if ($uid === '') {
+                    continue;
                 }
-            }
 
-            return $this->sortMerged($merged);
-        } catch (Throwable) {
-            return null;
-        } finally {
-            @unlink($tmpPath);
+                $merged[$uid] = isset($merged[$uid]) ? $this->mergeRow($merged[$uid], $row) : $row;
+            }
         }
+
+        return $this->sortMerged($merged);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function extractFromTable(DayZSqliteSource $source, string $table, string $mapName): array
+    {
+        $columns = $source->columns($table);
+
+        if ($columns === []) {
+            return [];
+        }
+
+        $mapping = [];
+
+        foreach (self::COLUMN_PATTERNS as $field => $pattern) {
+            $column = $this->firstColumn($columns, $pattern);
+
+            if ($column !== null) {
+                $mapping[$field] = $column;
+            }
+        }
+
+        if (!isset($mapping['uid'])) {
+            return [];
+        }
+
+        $rows = $source->rows($table, array_values(array_unique($mapping)), self::TABLE_ROW_LIMIT);
+        $players = [];
+
+        foreach ($rows as $row) {
+            $player = $this->mapRow($row, $mapping, $table, $mapName);
+
+            if ($player !== null) {
+                $players[] = $player;
+            }
+        }
+
+        return $players;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, string> $mapping
+     * @return array<string, mixed>|null
+     */
+    private function mapRow(array $row, array $mapping, string $table, string $mapName): ?array
+    {
+        $value = static fn (string $field): mixed => isset($mapping[$field]) ? ($row[$mapping[$field]] ?? null) : null;
+        $playerId = trim((string) ($this->scalar($value('uid')) ?? ''));
+
+        if ($playerId === '') {
+            return null;
+        }
+
+        $vector = $this->parseVector($this->scalar($value('vector')));
+        $x = $this->floatValue($value('x')) ?? ($vector[0] ?? null);
+        $y = $this->floatValue($value('y')) ?? ($vector[1] ?? null);
+        $z = $this->floatValue($value('z')) ?? ($vector[2] ?? null);
+        $name = trim((string) ($this->scalar($value('name')) ?? ''));
+        $status = $this->positionStatus($x, $z, $mapName);
+
+        return [
+            'player_id' => $playerId,
+            'steam64' => preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null,
+            'name' => $name !== '' ? $name : $playerId,
+            'x' => $x,
+            'y' => $y,
+            'z' => $z,
+            'position_status' => $status,
+            'position_valid' => $status === 'valid',
+            'alive' => $this->aliveValue($value('alive')),
+            'last_seen_at' => $this->normalizeTimestamp($value('seen')),
+            'source_table' => $table,
+        ];
+    }
+
+    /**
+     * Binary blob columns are never usable as identifiers, names, or vectors.
+     */
+    private function scalar(mixed $value): string|int|float|null
+    {
+        if ($value === null || is_int($value) || is_float($value)) {
+            return $value;
+        }
+
+        if (!is_string($value)) {
+            return null;
+        }
+
+        return preg_match('//u', $value) === 1 && !str_contains($value, "\0") ? $value : null;
     }
 
     /**
@@ -248,155 +291,8 @@ final class DayZPersistencePlayerService
     }
 
     /**
-     * @return list<string>
+     * @param list<string> $columns
      */
-    private function tables(SQLite3 $db): array
-    {
-        $query = $db->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
-
-        if (!$query) {
-            return [];
-        }
-
-        $tables = [];
-
-        while (($row = $query->fetchArray(SQLITE3_ASSOC)) !== false) {
-            $name = trim((string) ($row['name'] ?? ''));
-
-            if ($name !== '') {
-                $tables[] = $name;
-            }
-        }
-
-        return $tables;
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function extractFromTable(SQLite3 $db, string $table, string $mapName): array
-    {
-        $columns = $this->columns($db, $table);
-
-        if ($columns === []) {
-            return [];
-        }
-
-        $uidColumn = $this->firstColumn($columns, '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i');
-        $nameColumn = $this->firstColumn($columns, '/(name|nickname|playername)/i');
-        $xColumn = $this->firstColumn($columns, '/(^x$|posx|positionx|worldx|coordx)/i');
-        $yColumn = $this->firstColumn($columns, '/(^y$|posy|positiony|worldy|coordy|height)/i');
-        $zColumn = $this->firstColumn($columns, '/(^z$|posz|positionz|worldz|coordz)/i');
-        $vectorColumn = $this->firstColumn($columns, '/(^pos$|position|vector|location)/i');
-        $seenColumn = $this->firstColumn($columns, '/(last.*(seen|login|played)|updated|created|timestamp|time)/i');
-        $aliveColumn = $this->firstColumn($columns, '/(alive|is_alive|isdead|dead)/i');
-
-        if ($uidColumn === null) {
-            return [];
-        }
-
-        $select = [
-            '"' . str_replace('"', '""', $uidColumn) . '" AS __uid',
-        ];
-
-        if ($nameColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $nameColumn) . '" AS __name';
-        }
-
-        if ($xColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $xColumn) . '" AS __x';
-        }
-
-        if ($yColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $yColumn) . '" AS __y';
-        }
-
-        if ($zColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $zColumn) . '" AS __z';
-        }
-
-        if ($vectorColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $vectorColumn) . '" AS __vector';
-        }
-
-        if ($seenColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $seenColumn) . '" AS __seen';
-        }
-
-        if ($aliveColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $aliveColumn) . '" AS __alive';
-        }
-
-        $query = $db->query(sprintf(
-            'SELECT %s FROM "%s" LIMIT %d',
-            implode(', ', $select),
-            str_replace('"', '""', $table),
-            self::TABLE_ROW_LIMIT,
-        ));
-
-        if (!$query) {
-            return [];
-        }
-
-        $players = [];
-
-        while (($row = $query->fetchArray(SQLITE3_ASSOC)) !== false) {
-            $playerId = trim((string) ($row['__uid'] ?? ''));
-
-            if ($playerId === '') {
-                continue;
-            }
-
-            $steam64 = preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null;
-            $vector = $this->parseVector($row['__vector'] ?? null);
-            $x = $this->floatValue($row['__x'] ?? null) ?? ($vector[0] ?? null);
-            $y = $this->floatValue($row['__y'] ?? null) ?? ($vector[1] ?? null);
-            $z = $this->floatValue($row['__z'] ?? null) ?? ($vector[2] ?? null);
-            $name = trim((string) ($row['__name'] ?? ''));
-            $status = $this->positionStatus($x, $z, $mapName);
-
-            $players[] = [
-                'player_id' => $playerId,
-                'steam64' => $steam64,
-                'name' => $name !== '' ? $name : $playerId,
-                'x' => $x,
-                'y' => $y,
-                'z' => $z,
-                'position_status' => $status,
-                'position_valid' => $status === 'valid',
-                'alive' => $this->aliveValue($row['__alive'] ?? null),
-                'last_seen_at' => $this->normalizeTimestamp($row['__seen'] ?? null),
-                'source_table' => $table,
-            ];
-        }
-
-        return $players;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function columns(SQLite3 $db, string $table): array
-    {
-        $query = $db->query(sprintf("PRAGMA table_info('%s')", str_replace("'", "''", $table)));
-
-        if (!$query) {
-            return [];
-        }
-
-        $columns = [];
-
-        while (($row = $query->fetchArray(SQLITE3_ASSOC)) !== false) {
-            $name = trim((string) ($row['name'] ?? ''));
-
-            if ($name !== '') {
-                $columns[] = $name;
-            }
-        }
-
-        return $columns;
-    }
-
     private function firstColumn(array $columns, string $pattern): ?string
     {
         foreach ($columns as $column) {
@@ -406,168 +302,6 @@ final class DayZPersistencePlayerService
         }
 
         return null;
-    }
-
-    // ── PDO (pdo_sqlite) equivalents ──────────────────────────────────────────
-
-    /**
-     * @return list<string>
-     */
-    private function tablesPdo(PDO $pdo): array
-    {
-        try {
-            $stmt = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
-
-            if ($stmt === false) {
-                return [];
-            }
-
-            $tables = [];
-
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $name = trim((string) ($row['name'] ?? ''));
-
-                if ($name !== '') {
-                    $tables[] = $name;
-                }
-            }
-
-            return $tables;
-        } catch (Throwable) {
-            return [];
-        }
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function extractFromTablePdo(PDO $pdo, string $table, string $mapName): array
-    {
-        $columns = $this->columnsPdo($pdo, $table);
-
-        if ($columns === []) {
-            return [];
-        }
-
-        $uidColumn    = $this->firstColumn($columns, '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i');
-        $nameColumn   = $this->firstColumn($columns, '/(name|nickname|playername)/i');
-        $xColumn      = $this->firstColumn($columns, '/(^x$|posx|positionx|worldx|coordx)/i');
-        $yColumn      = $this->firstColumn($columns, '/(^y$|posy|positiony|worldy|coordy|height)/i');
-        $zColumn      = $this->firstColumn($columns, '/(^z$|posz|positionz|worldz|coordz)/i');
-        $vectorColumn = $this->firstColumn($columns, '/(^pos$|position|vector|location)/i');
-        $seenColumn   = $this->firstColumn($columns, '/(last.*(seen|login|played)|updated|created|timestamp|time)/i');
-        $aliveColumn  = $this->firstColumn($columns, '/(alive|is_alive|isdead|dead)/i');
-
-        if ($uidColumn === null) {
-            return [];
-        }
-
-        $select = ['"' . str_replace('"', '""', $uidColumn) . '" AS __uid'];
-
-        if ($nameColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $nameColumn) . '" AS __name';
-        }
-
-        if ($xColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $xColumn) . '" AS __x';
-        }
-
-        if ($yColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $yColumn) . '" AS __y';
-        }
-
-        if ($zColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $zColumn) . '" AS __z';
-        }
-
-        if ($vectorColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $vectorColumn) . '" AS __vector';
-        }
-
-        if ($seenColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $seenColumn) . '" AS __seen';
-        }
-
-        if ($aliveColumn !== null) {
-            $select[] = '"' . str_replace('"', '""', $aliveColumn) . '" AS __alive';
-        }
-
-        try {
-            $stmt = $pdo->query(sprintf(
-                'SELECT %s FROM "%s" LIMIT %d',
-                implode(', ', $select),
-                str_replace('"', '""', $table),
-                self::TABLE_ROW_LIMIT,
-            ));
-
-            if ($stmt === false) {
-                return [];
-            }
-
-            $players = [];
-
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $playerId = trim((string) ($row['__uid'] ?? ''));
-
-                if ($playerId === '') {
-                    continue;
-                }
-
-                $steam64 = preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null;
-                $vector  = $this->parseVector($row['__vector'] ?? null);
-                $x       = $this->floatValue($row['__x'] ?? null) ?? ($vector[0] ?? null);
-                $y       = $this->floatValue($row['__y'] ?? null) ?? ($vector[1] ?? null);
-                $z       = $this->floatValue($row['__z'] ?? null) ?? ($vector[2] ?? null);
-                $name    = trim((string) ($row['__name'] ?? ''));
-                $status  = $this->positionStatus($x, $z, $mapName);
-
-                $players[] = [
-                    'player_id'       => $playerId,
-                    'steam64'         => $steam64,
-                    'name'            => $name !== '' ? $name : $playerId,
-                    'x'               => $x,
-                    'y'               => $y,
-                    'z'               => $z,
-                    'position_status' => $status,
-                    'position_valid'  => $status === 'valid',
-                    'alive'           => $this->aliveValue($row['__alive'] ?? null),
-                    'last_seen_at'    => $this->normalizeTimestamp($row['__seen'] ?? null),
-                    'source_table'    => $table,
-                ];
-            }
-
-            return $players;
-        } catch (Throwable) {
-            return [];
-        }
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function columnsPdo(PDO $pdo, string $table): array
-    {
-        try {
-            $stmt = $pdo->query(sprintf("PRAGMA table_info('%s')", str_replace("'", "''", $table)));
-
-            if ($stmt === false) {
-                return [];
-            }
-
-            $columns = [];
-
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $name = trim((string) ($row['name'] ?? ''));
-
-                if ($name !== '') {
-                    $columns[] = $name;
-                }
-            }
-
-            return $columns;
-        } catch (Throwable) {
-            return [];
-        }
     }
 
     /**
@@ -603,11 +337,19 @@ final class DayZPersistencePlayerService
             return null;
         }
 
+        if (is_bool($value)) {
+            return $value;
+        }
+
         if (is_numeric($value)) {
             return ((int) $value) > 0;
         }
 
-        $text = strtolower(trim((string) $value));
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $text = strtolower(trim($value));
 
         if (in_array($text, ['true', 'alive', 'yes'], true)) {
             return true;
@@ -634,7 +376,11 @@ final class DayZPersistencePlayerService
             }
         }
 
-        $text = trim((string) $value);
+        if (!is_string($value)) {
+            return null;
+        }
+
+        $text = trim($value);
         $time = strtotime($text);
 
         return $time === false ? $text : gmdate('Y-m-d H:i:s', $time);
