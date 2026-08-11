@@ -11,7 +11,7 @@
  *
  * 1. At the very top of the file:
  *
- *        #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c"
+ *        #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c";
  *
  * 2. Inside the existing main() function (EnfScript does not allow a bare call
  *    at file scope — that makes the mission fail to compile):
@@ -61,8 +61,9 @@ const string PTEROMODS_LIVEMAP_DIR  = "$profile:PteroMods";
 string PteroMods_LiveMap_SanitizePlayerName( string value )
 {
     string safe = value;
+    string slash = AsciiToString(92);
 
-    safe.Replace( AsciiToString(92), "\\\\" );
+    safe.Replace( slash, slash + slash );
     safe.Replace( AsciiToString(34), "'" );
     safe.Replace( AsciiToString(10), " " );
     safe.Replace( AsciiToString(13), " " );

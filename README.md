@@ -509,7 +509,7 @@ Without these lines nothing is ever written to the snapshot file and the Live Ma
 1. At the very top of `mpmissions/dayzOffline.chernarusplus/init.c`:
 
    ```c
-   #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c"
+   #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c";
    ```
 
 2. Inside the **existing** `main()` function of the same file:
