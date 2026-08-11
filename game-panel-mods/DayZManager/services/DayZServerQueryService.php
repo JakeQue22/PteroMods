@@ -109,7 +109,7 @@ final class DayZServerQueryService
             $candidates,
         )));
         if ($preferFresh) {
-            return $this->fetchAndCache($cacheKey, $candidates);
+            return $this->fetchAndCache($cacheKey, $candidates, $server);
         }
 
         $fallback = $this->offline($candidates[0][0] . ':' . $candidates[0][1]);
@@ -117,7 +117,19 @@ final class DayZServerQueryService
             $cacheKey,
             self::CACHE_SECONDS,
             self::CACHE_SECONDS * 20,
-            fn (): array => $this->queryCandidates($candidates),
+            function () use ($candidates, $server): array {
+                $result = $this->queryCandidates($candidates);
+
+                if (!$result['online']) {
+                    $bridgeCount = $this->bridgePlayerCount($server);
+
+                    if ($bridgeCount !== null) {
+                        $result['players'] = $bridgeCount;
+                    }
+                }
+
+                return $result;
+            },
             $fallback,
         );
 
@@ -509,9 +521,18 @@ final class DayZServerQueryService
      * @param list<array{0: string, 1: int}> $candidates
      * @return array{online: bool, map: string|null, players: int|null, max_players: int|null, version: string|null, name: string|null, endpoint: string|null}
      */
-    private function fetchAndCache(string $cacheKey, array $candidates): array
+    private function fetchAndCache(string $cacheKey, array $candidates, mixed $server): array
     {
         $result = $this->queryCandidates($candidates);
+
+        if (!$result['online']) {
+            $bridgeCount = $this->bridgePlayerCount($server);
+
+            if ($bridgeCount !== null) {
+                $result['players'] = $bridgeCount;
+            }
+        }
+
         $this->staleCache->refreshNow(
             $cacheKey,
             self::CACHE_SECONDS,
@@ -520,5 +541,49 @@ final class DayZServerQueryService
         );
 
         return $result;
+    }
+
+    /**
+     * Reads the live map bridge file from the server container and returns the
+     * number of players listed in it.  Used as a fallback when the Steam query
+     * is unreachable (e.g. the panel and Wings nodes are on different networks
+     * or the query port is firewalled).  Returns null when no usable bridge
+     * file is found.
+     */
+    private function bridgePlayerCount(mixed $server): ?int
+    {
+        $bridgeFiles = [
+            '/profiles/PteroMods/live_map_players.json',
+            '/profiles/live_map_players.json',
+        ];
+
+        foreach ($bridgeFiles as $path) {
+            try {
+                $raw = $this->gateway->readFile($server, $path);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if (!is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+
+            $data = json_decode($raw, true);
+
+            if (!is_array($data)) {
+                continue;
+            }
+
+            // Support the signed envelope format {"payload": {...}, "signature": "..."}.
+            if (isset($data['payload']) && is_array($data['payload'])) {
+                $data = $data['payload'];
+            }
+
+            if (isset($data['players']) && is_array($data['players'])) {
+                return count($data['players']);
+            }
+        }
+
+        return null;
     }
 }

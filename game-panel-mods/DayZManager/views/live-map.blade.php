@@ -390,7 +390,9 @@
         try {
             const payload = await apiGet();
             applySnapshot(payload);
-            buildGround();
+            if (!state.fallback2d) {
+                buildGround();
+            }
         } catch (err) {
             statusEl.textContent = 'Failed to fetch live map snapshot.';
         } finally {

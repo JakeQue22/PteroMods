@@ -216,7 +216,7 @@ final class DayZDashboardService
      */
     public function formatPlayerCount(array $live): string
     {
-        $players = $live['online'] && $live['players'] !== null ? $live['players'] : 0;
+        $players = $live['players'] !== null ? $live['players'] : 0;
         $maxPlayers = $live['max_players'] !== null && $live['max_players'] > 0
             ? $live['max_players']
             : self::DEFAULT_MAX_PLAYERS;
