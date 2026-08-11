@@ -66,7 +66,8 @@ final class DayZMapMarkerService
 
     /**
      * Named places per map.  Coordinates are the in-game world coordinates
-     * (x = east, z = north) of the settlement centre.
+     * (the same `x` / `z` pair the live map and the mission files use) of the
+     * settlement centre.
      *
      * @var array<string, list<array{0: string, 1: float, 2: float, 3: string}>>
      */

@@ -512,13 +512,32 @@
         renderSelection();
 
         // Honour ?focus=… once, as soon as that player shows up.
-        if (FOCUS_ID !== '' && !state.focused && state.markers.has(FOCUS_ID)) {
+        const focusId = resolveFocusId();
+
+        if (focusId !== '' && !state.focused) {
             state.focused = true;
-            selectPlayer(FOCUS_ID);
-            focusPlayer(FOCUS_ID);
+            selectPlayer(focusId);
+            focusPlayer(focusId);
             state.leafletMap.setZoom(Math.max(state.leafletMap.getZoom(), 3));
-            state.markers.get(FOCUS_ID).openPopup();
+            state.markers.get(focusId).openPopup();
         }
+    }
+
+    // The player manager links with ?focus=<steam64|DayZ UID>, while markers
+    // are keyed by Steam64, so a UID is translated through the directory.
+    function resolveFocusId() {
+        if (FOCUS_ID === '') {
+            return '';
+        }
+
+        if (state.markers.has(FOCUS_ID)) {
+            return FOCUS_ID;
+        }
+
+        const entry = state.directory.get(FOCUS_ID);
+        const steam64 = entry && entry.steam64 ? String(entry.steam64) : '';
+
+        return steam64 !== '' && state.markers.has(steam64) ? steam64 : '';
     }
 
     // ── Player details ────────────────────────────────────────────────────
