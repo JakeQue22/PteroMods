@@ -2,8 +2,9 @@
     <h2>Database Backups</h2>
     <p class="dz-sub">
         Backups capture the current database state for this server: mod load order, restart schedule,
-        mod install queue, player lists and global settings. Restoring a backup overwrites those rows
-        immediately; tick <em>Restart server after restore</em> to apply mod / config changes at once.
+        mod install queue, plus global player lists and settings (for reference). Restoring a backup
+        overwrites the per-server rows (mod order, restart schedule, install queue) immediately;
+        tick <em>Restart server after restore</em> to apply mod / configuration changes at once.
     </p>
 </section>
 
@@ -112,7 +113,6 @@
 <script>
 (function () {
     var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
-    var base  = (window._pteroApiBase || '') + '/api' + (window._pteroServerPrefix || '');
 
     function apiBase() {
         var m = window.location.pathname.match(/^(\/(?:servers?|admin\/servers\/view)\/[^/]+)\/dayz/);

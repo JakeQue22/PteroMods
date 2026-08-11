@@ -123,7 +123,7 @@ final class DayZBackupController
      */
     public function tick(mixed $server = null): array
     {
-        $model = $this->context->resolve($server)['model'];
+        $model = $this->authorise($server);
 
         return $this->service->tick($model);
     }

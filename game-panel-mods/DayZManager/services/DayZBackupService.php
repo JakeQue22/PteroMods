@@ -276,6 +276,10 @@ final class DayZBackupService
     {
         $tables = is_array($payload['tables'] ?? null) ? $payload['tables'] : [];
 
+        // Only per-server tables are restored automatically.  Global tables
+        // (dayz_player_lists, dayz_manager_settings) are included in the backup
+        // payload for reference but are intentionally not restored here: wiping
+        // those tables would affect every other server sharing the database.
         foreach (self::SERVER_TABLES as $table) {
             if (!isset($tables[$table]) || !is_array($tables[$table])) {
                 continue;
@@ -304,32 +308,6 @@ final class DayZBackupService
                 // Best-effort: continue restoring other tables.
             }
         }
-
-        foreach (self::GLOBAL_TABLES as $table) {
-            if (!isset($tables[$table]) || !is_array($tables[$table])) {
-                continue;
-            }
-
-            if (!$this->tableExists($table)) {
-                continue;
-            }
-
-            try {
-                \Illuminate\Support\Facades\DB::table($table)->truncate();
-
-                foreach ($tables[$table] as $row) {
-                    if (!is_array($row)) {
-                        continue;
-                    }
-
-                    unset($row['id']);
-
-                    \Illuminate\Support\Facades\DB::table($table)->insert($row);
-                }
-            } catch (Throwable) {
-                // Best-effort: continue restoring other tables.
-            }
-        }
     }
 
     private function pruneOldBackups(string $serverId): void
@@ -341,8 +319,11 @@ final class DayZBackupService
         }
 
         try {
+            // Only auto-generated backups are subject to the retention limit;
+            // manual backups are kept until the user explicitly deletes them.
             $ids = \Illuminate\Support\Facades\DB::table('dayz_backups')
                 ->where('server_id', $serverId)
+                ->where('trigger', 'auto')
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->pluck('id')

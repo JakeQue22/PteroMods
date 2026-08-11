@@ -77,7 +77,7 @@ final class DayZDashboardService
     {
         $key = 'pteromods.dayz.dashboard.stats.' . md5($this->context->attribute($model, ['uuid', 'uuidShort', 'id']));
         $fallback = [
-            'live' => $this->query->query($model),
+            'live'    => ['online' => false, 'players' => null, 'max_players' => null, 'map' => null, 'version' => null, 'endpoint' => null, 'name' => null],
             'details' => null,
         ];
         $stats = $this->staleCache->remember(

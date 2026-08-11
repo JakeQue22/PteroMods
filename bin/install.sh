@@ -274,9 +274,6 @@ else
     echo "  each DayZ server's /profiles/PteroMods/ directory automatically when"
     echo "  you first open the Live Map page for that server, or via:"
     echo "  POST /api/server/{server}/dayz/live-map/setup-bridge"
-    echo ""
-    echo "  After deploying, add this line to your mission's init.sqf:"
-    echo "    if (isServer) then { execVM \"profiles\\PteroMods\\pteromods_live_map.sqf\"; };"
 fi
 
 # ── step 8: clear caches ─────────────────────────────────────────────────────
