@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Services;
 
-use Throwable;
-
 /**
  * Builds DayZ dashboard card data.
  *
@@ -25,6 +23,7 @@ final class DayZDashboardService
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZWorkshopService $workshop = new DayZWorkshopService(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -73,61 +72,20 @@ final class DayZDashboardService
     private function cachedStats(mixed $model): array
     {
         $key = 'pteromods.dayz.dashboard.stats.' . md5($this->context->attribute($model, ['uuid', 'uuidShort', 'id']));
+        $fallback = [
+            'installed_mods' => [],
+            'live' => $this->query->query($model),
+            'details' => null,
+        ];
+        $stats = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            fn (): array => $this->gatherStats($model),
+            $fallback,
+        );
 
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return $this->gatherStats($model);
-        }
-
-        // Stale-while-revalidate: whatever is stored is served immediately,
-        // even once it has aged past STATS_CACHE_SECONDS — a tab must never
-        // block waiting on a synchronous refresh. The stored envelope is kept
-        // alive far longer than the "fresh" window purely as a safety net, and
-        // a single in-flight request refreshes it in the background (via a
-        // short-lived lock so concurrent tabs don't all recompute at once).
-        try {
-            $envelope = \Illuminate\Support\Facades\Cache::get($key);
-        } catch (Throwable) {
-            return $this->gatherStats($model);
-        }
-
-        $stale = is_array($envelope) ? ($envelope['stats'] ?? null) : null;
-        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
-        $isFresh = $stale !== null && (time() - $generatedAt) < self::STATS_CACHE_SECONDS;
-
-        if ($isFresh) {
-            return $stale;
-        }
-
-        if ($stale !== null) {
-            return $stale;
-        }
-
-        $lockKey = $key . '.lock';
-        $acquiredLock = false;
-
-        try {
-            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::STATS_CACHE_SECONDS);
-        } catch (Throwable) {
-            // If locking isn't supported, fall through and refresh anyway.
-        }
-
-        if ($stale !== null && !$acquiredLock) {
-            return $stale;
-        }
-
-        $stats = $this->gatherStats($model);
-
-        try {
-            \Illuminate\Support\Facades\Cache::put(
-                $key,
-                ['stats' => $stats, 'generated_at' => time()],
-                self::STATS_CACHE_SECONDS * 20,
-            );
-        } catch (Throwable) {
-            // Caching is best-effort only.
-        }
-
-        return $stats;
+        return is_array($stats) ? $stats : $fallback;
     }
 
     /**
@@ -188,19 +146,30 @@ final class DayZDashboardService
      */
     private function installedBuildId(mixed $model): string
     {
-        foreach (['/steamapps/appmanifest_223350.acf', '/appmanifest_223350.acf'] as $path) {
-            $contents = $this->gateway->readFile($model, $path);
+        $key = 'pteromods.dayz.dashboard.buildid.' . md5($this->context->attribute($model, ['uuid', 'uuidShort', 'id']));
+        $buildId = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            function () use ($model): string {
+                foreach (['/steamapps/appmanifest_223350.acf', '/appmanifest_223350.acf'] as $path) {
+                    $contents = $this->gateway->readFile($model, $path);
 
-            if ($contents === null || $contents === '') {
-                continue;
-            }
+                    if ($contents === null || $contents === '') {
+                        continue;
+                    }
 
-            if (preg_match('/"buildid"\s*"(\d+)"/i', $contents, $matches) === 1) {
-                return $matches[1];
-            }
-        }
+                    if (preg_match('/"buildid"\s*"(\d+)"/i', $contents, $matches) === 1) {
+                        return $matches[1];
+                    }
+                }
 
-        return '';
+                return '';
+            },
+            '',
+        );
+
+        return is_string($buildId) ? $buildId : '';
     }
 
     private function fallback(string $value, string $fallback = 'N/A'): string

@@ -11,39 +11,29 @@ final class DayZPlayerService
 {
     private const VALID_LIST_TYPES = ['ban', 'whitelist', 'priority'];
 
+    private const CACHE_SECONDS = 120;
+
+    public function __construct(
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
+    ) {
+    }
+
     /**
      * @return list<array{player_id: string, note: string, added_by: string, created_at: string|null}>
      */
     public function list(string $listType): array
     {
         $this->assertValidListType($listType);
+        $key = 'pteromods.dayz.players.' . $listType;
+        $rows = $this->staleCache->remember(
+            $key,
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->fetchList($listType),
+            [],
+        );
 
-        try {
-            if (class_exists('Illuminate\\Support\\Facades\\Schema')
-                && class_exists('Illuminate\\Support\\Facades\\DB')
-                && \Illuminate\Support\Facades\Schema::hasTable('dayz_player_lists')) {
-                $rows = \Illuminate\Support\Facades\DB::table('dayz_player_lists')
-                    ->where('list_type', $listType)
-                    ->orderBy('player_id')
-                    ->get()
-                    ->toArray();
-
-                return array_map(static function ($row): array {
-                    $row = (array) $row;
-
-                    return [
-                        'player_id'  => (string) ($row['player_id'] ?? ''),
-                        'note'       => (string) ($row['note'] ?? ''),
-                        'added_by'   => (string) ($row['added_by'] ?? ''),
-                        'created_at' => isset($row['created_at']) ? (string) $row['created_at'] : null,
-                    ];
-                }, $rows);
-            }
-        } catch (\Throwable) {
-            // The module works without its database tables; fall through to an empty list.
-        }
-
-        return [];
+        return is_array($rows) ? $rows : [];
     }
 
     /**
@@ -118,5 +108,38 @@ final class DayZPlayerService
         if (trim($playerId) === '') {
             throw new \InvalidArgumentException('Player ID must not be empty.');
         }
+    }
+
+    /**
+     * @return list<array{player_id: string, note: string, added_by: string, created_at: string|null}>
+     */
+    private function fetchList(string $listType): array
+    {
+        try {
+            if (class_exists('Illuminate\\Support\\Facades\\Schema')
+                && class_exists('Illuminate\\Support\\Facades\\DB')
+                && \Illuminate\Support\Facades\Schema::hasTable('dayz_player_lists')) {
+                $rows = \Illuminate\Support\Facades\DB::table('dayz_player_lists')
+                    ->where('list_type', $listType)
+                    ->orderBy('player_id')
+                    ->get()
+                    ->toArray();
+
+                return array_map(static function ($row): array {
+                    $row = (array) $row;
+
+                    return [
+                        'player_id'  => (string) ($row['player_id'] ?? ''),
+                        'note'       => (string) ($row['note'] ?? ''),
+                        'added_by'   => (string) ($row['added_by'] ?? ''),
+                        'created_at' => isset($row['created_at']) ? (string) $row['created_at'] : null,
+                    ];
+                }, $rows);
+            }
+        } catch (\Throwable) {
+            // The module works without its database tables; fall through to an empty list.
+        }
+
+        return [];
     }
 }

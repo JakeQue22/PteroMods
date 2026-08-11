@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZWorkshopService;
@@ -17,6 +18,7 @@ final class DayZWorkshopController
 {
     public function __construct(
         private readonly DayZWorkshopService $service = new DayZWorkshopService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
@@ -29,6 +31,7 @@ final class DayZWorkshopController
     public function index(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         try {
             $this->logScrub->tick($resolved['model']);

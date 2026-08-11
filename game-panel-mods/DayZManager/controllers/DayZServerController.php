@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZDashboardService;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZPanelGateway;
 use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
@@ -23,6 +24,7 @@ final class DayZServerController
         private readonly DayZServerService $service = new DayZServerService(),
         private readonly DayZWorkshopService $workshop = new DayZWorkshopService(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZDashboardService $dashboard = new DayZDashboardService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
@@ -40,8 +42,9 @@ final class DayZServerController
     public function queryStatus(mixed $server = null): array
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
         $this->query->clearCache($resolved['model']);
-        $live = $this->query->query($resolved['model']);
+        $live = $this->query->query($resolved['model'], true);
         $details = $this->gateway->details($resolved['model']);
         $powerState = $this->gateway->state($resolved['model']) ?? '';
         $live['player_count'] = $this->dashboard->formatPlayerCount($live);
@@ -189,6 +192,7 @@ final class DayZServerController
     public function dzsa(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         $dzsaEndpoint = $this->query->dzsaEndpoint($resolved['model']);
         $payload = [
@@ -215,6 +219,7 @@ final class DayZServerController
     public function launchParameters(mixed $server = null, array $enabledFolders = [])
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         try {
             $folders = $enabledFolders !== [] ? $enabledFolders : $this->workshop->enabledFolders($resolved['model']);

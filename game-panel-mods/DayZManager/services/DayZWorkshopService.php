@@ -42,6 +42,7 @@ final class DayZWorkshopService
         private readonly WorkshopInfoClient $info = new WorkshopInfoClient(),
         private readonly WorkshopBrowseClient $browseClient = new WorkshopBrowseClient(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -114,60 +115,16 @@ final class DayZWorkshopService
      */
     private function cachedInstalledMods(mixed $server, string $memoKey): array
     {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return $this->scanInstalledMods($server);
-        }
-
         $key = 'pteromods.dayz.workshop.installed_mods.' . md5($memoKey);
+        $mods = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            fn (): array => $this->scanInstalledMods($server),
+            [],
+        );
 
-        try {
-            $envelope = \Illuminate\Support\Facades\Cache::get($key);
-        } catch (Throwable) {
-            return $this->scanInstalledMods($server);
-        }
-
-        $stale = is_array($envelope) ? ($envelope['mods'] ?? null) : null;
-        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
-        $isFresh = is_array($stale) && (time() - $generatedAt) < self::STATS_CACHE_SECONDS;
-
-        if ($isFresh) {
-            return $stale;
-        }
-
-        if ($stale !== null) {
-            return $stale;
-        }
-
-        if (is_array($stale)) {
-            return $stale;
-        }
-
-        $lockKey = $key . '.lock';
-        $acquiredLock = false;
-
-        try {
-            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::STATS_CACHE_SECONDS);
-        } catch (Throwable) {
-            // If locking isn't supported, fall through and refresh anyway.
-        }
-
-        if (is_array($stale) && !$acquiredLock) {
-            return $stale;
-        }
-
-        $mods = $this->scanInstalledMods($server);
-
-        try {
-            \Illuminate\Support\Facades\Cache::put(
-                $key,
-                ['mods' => $mods, 'generated_at' => time()],
-                self::STATS_CACHE_SECONDS * 20,
-            );
-        } catch (Throwable) {
-            // Caching is best-effort only.
-        }
-
-        return $mods;
+        return is_array($mods) ? $mods : [];
     }
 
     /**
@@ -1028,55 +985,16 @@ final class DayZWorkshopService
      */
     private function workshopInfo(string $workshopId): array
     {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return $this->info->fetch($workshopId) ?? [];
-        }
-
         $key = 'pteromods.dayz.workshop_info.' . $workshopId;
+        $info = $this->staleCache->remember(
+            $key,
+            self::INFO_CACHE_SECONDS,
+            self::INFO_CACHE_SECONDS * 20,
+            fn (): array => $this->info->fetch($workshopId) ?? [],
+            [],
+        );
 
-        // Stale-while-revalidate, same as cachedWorkshopStats(): never block
-        // a page load on the Steam Workshop HTTP call when a (possibly
-        // slightly stale) value is already cached.
-        try {
-            $envelope = \Illuminate\Support\Facades\Cache::get($key);
-        } catch (Throwable) {
-            return $this->info->fetch($workshopId) ?? [];
-        }
-
-        $stale = is_array($envelope) ? ($envelope['info'] ?? null) : null;
-        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
-        $isFresh = $stale !== null && (time() - $generatedAt) < self::INFO_CACHE_SECONDS;
-
-        if ($isFresh) {
-            return $stale;
-        }
-
-        $lockKey = $key . '.lock';
-        $acquiredLock = false;
-
-        try {
-            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::INFO_CACHE_SECONDS);
-        } catch (Throwable) {
-            // If locking isn't supported, fall through and refresh anyway.
-        }
-
-        if ($stale !== null && !$acquiredLock) {
-            return $stale;
-        }
-
-        $info = $this->info->fetch($workshopId) ?? [];
-
-        try {
-            \Illuminate\Support\Facades\Cache::put(
-                $key,
-                ['info' => $info, 'generated_at' => time()],
-                self::INFO_CACHE_SECONDS * 20,
-            );
-        } catch (Throwable) {
-            // Caching is best-effort only.
-        }
-
-        return $info;
+        return is_array($info) ? $info : [];
     }
 
     /**
@@ -1517,56 +1435,20 @@ final class DayZWorkshopService
     private function cachedWorkshopStats(mixed $server): array
     {
         $key = 'pteromods.dayz.workshop.stats.' . md5($this->serverIdentifier($server));
+        $fallback = [
+            'startup' => ['mods' => [], 'server_mods' => []],
+            'installed' => [],
+            'enabled' => [],
+        ];
+        $stats = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            fn (): array => $this->gatherWorkshopStats($server),
+            $fallback,
+        );
 
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return $this->gatherWorkshopStats($server);
-        }
-
-        // Stale-while-revalidate: always serve instantly from whatever is
-        // cached (even if past STATS_CACHE_SECONDS) instead of blocking the
-        // request on a synchronous SFTP/file listing refresh. A single
-        // request refreshes the cache in the background via a short-lived
-        // lock so concurrent tabs don't all recompute at once.
-        try {
-            $envelope = \Illuminate\Support\Facades\Cache::get($key);
-        } catch (Throwable) {
-            return $this->gatherWorkshopStats($server);
-        }
-
-        $stale = is_array($envelope) ? ($envelope['stats'] ?? null) : null;
-        $generatedAt = is_array($envelope) ? (int) ($envelope['generated_at'] ?? 0) : 0;
-        $isFresh = $stale !== null && (time() - $generatedAt) < self::STATS_CACHE_SECONDS;
-
-        if ($isFresh) {
-            return $stale;
-        }
-
-        $lockKey = $key . '.lock';
-        $acquiredLock = false;
-
-        try {
-            $acquiredLock = \Illuminate\Support\Facades\Cache::add($lockKey, true, self::STATS_CACHE_SECONDS);
-        } catch (Throwable) {
-            // If locking isn't supported, fall through and refresh anyway.
-        }
-
-        if ($stale !== null && !$acquiredLock) {
-            return $stale;
-        }
-
-        $stats = $this->gatherWorkshopStats($server);
-
-        try {
-            \Illuminate\Support\Facades\Cache::put(
-                $key,
-                ['stats' => $stats, 'generated_at' => time()],
-                self::STATS_CACHE_SECONDS * 20,
-            );
-        } catch (Throwable) {
-            // Caching is best-effort only.
-        }
-
-        return $stats;
+        return is_array($stats) ? $stats : $fallback;
     }
 
     /**

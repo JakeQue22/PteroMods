@@ -29,6 +29,7 @@ final class DayZPanelGateway
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -44,14 +45,15 @@ final class DayZPanelGateway
         }
 
         $cacheKey = $this->cacheKey('details', $server, '');
-        $cached = $this->fromCache($cacheKey);
 
-        if (is_array($cached)) {
-            return $cached['value'] ?? null;
-        }
-
-        $details = $this->fetchDetails($server);
-        $this->toCache($cacheKey, ['value' => $details], self::DETAILS_CACHE_SECONDS);
+        /** @var array{state: string, is_suspended: bool, utilization: array<string, mixed>}|null $details */
+        $details = $this->staleCache->remember(
+            $cacheKey,
+            self::DETAILS_CACHE_SECONDS,
+            self::DETAILS_CACHE_SECONDS * 20,
+            fn (): ?array => $this->fetchDetails($server),
+            null,
+        );
 
         return $details;
     }
@@ -95,20 +97,18 @@ final class DayZPanelGateway
 
         $path = $this->normalizePath($path);
         $cacheKey = $this->cacheKey('files', $server, $path);
-        $cached = $this->fromCache($cacheKey);
-
-        if (is_array($cached)) {
-            return is_array($cached['value'] ?? null) ? $cached['value'] : [];
-        }
-
-        $entries = array_map(
-            fn (array $entry): array => $this->normalizeEntry($entry),
-            $this->fetchDirectory($server, $path),
+        $entries = $this->staleCache->remember(
+            $cacheKey,
+            self::FILES_CACHE_SECONDS,
+            self::FILES_CACHE_SECONDS * 20,
+            fn (): array => array_map(
+                fn (array $entry): array => $this->normalizeEntry($entry),
+                $this->fetchDirectory($server, $path),
+            ),
+            [],
         );
 
-        $this->toCache($cacheKey, ['value' => $entries], self::FILES_CACHE_SECONDS);
-
-        return $entries;
+        return is_array($entries) ? $entries : [];
     }
 
     /**
@@ -122,16 +122,15 @@ final class DayZPanelGateway
 
         $path = $this->normalizePath($path);
         $cacheKey = $this->cacheKey('file', $server, $path);
-        $cached = $this->fromCache($cacheKey);
+        $contents = $this->staleCache->remember(
+            $cacheKey,
+            self::FILES_CACHE_SECONDS,
+            self::FILES_CACHE_SECONDS * 20,
+            fn (): ?string => $this->fetchFile($server, $path),
+            null,
+        );
 
-        if (is_array($cached)) {
-            return is_string($cached['value'] ?? null) ? $cached['value'] : null;
-        }
-
-        $contents = $this->fetchFile($server, $path);
-        $this->toCache($cacheKey, ['value' => $contents], self::FILES_CACHE_SECONDS);
-
-        return $contents;
+        return is_string($contents) ? $contents : null;
     }
 
     /**
@@ -619,37 +618,4 @@ final class DayZPanelGateway
         }
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function fromCache(string $key): ?array
-    {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return null;
-        }
-
-        try {
-            $cached = \Illuminate\Support\Facades\Cache::get($key);
-
-            return is_array($cached) ? $cached : null;
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * @param array<string, mixed> $value
-     */
-    private function toCache(string $key, array $value, int $seconds): void
-    {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return;
-        }
-
-        try {
-            \Illuminate\Support\Facades\Cache::put($key, $value, $seconds);
-        } catch (Throwable) {
-            // Caching is best-effort only.
-        }
-    }
 }

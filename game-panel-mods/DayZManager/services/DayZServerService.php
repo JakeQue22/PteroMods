@@ -30,11 +30,13 @@ final class DayZServerService
 
     /** Marks that SteamCMD is done checking every Workshop mod for updates. */
     private const LOG_WORKSHOP_CHECK_COMPLETE = '[UPDATE]: Steam Workshop mod update check complete!';
+    private const LAUNCH_CACHE_SECONDS = 120;
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZStartupService $startup = new DayZStartupService(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -659,22 +661,54 @@ final class DayZServerService
      */
     public function launchParameters(mixed $server = null, array $enabledFolders = []): array
     {
-        $startup = $this->startup->startup($server);
-        $modFolders = $startup['mods'] !== [] ? $startup['mods'] : $enabledFolders;
-        $schedule = $this->restartSchedule($server);
-
-        return [
-            'launch_parameters'  => (new LaunchParameterBuilder())->build($modFolders),
-            'mod_count'          => count(array_filter($modFolders, static fn (string $f): bool => $f !== '')),
-            'startup_raw'        => $startup['raw'],
-            'startup_rendered'   => $startup['rendered'],
-            'startup_parameters' => $startup['parameters'],
-            'startup_variables'  => $startup['variables'],
-            'startup_source'     => $startup['source'],
-            'mods'               => $startup['mods'],
-            'server_mods'        => $startup['server_mods'],
-            'restart_schedule'   => $schedule,
+        $cacheKey = 'pteromods.dayz.server.launch.' . md5($this->serverIdentifier($server));
+        $fallback = [
+            'launch_parameters' => (new LaunchParameterBuilder())->build($enabledFolders),
+            'mod_count' => count(array_filter($enabledFolders, static fn (string $f): bool => $f !== '')),
+            'startup_raw' => '',
+            'startup_rendered' => '',
+            'startup_parameters' => [],
+            'startup_variables' => [],
+            'startup_source' => 'unavailable',
+            'mods' => [],
+            'server_mods' => [],
+            'restart_schedule' => [
+                'enabled' => false,
+                'interval_minutes' => 0,
+                'next_restart_at' => null,
+                'timed_restart_at' => null,
+                'warnings_sent' => [],
+                'warning_minutes_enabled' => self::RESTART_WARNINGS_MINUTES,
+                'warning_messages' => [],
+            ],
         ];
+
+        $payload = $this->staleCache->remember(
+            $cacheKey,
+            self::LAUNCH_CACHE_SECONDS,
+            self::LAUNCH_CACHE_SECONDS * 20,
+            function () use ($server, $enabledFolders): array {
+                $startup = $this->startup->startup($server);
+                $modFolders = $startup['mods'] !== [] ? $startup['mods'] : $enabledFolders;
+                $schedule = $this->restartSchedule($server);
+
+                return [
+                    'launch_parameters'  => (new LaunchParameterBuilder())->build($modFolders),
+                    'mod_count'          => count(array_filter($modFolders, static fn (string $f): bool => $f !== '')),
+                    'startup_raw'        => $startup['raw'],
+                    'startup_rendered'   => $startup['rendered'],
+                    'startup_parameters' => $startup['parameters'],
+                    'startup_variables'  => $startup['variables'],
+                    'startup_source'     => $startup['source'],
+                    'mods'               => $startup['mods'],
+                    'server_mods'        => $startup['server_mods'],
+                    'restart_schedule'   => $schedule,
+                ];
+            },
+            $fallback,
+        );
+
+        return is_array($payload) ? $payload : $fallback;
     }
 
     private function serverIdentifier(mixed $server): string
