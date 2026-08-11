@@ -126,7 +126,8 @@ class PteroMods_LiveMapBridge : Managed
             playerName = playerName.Replace( "\"", "\\\"" );
 
             string entry = string.Format(
-                "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6,\"alive\":%7,\"health\":%8}",                playerId,
+                "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6,\"alive\":%7,\"health\":%8}",
+                playerId,
                 playerName,
                 Math.Round( pos[0] * 100.0 ) / 100.0,
                 Math.Round( pos[1] * 100.0 ) / 100.0,
