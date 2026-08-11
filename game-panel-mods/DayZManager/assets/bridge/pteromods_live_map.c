@@ -108,11 +108,14 @@ class PteroMods_LiveMapBridge : Managed
             if ( !identity )
                 continue;
 
-            string playerId   = identity.GetId();
-            string playerName = identity.GetName();
-
-            if ( playerId == "" || playerName == "" )
+            string playerId = identity.GetId();
+            if ( playerId == "" )
                 continue;
+
+            // Some DayZ builds reject escaped-quote string literals in Replace()
+            // calls ("quoted string not closed"). Keep the live-map payload
+            // parser-safe by using a stable identifier as display name.
+            string playerName = playerId;
 
             vector pos   = man.GetPosition();
             float  yaw   = man.GetOrientation()[0];
@@ -120,10 +123,6 @@ class PteroMods_LiveMapBridge : Managed
 
             // GetHealth( "", "" ) returns 0.0 – 1.0; convert to 0 – 100.
             float health = Math.Round( man.GetHealth( "", "" ) * 10000.0 ) / 100.0;
-
-            // Minimal JSON string escaping.
-            playerName = playerName.Replace( "\\", "\\\\" );
-            playerName = playerName.Replace( "\"", "\\\"" );
 
             string entry = string.Format(
                 "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6,\"alive\":%7,\"health\":%8}",
