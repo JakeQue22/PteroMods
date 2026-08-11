@@ -7,7 +7,7 @@ namespace GamePanelMods\DayZManager\Services;
 /**
  * Deploys the PteroMods server-side live-map bridge to a DayZ Standalone server
  * container and activates it by appending the required lines to the mission's
- * init.c (mpmissions/dayzOffline.chernarusplus/init.c).
+ * init.c (mpmissions/dayzOffline.<map>/init.c).
  *
  * The bridge is a DayZ Standalone EnfScript (.c) that runs inside the game server
  * process and writes a JSON player snapshot to
@@ -15,23 +15,26 @@ namespace GamePanelMods\DayZManager\Services;
  * then reads via the Wings file API.
  *
  * Deployment writes or updates the following files in the server container:
- *   mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c   ← bridge script
- *   mpmissions/dayzOffline.chernarusplus/init.c                 ← activation appended
+ *   mpmissions/dayzOffline.<map>/pteromods_live_map.c   ← bridge script
+ *   mpmissions/dayzOffline.<map>/init.c                 ← activation appended
  *   /profiles/PteroMods/live_map_players.json                   ← initialised empty snapshot
  *
  * The activation block appended to init.c (only when not already present):
- *   #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c";
+ *   #include "$CurrentDir:mpmissions/dayzOffline.<map>/pteromods_live_map.c";
  *   PteroMods_LiveMap_Init();
  *
  * No database tables are used; everything is file-based.
  */
 final class DayZLiveBridgeService
 {
-    /** Path inside the container where the EnfScript bridge script is deployed. */
-    private const MISSION_SCRIPT_PATH = '/mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c';
+    /** Fallback mission directory when auto-detection fails. */
+    private const DEFAULT_MISSION_PATH = '/mpmissions/dayzOffline.chernarusplus';
 
-    /** Path inside the container where the DayZ mission's init.c lives. */
-    private const INIT_C_PATH = '/mpmissions/dayzOffline.chernarusplus/init.c';
+    /** Script filename deployed into the active mission directory. */
+    private const MISSION_SCRIPT_FILE = 'pteromods_live_map.c';
+
+    /** init.c filename inside the active mission directory. */
+    private const INIT_C_FILE = 'init.c';
 
     /**
      * Marker string used to detect whether the activation block has already
@@ -47,7 +50,7 @@ final class DayZLiveBridgeService
      * statement next to the include — a bare call at file scope makes the
      * mission fail to compile and the server refuses to load it.
      */
-    private const INIT_C_INCLUDE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"\$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c\";\n";
+    private const INIT_C_INCLUDE_TEMPLATE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"\$CurrentDir:%s\";\n";
 
     /** Activation call injected at the start of the mission's main() function. */
     private const INIT_C_CALL = "\n\t// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n\tPteroMods_LiveMap_Init();\n";
@@ -60,11 +63,11 @@ final class DayZLiveBridgeService
      * call at file scope, which makes the mission fail to compile. Detecting it
      * lets the panel repair such servers automatically.
      */
-    private const INIT_C_INCLUDE_PATTERN = '/^\s*#include\s+"(?:\$CurrentDir:mpmissions\/dayzOffline\.chernarusplus\/)?pteromods_live_map\.c"\s*;?\s*$/mi';
+    private const INIT_C_INCLUDE_PATTERN = '/^\s*#include\s+"(?:(?:\$CurrentDir:)?(?:mpmissions\/)?[^"\/]+\/)?pteromods_live_map\.c"\s*;?\s*$/mi';
 
     private const INIT_C_CALL_PATTERN = '/^\s*PteroMods_LiveMap_Init\s*\(\s*\)\s*;\s*$/mi';
 
-    private const INIT_C_LEGACY_PATTERN = '/#include\s+"(?:\$CurrentDir:mpmissions\/dayzOffline\.chernarusplus\/)?pteromods_live_map\.c"\s*;?\s*\n\s*PteroMods_LiveMap_Init\(\);/';
+    private const INIT_C_LEGACY_PATTERN = '/#include\s+"(?:(?:\$CurrentDir:)?(?:mpmissions\/)?[^"\/]+\/)?pteromods_live_map\.c"\s*;?\s*\n\s*PteroMods_LiveMap_Init\(\);/';
 
     /** Path inside the container where the JSON snapshot lives. */
     private const SNAPSHOT_PATH = '/profiles/PteroMods/live_map_players.json';
@@ -94,6 +97,8 @@ final class DayZLiveBridgeService
      */
     public function deploy(mixed $server): array
     {
+        $missionScriptPath = $this->missionScriptPath($server);
+        $initCPath = $this->initCPath($server);
         $template = $this->loadCTemplate();
 
         if ($template === null) {
@@ -107,13 +112,13 @@ final class DayZLiveBridgeService
         }
 
         // Deploy the EnfScript bridge to the mission folder.
-        $scriptOk = $this->gateway->writeFile($server, self::MISSION_SCRIPT_PATH, $template);
+        $scriptOk = $this->gateway->writeFile($server, $missionScriptPath, $template);
 
         // Only append the activation block to init.c when the script was
         // successfully written.  Appending the #include without the file causes
         // a "Can't find file 'pteromods_live_map.c'" compile error on the next
         // server start.
-        $initCOk = $scriptOk && $this->ensureInitC($server);
+        $initCOk = $scriptOk && $this->ensureInitC($server, $initCPath, $this->initCInclude($server));
 
         // Initialise the JSON snapshot file (only when absent).
         $snapshotOk = $this->ensureSnapshot($server);
@@ -140,10 +145,10 @@ final class DayZLiveBridgeService
             'init_c'          => $initCOk,
             'snapshot'        => $snapshotOk,
             'message'         => $message,
-            'script_path'     => self::MISSION_SCRIPT_PATH,
-            'init_c_path'     => self::INIT_C_PATH,
+            'script_path'     => $missionScriptPath,
+            'init_c_path'     => $initCPath,
             'snapshot_path'   => self::SNAPSHOT_PATH,
-            'init_c_include'  => trim(self::INIT_C_INCLUDE),
+            'init_c_include'  => trim($this->initCInclude($server)),
             'init_c_call'     => trim(self::INIT_C_CALL),
         ];
     }
@@ -163,8 +168,8 @@ final class DayZLiveBridgeService
      */
     public function undeploy(mixed $server): array
     {
-        $initCOk  = $this->stripInitC($server);
-        $scriptOk = $this->gateway->deletePath($server, self::MISSION_SCRIPT_PATH);
+        $initCOk  = $this->stripInitC($server, $this->initCPath($server));
+        $scriptOk = $this->gateway->deletePath($server, $this->missionScriptPath($server));
 
         $undeployed = $initCOk && $scriptOk;
 
@@ -185,8 +190,11 @@ final class DayZLiveBridgeService
      */
     public function status(mixed $server): array
     {
-        $script   = $this->gateway->readFile($server, self::MISSION_SCRIPT_PATH);
-        $initC    = $this->gateway->readFile($server, self::INIT_C_PATH);
+        $missionScriptPath = $this->missionScriptPath($server);
+        $initCPath = $this->initCPath($server);
+
+        $script   = $this->gateway->readFile($server, $missionScriptPath);
+        $initC    = $this->gateway->readFile($server, $initCPath);
         $snapshot = $this->gateway->readFile($server, self::SNAPSHOT_PATH);
 
         $scriptPresent   = is_string($script)   && trim($script)   !== '';
@@ -203,8 +211,8 @@ final class DayZLiveBridgeService
             'init_c_include'=> $initCInclude,
             'init_c_legacy' => $initCLegacy,
             'snapshot'      => $snapshotPresent,
-            'script_path'   => self::MISSION_SCRIPT_PATH,
-            'init_c_path'   => self::INIT_C_PATH,
+            'script_path'   => $missionScriptPath,
+            'init_c_path'   => $initCPath,
             'snapshot_path' => self::SNAPSHOT_PATH,
         ];
     }
@@ -213,9 +221,9 @@ final class DayZLiveBridgeService
      * Strips the PteroMods activation block from init.c if it is present.
      * Returns true when the block is absent or was successfully removed.
      */
-    private function stripInitC(mixed $server): bool
+    private function stripInitC(mixed $server, string $initCPath): bool
     {
-        $existing = $this->gateway->readFile($server, self::INIT_C_PATH);
+        $existing = $this->gateway->readFile($server, $initCPath);
 
         if (!is_string($existing)) {
             return true;
@@ -242,7 +250,7 @@ final class DayZLiveBridgeService
         });
         $stripped = implode("\n", $kept);
 
-        return $this->gateway->writeFile($server, self::INIT_C_PATH, $stripped);
+        return $this->gateway->writeFile($server, $initCPath, $stripped);
     }
 
     /**
@@ -259,22 +267,68 @@ final class DayZLiveBridgeService
         return is_string($content) && $content !== '' ? $content : null;
     }
 
+    private function missionPath(mixed $server): string
+    {
+        $missions = [];
+
+        try {
+            foreach ($this->gateway->listDirectory($server, '/mpmissions') as $entry) {
+                if (!is_array($entry) || empty($entry['directory'])) {
+                    continue;
+                }
+
+                $name = trim((string) ($entry['name'] ?? ''));
+
+                if ($name !== '') {
+                    $missions[] = $name;
+                }
+            }
+        } catch (\Throwable) {
+            return self::DEFAULT_MISSION_PATH;
+        }
+
+        foreach ($missions as $mission) {
+            if (str_starts_with(strtolower($mission), 'dayzoffline.')) {
+                return '/mpmissions/' . $mission;
+            }
+        }
+
+        return $missions === [] ? self::DEFAULT_MISSION_PATH : '/mpmissions/' . $missions[0];
+    }
+
+    private function missionScriptPath(mixed $server): string
+    {
+        return rtrim($this->missionPath($server), '/') . '/' . self::MISSION_SCRIPT_FILE;
+    }
+
+    private function initCPath(mixed $server): string
+    {
+        return rtrim($this->missionPath($server), '/') . '/' . self::INIT_C_FILE;
+    }
+
+    private function initCInclude(mixed $server): string
+    {
+        $scriptPath = ltrim($this->missionScriptPath($server), '/');
+
+        return sprintf(self::INIT_C_INCLUDE_TEMPLATE, $scriptPath);
+    }
+
     /**
      * Reads init.c from the container (creating an empty file if absent) and
      * appends the PteroMods activation block when it is not already present.
      * Returns true when init.c contains (or now contains) the block.
      */
-    private function ensureInitC(mixed $server): bool
+    private function ensureInitC(mixed $server, string $initCPath, string $includeBlock): bool
     {
-        $existing = $this->gateway->readFile($server, self::INIT_C_PATH);
+        $existing = $this->gateway->readFile($server, $initCPath);
         $content  = is_string($existing) ? $existing : '';
 
-        $content = preg_replace('/^\s*#include\s+"(?:\$CurrentDir:mpmissions\/dayzOffline\.chernarusplus\/)?pteromods_live_map\.c"\s*;?\s*\R?/mi', '', $content) ?? $content;
+        $content = preg_replace('/^\s*#include\s+"(?:(?:\$CurrentDir:)?(?:mpmissions\/)?[^"\/]+\/)?pteromods_live_map\.c"\s*;?\s*\R?/mi', '', $content) ?? $content;
         $content = preg_replace('/^\s*\/\/\s*PteroMods Live Map Bridge.*\R?/mi', '', $content) ?? $content;
         $content = preg_replace('/^\s*\/\/\s*Remove this line, the.*\R?/mi', '', $content) ?? $content;
         $content = preg_replace(self::INIT_C_CALL_PATTERN, '', $content) ?? $content;
 
-        $content = self::INIT_C_INCLUDE . ltrim($content);
+        $content = $includeBlock . ltrim($content);
 
         // The activation call must live inside main(); without it the mission
         // either fails to compile (bare call at file scope) or never starts the
@@ -288,7 +342,7 @@ final class DayZLiveBridgeService
             . self::INIT_C_CALL
             . substr($content, $insertAt);
 
-        return $this->gateway->writeFile($server, self::INIT_C_PATH, $updated);
+        return $this->gateway->writeFile($server, $initCPath, $updated);
     }
 
     /**

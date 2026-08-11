@@ -7,11 +7,11 @@
  *
  * ── HOW TO ACTIVATE ──────────────────────────────────────────────────────────
  * The PteroMods panel edits your mission's init.c
- * (mpmissions/dayzOffline.chernarusplus/init.c) in two places.
+ * (mpmissions/dayzOffline.<map>/init.c) in two places.
  *
  * 1. At the very top of the file:
  *
- *        #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c";
+ *        #include "$CurrentDir:mpmissions/dayzOffline.<map>/pteromods_live_map.c";
  *
  * 2. Inside the existing main() function (EnfScript does not allow a bare call
  *    at file scope — that makes the mission fail to compile):

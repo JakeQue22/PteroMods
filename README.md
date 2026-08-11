@@ -500,13 +500,13 @@ The **Live Map** tab shows an interactive Leaflet map of live player positions. 
 
 #### Server-side bridge setup (required for live data)
 
-The panel ships an EnfScript bridge (`assets/bridge/pteromods_live_map.c`) that writes the snapshot for you. **DayZ Manager → Live Map → Deploy Bridge** copies it to `mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c` and wires it into the mission's `init.c`. Restart the server afterwards — the bridge only starts when the mission is (re)loaded.
+The panel ships an EnfScript bridge (`assets/bridge/pteromods_live_map.c`) that writes the snapshot for you. **DayZ Manager → Live Map → Deploy Bridge** copies it to your active mission folder (`mpmissions/dayzOffline.<map>/pteromods_live_map.c`) and wires it into that mission's `init.c`. Restart the server afterwards — the bridge only starts when the mission is (re)loaded.
 
 ##### The two init.c lines (required)
 
 Without these lines nothing is ever written to the snapshot file and the Live Map stays empty, even though the map itself loads. If you removed them, add them back exactly like this:
 
-1. At the very top of `mpmissions/dayzOffline.chernarusplus/init.c`:
+1. At the very top of your active mission `init.c` (for example `mpmissions/dayzOffline.chernarusplus/init.c`):
 
    ```c
    #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c";
@@ -525,7 +525,7 @@ Without these lines nothing is ever written to the snapshot file and the Live Ma
 
 > ⚠️ `PteroMods_LiveMap_Init();` must be **inside** `main()`. EnfScript only allows declarations at file scope, so putting the call next to the `#include` makes the mission fail to compile and the server will not start. (Panel versions before this fix appended it at file scope — redeploy the bridge to have it corrected automatically.)
 >
-> The `#include` also requires `mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c` to exist, otherwise the server logs `Can't find file 'pteromods_live_map.c'`. Deploy the bridge first, or remove the `#include` again.
+> The `#include` also requires `mpmissions/dayzOffline.<map>/pteromods_live_map.c` to exist, otherwise the server logs `Can't find file 'pteromods_live_map.c'`. Deploy the bridge first, or remove the `#include` again.
 
 Use **Live Map → Remove Bridge** to strip both lines and delete the script if you ever need to roll back.
 
