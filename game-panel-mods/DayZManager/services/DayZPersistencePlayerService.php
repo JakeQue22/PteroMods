@@ -42,7 +42,7 @@ final class DayZPersistencePlayerService
 
             $players = $this->extractPlayers($raw, $mapName);
 
-            if ($players !== []) {
+            if (is_array($players)) {
                 return ['status' => 'ok', 'source_path' => $path, 'players' => $players];
             }
         }
@@ -84,14 +84,14 @@ final class DayZPersistencePlayerService
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return list<array<string, mixed>>|null
      */
-    private function extractPlayers(string $raw, string $mapName): array
+    private function extractPlayers(string $raw, string $mapName): ?array
     {
         $tmpPath = tempnam(sys_get_temp_dir(), 'pteromods-dayz-db-');
 
         if ($tmpPath === false) {
-            return [];
+            return null;
         }
 
         file_put_contents($tmpPath, $raw);
@@ -100,7 +100,7 @@ final class DayZPersistencePlayerService
             $db = new SQLite3($tmpPath, SQLITE3_OPEN_READONLY);
         } catch (Throwable) {
             @unlink($tmpPath);
-            return [];
+            return null;
         }
 
         try {

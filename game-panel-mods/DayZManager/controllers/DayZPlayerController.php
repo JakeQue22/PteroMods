@@ -57,13 +57,13 @@ final class DayZPlayerController
 
         if ($this->context->expectsJson()) {
             return [
-               'server_id' => $resolved['id'],
-               'players' => $persisted['players'] ?? [],
-               'live_players' => $livePlayers,
-               'player_lists' => $playerLists,
-               'persistence_status' => $persisted['status'] ?? 'not_found',
-               'persistence_source_path' => $persisted['source_path'] ?? null,
-               'map_definition' => $snapshot['map_definition'] ?? null,
+                'server_id' => $resolved['id'],
+                'players' => $persisted['players'] ?? [],
+                'live_players' => $livePlayers,
+                'player_lists' => $playerLists,
+                'persistence_status' => $persisted['status'] ?? 'not_found',
+                'persistence_source_path' => $persisted['source_path'] ?? null,
+                'map_definition' => $snapshot['map_definition'] ?? null,
             ];
         }
 
