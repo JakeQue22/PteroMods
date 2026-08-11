@@ -106,6 +106,7 @@ final class DayZServerController
             : [];
         $warningMessagesInput = $this->context->input('warning_messages', []);
         $warningMessages = is_array($warningMessagesInput) ? $warningMessagesInput : [];
+        $startTime = $this->context->stringInput('start_time', '');
 
         return $this->service->saveRestartSchedule(
             $model,
@@ -113,6 +114,7 @@ final class DayZServerController
             $enabled,
             $warningMinutesEnabled,
             $warningMessages,
+            $startTime,
         );
     }
 

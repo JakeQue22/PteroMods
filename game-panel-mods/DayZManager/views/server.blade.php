@@ -38,6 +38,9 @@
     $warningMinuteOptions = [180, 120, 60, 30, 20, 15, 10, 5, 2, 1];
     $warningMinutesEnabled = array_map('intval', $restartSchedule['warning_minutes_enabled'] ?? $warningMinuteOptions);
     $warningMessages = is_array($restartSchedule['warning_messages'] ?? null) ? $restartSchedule['warning_messages'] : [];
+    $restartStartTime = (string) ($restartSchedule['start_time'] ?? '');
+    $nextRestartDisplay = (string) ($restartSchedule['next_restart_at_display'] ?? '');
+    $lastRestartDisplay = (string) ($restartSchedule['last_restart_at_display'] ?? '');
 @endphp
 
 <section class="dz-card">
@@ -66,8 +69,16 @@
                 <option value="{{ $hours }}" {{ $intervalHours === $hours ? 'selected' : '' }}>{{ $hours }} hour{{ $hours === 1 ? '' : 's' }}</option>
             @endforeach
         </select>
+        <label class="dz-sub" style="display:flex;align-items:center;gap:0.45rem;">
+            First restart at
+            <input id="dz-restart-start-time" class="dz-input" type="time" style="max-width:8rem;" value="{{ $restartStartTime }}" />
+        </label>
         <button class="dz-btn" onclick="pteroSaveRestartSchedule()">Save schedule</button>
     </div>
+    <p class="dz-sub" style="margin-top:0.5rem;">
+        Restarts are anchored to the time set above (server time), so a 6 hour schedule starting at 04:00 restarts at
+        04:00, 10:00, 16:00 and 22:00. Leave the time empty to simply restart every interval from now.
+    </p>
     <dl class="dz-grid" style="margin-top:0.9rem;">
         @foreach ($warningMinuteOptions as $minutes)
             <div class="dz-stat">
@@ -94,9 +105,11 @@
     <p class="dz-sub" style="margin-top:0.35rem;">
         Recommended: keep 10, 2, and 1 minute warnings enabled so players can log out and save.
     </p>
+    <p id="dz-restart-last" class="dz-sub">
+        Last restart: {{ $lastRestartDisplay !== '' ? $lastRestartDisplay : 'Never' }}
+    </p>
     <p id="dz-restart-next" class="dz-sub">
-        Next restart:
-        {{ !empty($restartSchedule['next_restart_at']) ? $restartSchedule['next_restart_at'] : 'Not scheduled' }}
+        Next restart: {{ $nextRestartDisplay !== '' ? $nextRestartDisplay : 'Not scheduled' }}
     </p>
     <p id="dz-restart-schedule-status" class="dz-status dz-hidden"></p>
 </section>
@@ -107,10 +120,13 @@
         Restart the server after a countdown, with warning messages sent to global chat at each configured
         warning interval. Uses the same warning texts set in Scheduled Restarts above.
     </p>
-    @php $timedRestartAt = $restart_schedule['timed_restart_at'] ?? null; @endphp
+    @php
+        $timedRestartAt = $restart_schedule['timed_restart_at'] ?? null;
+        $timedRestartDisplay = (string) ($restart_schedule['timed_restart_at_display'] ?? '');
+    @endphp
     @if (!empty($timedRestartAt))
         <p class="dz-sub dz-text-amber" id="dz-timed-restart-active">
-            ⏳ Timed restart scheduled for: <strong>{{ $timedRestartAt }}</strong>
+            ⏳ Timed restart scheduled for: <strong>{{ $timedRestartDisplay !== '' ? $timedRestartDisplay : $timedRestartAt }}</strong>
         </p>
         <div class="dz-form" style="margin-top:0.5rem;">
             <button class="dz-btn dz-btn-red" onclick="pteroCancelTimedRestart()">Cancel Timed Restart</button>
@@ -328,7 +344,8 @@
 
             if (res.ok && data.status === 'scheduled') {
                 if (active) {
-                    active.textContent = '⏳ Timed restart scheduled for: ' + (data.timed_restart_at || '');
+                    active.textContent = '⏳ Timed restart scheduled for: '
+                        + (data.timed_restart_at_display || data.timed_restart_at || '');
                     active.classList.remove('dz-hidden');
                 }
                 if (cancelBtn) { cancelBtn.classList.remove('dz-hidden'); }
@@ -404,6 +421,8 @@
         const enabled = document.getElementById('dz-restart-enabled');
         const interval = document.getElementById('dz-restart-interval');
         const next = document.getElementById('dz-restart-next');
+        const last = document.getElementById('dz-restart-last');
+        const startTime = document.getElementById('dz-restart-start-time');
         const meta = document.querySelector('meta[name="csrf-token"]');
         const warningEnabled = Array.from(document.querySelectorAll('.dz-warning-enabled'));
         const warningMessages = {};
@@ -452,6 +471,7 @@
                 body: JSON.stringify({
                     enabled: !!(enabled && enabled.checked),
                     interval_hours: interval ? interval.value : '6',
+                    start_time: startTime ? startTime.value : '',
                     warning_minutes_enabled: warningMinutesEnabled,
                     warning_messages: warningMessages,
                 }),
@@ -459,7 +479,10 @@
             const data = await res.json().catch(() => ({}));
             if (res.ok && data.status !== 'failed') {
                 if (next) {
-                    next.textContent = 'Next restart: ' + (data.next_restart_at || 'Not scheduled');
+                    next.textContent = 'Next restart: ' + (data.next_restart_at_display || 'Not scheduled');
+                }
+                if (last) {
+                    last.textContent = 'Last restart: ' + (data.last_restart_at_display || 'Never');
                 }
                 // Repopulate message inputs with whatever was actually stored.
                 if (data.warning_messages && typeof data.warning_messages === 'object') {
@@ -491,6 +514,7 @@
         const active = document.getElementById('dz-timed-restart-active');
         const cancelBtn = document.getElementById('dz-timed-cancel-btn');
         const next = document.getElementById('dz-restart-next');
+        const last = document.getElementById('dz-restart-last');
         const timedRestartActive = active && !active.classList.contains('dz-hidden');
         const scheduledEnabled = enabled && enabled.checked;
 
@@ -515,8 +539,11 @@
             });
             const data = await res.json().catch(() => ({}));
             if (res.ok) {
-                if (next && data.next_restart_at) {
-                    next.textContent = 'Next restart: ' + data.next_restart_at;
+                if (next && data.next_restart_at_display) {
+                    next.textContent = 'Next restart: ' + data.next_restart_at_display;
+                }
+                if (last && data.last_restart_at_display) {
+                    last.textContent = 'Last restart: ' + data.last_restart_at_display;
                 }
                 // If the timed restart completed or was cleared server-side, hide the banner.
                 if (active && data.timed_restart_at === null && timedRestartActive) {
