@@ -49,7 +49,7 @@ PteroMods is a modular "Game Panel Mods" framework scaffold for Pterodactyl-styl
 - **Workshop dependency planner** – automatically resolves mod load order and injects CommunityFramework (CF, ID `1559212036`) when a mod requires it.
 - **Launch parameter builder** – generates the correct `-mod=` string from your ordered, enabled mod list; preview endpoint keeps operators informed.
 - **Mod reorder** – drag-and-drop position management persists to `dayz_mods.position` and immediately rebuilds the `-mod=` launch string.
-- **Player list management** – ban, whitelist, and priority queue management by Steam64 ID or GUID, backed by the `dayz_player_lists` database table.
+- **Player manager** – live/observed player activity plus ban, whitelist, and priority queue management, backed by `dayz_observed_players` and `dayz_player_lists`.
 - **Power controls** – start, restart, stop, and kill the server through the Pterodactyl daemon, with an optional reason.
 - **Configuration catalogue** – lists the configuration files that actually exist on the server (server root, `config/`, mission folders, BattlEye, profiles) and deep-links each one to the panel file editor, with the syntax mode matching its extension.
 - **Configuration backups** – every config save is versioned to the `dayz_configuration_backups` table.
@@ -377,15 +377,16 @@ The response includes the updated `-mod=` launch parameter string built from ena
 
 URL: `GET /servers/{server}/dayz/players`
 
-Manage the DayZ ban list, whitelist, and priority queue by Steam64 ID or GUID. All changes are persisted to the `dayz_player_lists` database table.
+The **Players** tab combines live-map activity with the existing DayZ ban list, whitelist, and priority queue. Observed player snapshots are persisted to `dayz_observed_players`, while list changes are persisted to `dayz_player_lists`.
 
 | Action | Method | Endpoint |
 |---|---|---|
 | List entries | GET | `/api/servers/{server}/dayz/players/{list_type}` |
 | Add entry | POST | `/api/servers/{server}/dayz/players/{list_type}` |
 | Remove entry | DELETE | `/api/servers/{server}/dayz/players/{list_type}/{id}` |
+| Kick observed player | POST | `/api/servers/{server}/dayz/player-actions/kick` |
 
-`{list_type}` must be one of `ban`, `whitelist`, or `priority`.
+Observed players show their last known coordinates, heading, health/state, and any inventory payload supplied by the bridge. `{list_type}` must be one of `ban`, `whitelist`, or `priority`.
 
 **Add payload:**
 
@@ -485,7 +486,7 @@ the client application re-renders its navigation.
 
 ### Live Map
 
-The **Live Map** tab shows an interactive 3-D (or 2-D fallback) map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script.
+The **Live Map** tab shows an interactive 3-D (or 2-D fallback) map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. Supported maps render with a self-contained tactical background and labelled major locations so the operator is not left with an empty wireframe plane.
 
 #### How it works
 
