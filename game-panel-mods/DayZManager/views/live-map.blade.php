@@ -4,7 +4,8 @@
     <h2>Live Map</h2>
     <p class="dz-sub">
         Live player positions come from a server-side bridge snapshot in <code>/profiles/PteroMods/live_map_players.json</code>.
-        Map tiles: <a href="https://github.com/WoozyMasta/dzmap" target="_blank" rel="noopener noreferrer">xam.nu community CDN</a>
+        Public viewer: <a href="https://dayz.xam.nu" target="_blank" rel="noopener noreferrer">dayz.xam.nu</a>.
+        This panel uses the raw xam.nu tile template behind that viewer
         (configurable via <a href="{{ $base_url }}/settings">Settings → Live Map tile URL</a>).
     </p>
     <div class="dz-form">
@@ -39,7 +40,8 @@
     const POLL_MS      = 7000;
 
     // Tile URL template from panel settings, e.g.:
-    // https://static.xam.nu/dayz/maps/{map}/1.29/satellite/{z}/{x}/{y}.webp
+    // https://static.xam.nu/dayz/maps/{map}/1.27/satellite/{z}/{x}/{y}.webp
+    // The public viewer URL (https://dayz.xam.nu/#...) is not a Leaflet tile template.
     // {map} is replaced with the map's tile id; {z}/{x}/{y} are Leaflet placeholders.
     const TILE_URL_TPL = @json($tile_url ?? '');
 

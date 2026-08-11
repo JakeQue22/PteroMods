@@ -120,7 +120,7 @@ final class DayZManagerSettingsService
          * Set to an empty string to disable tile loading (shows a plain dark
          * background with named locations only).
          */
-        'live_map_tile_url' => 'https://static.xam.nu/dayz/maps/{map}/1.29/satellite/{z}/{x}/{y}.webp',
+        'live_map_tile_url' => 'https://static.xam.nu/dayz/maps/{map}/1.27/satellite/{z}/{x}/{y}.webp',
 
         /**
          * When true, DayZ Manager automatically takes a database backup at the
@@ -227,8 +227,8 @@ final class DayZManagerSettingsService
         'live_map_tile_url' =>
             'Leaflet tile URL template for the Live Map. '
             . 'Placeholders: {map} (map id, e.g. chernarusplus), {z} (zoom), {x} (column), {y} (row). '
-            . 'Default uses the xam.nu community CDN at DayZ 1.29 — update the version number '
-            . 'after each DayZ update when newer tiles are published. '
+            . 'Use the raw tile template URL here, not the public viewer URL (`https://dayz.xam.nu/#...`). '
+            . 'Default uses the current xam.nu official-map satellite template (`.../1.27/satellite/{z}/{x}/{y}.webp`). '
             . 'Leave empty to disable tile loading (shows a plain dark background).',
     ];
 

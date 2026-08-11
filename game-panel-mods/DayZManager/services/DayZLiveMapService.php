@@ -190,7 +190,7 @@ final class DayZLiveMapService
             'Sakhal' => [
                 'id' => 'sakhal',
                 'name' => 'Sakhal',
-                'world_size' => 12800.0,
+                'world_size' => 15360.0,
                 'locations' => [
                     ['name' => 'Ayan', 'x' => 2875.0, 'z' => 2650.0],
                     ['name' => 'Yasny', 'x' => 7200.0, 'z' => 3150.0],
