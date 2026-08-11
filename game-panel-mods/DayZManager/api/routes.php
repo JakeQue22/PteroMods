@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 $routes = [
+    ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/player-actions/kick',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@kick'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/player-actions/kick',        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@kick'],
     ['method' => 'GET',    'uri' => '/api/servers/{server}/dayz/mods',                     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@index'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/install',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@install'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/remove',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@remove'],
@@ -18,19 +20,19 @@ $routes = [
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/server/restart',            'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@restart'],
     ['method' => 'GET',    'uri' => '/api/servers/{server}/dayz/server/launch-parameters',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@launchParameters'],
     ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/mods',                       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@index'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/install',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@install'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/remove',                 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@remove'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/update',                 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@update'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/enable',                 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@enable'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/disable',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@disable'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/reorder',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@reorder'],
-    ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/configuration',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZConfigurationController@index'],
-    ['method' => 'PUT',    'uri' => '/api/server/{server}/dayz/configuration',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZConfigurationController@save'],
-    ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/players/{list_type}',         'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@index'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/players/{list_type}',         'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@add'],
-    ['method' => 'DELETE', 'uri' => '/api/server/{server}/dayz/players/{list_type}/{id}',    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@remove'],
-    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/server/restart',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@restart'],
-    ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/server/launch-parameters',    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@launchParameters'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/install',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@install'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/remove',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@remove'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/update',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@update'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/enable',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@enable'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/disable',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@disable'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/mods/reorder',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@reorder'],
+    ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/configuration',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZConfigurationController@index'],
+    ['method' => 'PUT',    'uri' => '/api/server/{server}/dayz/configuration',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZConfigurationController@save'],
+    ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/players/{list_type}',        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@index'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/players/{list_type}',        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@add'],
+    ['method' => 'DELETE', 'uri' => '/api/server/{server}/dayz/players/{list_type}/{id}',   'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@remove'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/server/restart',             'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@restart'],
+    ['method' => 'GET',    'uri' => '/api/server/{server}/dayz/server/launch-parameters',   'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@launchParameters'],
 ];
 
 foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix) {

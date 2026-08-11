@@ -204,6 +204,7 @@ body.dz-body {
 }
 
 .dz-status { margin-top: 0.6rem; font-size: 0.78rem; }
+.dz-status-error { color: var(--dz-red); }
 .dz-hidden { display: none; }
 
 .dz-input-wrap { position: relative; }
@@ -578,6 +579,24 @@ code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05r
 
 .dz-live-map-player h4 {
   margin: 0 0 0.6rem;
+}
+
+.dz-player-card {
+  background: var(--dz-surface-alt);
+  border: 1px solid var(--dz-border);
+  border-radius: var(--dz-radius);
+  padding: 0.95rem 1rem;
+}
+
+.dz-player-card + .dz-player-card {
+  margin-top: 0.65rem;
+}
+
+.dz-player-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 @media (max-width: 640px) {

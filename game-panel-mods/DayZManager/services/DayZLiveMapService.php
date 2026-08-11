@@ -19,6 +19,7 @@ final class DayZLiveMapService
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
+        private readonly DayZObservedPlayerService $observedPlayers = new DayZObservedPlayerService(),
     ) {
     }
 
@@ -50,6 +51,7 @@ final class DayZLiveMapService
         $query = $this->query->query($server);
         $mapName = $this->resolveMapName($data, $query);
         $players = $this->normalizePlayers(is_array($data) ? ($data['players'] ?? []) : []);
+        $this->observedPlayers->trackSnapshot($server, $mapName, $players);
         $updatedAt = $this->normalizeUpdatedAt(is_array($data) ? ($data['updated_at'] ?? '') : '');
 
         $status = $source === '' ? 'waiting_for_bridge' : (is_array($data) ? 'ok' : 'invalid_bridge_payload');
@@ -104,7 +106,7 @@ final class DayZLiveMapService
             }
 
             $steam64 = trim((string) ($entry['steam64'] ?? $entry['steam_id'] ?? ''));
-            $name = trim((string) ($entry['name'] ?? ''));
+            $name = trim((string) ($entry['name'] ?? $entry['player_name'] ?? ''));
             $x = $this->floatValue($entry['x'] ?? ($entry['position']['x'] ?? null));
             $y = $this->floatValue($entry['y'] ?? ($entry['position']['y'] ?? null));
             $z = $this->floatValue($entry['z'] ?? ($entry['position']['z'] ?? null));
@@ -122,6 +124,8 @@ final class DayZLiveMapService
                 'direction' => $this->floatValue($entry['direction'] ?? $entry['yaw'] ?? 0.0) ?? 0.0,
                 'alive' => (bool) ($entry['alive'] ?? true),
                 'health' => $this->floatValue($entry['health'] ?? null),
+                'inventory' => $this->normalizeOptionalData($entry['inventory'] ?? null),
+                'metadata' => $this->normalizeMetadata($entry),
             ];
         }
 
@@ -154,12 +158,50 @@ final class DayZLiveMapService
     private function mapDefinition(string $map): array
     {
         $definitions = [
-            'ChernarusPlus' => ['id' => 'chernarusplus', 'name' => 'ChernarusPlus', 'world_size' => 15360.0],
-            'Livonia' => ['id' => 'livonia', 'name' => 'Livonia', 'world_size' => 12800.0],
-            'Sakhal' => ['id' => 'sakhal', 'name' => 'Sakhal', 'world_size' => 12800.0],
+            'ChernarusPlus' => [
+                'id' => 'chernarusplus',
+                'name' => 'ChernarusPlus',
+                'world_size' => 15360.0,
+                'locations' => [
+                    ['name' => 'Balota', 'x' => 4460.0, 'z' => 2450.0],
+                    ['name' => 'Chernogorsk', 'x' => 6620.0, 'z' => 2650.0],
+                    ['name' => 'Elektrozavodsk', 'x' => 10460.0, 'z' => 2280.0],
+                    ['name' => 'Stary Sobor', 'x' => 6320.0, 'z' => 7800.0],
+                    ['name' => 'Vybor', 'x' => 3830.0, 'z' => 8910.0],
+                    ['name' => 'Gorka', 'x' => 9600.0, 'z' => 8850.0],
+                    ['name' => 'Berezino', 'x' => 12050.0, 'z' => 9150.0],
+                    ['name' => 'Severograd', 'x' => 8090.0, 'z' => 12700.0],
+                    ['name' => 'Novodmitrovsk', 'x' => 11350.0, 'z' => 14450.0],
+                    ['name' => 'Tisy', 'x' => 1650.0, 'z' => 14350.0],
+                ],
+            ],
+            'Livonia' => [
+                'id' => 'livonia',
+                'name' => 'Livonia',
+                'world_size' => 12800.0,
+                'locations' => [
+                    ['name' => 'Brenna', 'x' => 5600.0, 'z' => 5700.0],
+                    ['name' => 'Nadbór', 'x' => 7850.0, 'z' => 5950.0],
+                    ['name' => 'Topolin', 'x' => 9800.0, 'z' => 10250.0],
+                    ['name' => 'Sitnik', 'x' => 6650.0, 'z' => 9450.0],
+                    ['name' => 'Swarog', 'x' => 3500.0, 'z' => 10100.0],
+                ],
+            ],
+            'Sakhal' => [
+                'id' => 'sakhal',
+                'name' => 'Sakhal',
+                'world_size' => 12800.0,
+                'locations' => [
+                    ['name' => 'Ayan', 'x' => 2875.0, 'z' => 2650.0],
+                    ['name' => 'Yasny', 'x' => 7200.0, 'z' => 3150.0],
+                    ['name' => 'Boreal Ridge', 'x' => 4200.0, 'z' => 7800.0],
+                    ['name' => 'Tungar', 'x' => 9850.0, 'z' => 8900.0],
+                    ['name' => 'Nizhnoye', 'x' => 6400.0, 'z' => 11200.0],
+                ],
+            ],
         ];
 
-        $base = $definitions[$map] ?? ['id' => strtolower($map), 'name' => $map, 'world_size' => 15360.0];
+        $base = $definitions[$map] ?? ['id' => strtolower($map), 'name' => $map, 'world_size' => 15360.0, 'locations' => []];
 
         return $base + [
             'origin' => ['x' => 0.0, 'z' => 0.0],
@@ -183,6 +225,35 @@ final class DayZLiveMapService
     private function floatValue(mixed $value): ?float
     {
         return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function normalizeOptionalData(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+
+        if (is_string($value)) {
+            $trimmed = trim($value);
+
+            return $trimmed === '' ? null : $trimmed;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     */
+    private function normalizeMetadata(array $entry): ?array
+    {
+        $metadata = $entry['metadata'] ?? $entry['meta'] ?? null;
+
+        if (is_array($metadata)) {
+            return $metadata;
+        }
+
+        return null;
     }
 
     /**

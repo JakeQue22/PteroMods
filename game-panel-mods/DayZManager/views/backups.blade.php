@@ -115,8 +115,8 @@
     var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
 
     function apiBase() {
-        var m = window.location.pathname.match(/^(\/(?:servers?|admin\/servers\/view)\/[^/]+)\/dayz/);
-        return m ? '/api' + m[1] : '';
+        var m = window.location.pathname.match(/^\/(?:servers?|admin\/servers\/view)\/([^/]+)\/dayz/);
+        return m ? '/api/server/' + encodeURIComponent(m[1]) : '';
     }
 
     function req(method, path, body) {
@@ -143,7 +143,7 @@
     window.pteroBackupCreate = function () {
         var label = (document.getElementById('dz-backup-label') || {}).value || '';
         setStatus('dz-backup-create-status', 'Creating backup…');
-        req('POST', window.location.pathname.replace(/\/dayz.*/, '/dayz/backups/create'), { label: label })
+        req('POST', '/dayz/backups/create', { label: label })
             .then(function (d) {
                 if (d.status === 'created') {
                     setStatus('dz-backup-create-status', 'Backup created. Reload to see it in the list.');
@@ -157,7 +157,7 @@
     window.pteroBackupRestore = function (id, restart) {
         if (!confirm('Restore this backup?' + (restart ? ' The server will be restarted.' : ''))) { return; }
         setStatus('dz-backup-action-status', 'Restoring…');
-        req('POST', window.location.pathname.replace(/\/dayz.*/, '/dayz/backups/restore'), { backup_id: id, restart: restart })
+        req('POST', '/dayz/backups/restore', { backup_id: id, restart: restart })
             .then(function (d) {
                 if (d.status === 'restored') {
                     setStatus('dz-backup-action-status', 'Restored.' + (d.restarted ? ' Server is restarting.' : ''));
@@ -171,7 +171,7 @@
     window.pteroBackupDelete = function (id) {
         if (!confirm('Delete this backup? This cannot be undone.')) { return; }
         setStatus('dz-backup-action-status', 'Deleting…');
-        req('DELETE', window.location.pathname.replace(/\/dayz.*/, '/dayz/backups/' + id), null)
+        req('DELETE', '/dayz/backups/' + id, null)
             .then(function (d) {
                 if (d.status === 'deleted') {
                     var row = document.querySelector('[data-backup-id="' + id + '"]');
@@ -189,7 +189,7 @@
         var interval = document.getElementById('dz-ab-interval');
         var keep     = document.getElementById('dz-ab-keep');
         setStatus('dz-ab-settings-status', 'Saving…');
-        req('POST', window.location.pathname.replace(/\/dayz.*/, '/dayz/backups/settings'), {
+        req('POST', '/dayz/backups/settings', {
             settings: {
                 auto_backup_enabled:          enabled  ? (enabled.checked ? '1' : '0') : '0',
                 auto_backup_interval_minutes: interval ? interval.value : '1440',
@@ -203,6 +203,6 @@
     };
 
     // Trigger auto-backup tick silently (fire and forget).
-    req('POST', window.location.pathname.replace(/\/dayz.*/, '/dayz/backups/tick'), {});
+    req('POST', '/dayz/backups/tick', {});
 }());
 </script>

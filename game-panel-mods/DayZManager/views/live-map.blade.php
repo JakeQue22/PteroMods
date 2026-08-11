@@ -117,6 +117,43 @@
         };
     }
 
+    function drawMapBackground(ctx, width, height) {
+        ctx.fillStyle = '#08111c';
+        ctx.fillRect(0, 0, width, height);
+
+        const gradient = ctx.createLinearGradient(0, 0, width, height);
+        gradient.addColorStop(0, '#16324a');
+        gradient.addColorStop(0.4, '#1f4d3f');
+        gradient.addColorStop(1, '#305f42');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(24, 24, width - 48, height - 48);
+
+        ctx.strokeStyle = 'rgba(12, 18, 30, 0.45)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 15; i++) {
+            const x = (i / 15) * width;
+            const y = (i / 15) * height;
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+        }
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.strokeRect(24.5, 24.5, width - 49, height - 49);
+
+        const locations = Array.isArray(state.map.locations) ? state.map.locations : [];
+        ctx.fillStyle = 'rgba(230,235,245,0.92)';
+        ctx.font = 'bold 16px sans-serif';
+        locations.forEach(function (location) {
+            const pos = worldToCanvas(Number(location.x || 0), Number(location.z || 0), width, height);
+            ctx.beginPath();
+            ctx.fillStyle = '#fbbf24';
+            ctx.arc(pos.x, pos.y, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(230,235,245,0.92)';
+            ctx.fillText(String(location.name || ''), pos.x + 8, pos.y - 8);
+        });
+    }
+
     function sceneToScreen(vector) {
         const width = root.clientWidth || 1;
         const height = root.clientHeight || 1;
@@ -335,13 +372,7 @@
 
         ctx.fillStyle = '#0b0f19';
         ctx.fillRect(0, 0, width, height);
-        ctx.strokeStyle = '#1f3a56';
-        for (let i = 0; i <= 10; i++) {
-            const x = (i / 10) * width;
-            const y = (i / 10) * height;
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
-        }
+        drawMapBackground(ctx, width, height);
 
         players.forEach(function (player) {
             const pos = worldToCanvas(Number(player.x || 0), Number(player.z || 0), width, height);
@@ -361,7 +392,14 @@
             state.scene.remove(state.ground);
         }
         const geometry = new window.THREE.PlaneGeometry(size, size, 50, 50);
-        const material = new window.THREE.MeshBasicMaterial({ color: 0x122033, wireframe: true });
+        const canvas = document.createElement('canvas');
+        canvas.width = 2048;
+        canvas.height = 2048;
+        drawMapBackground(canvas.getContext('2d'), canvas.width, canvas.height);
+        const texture = new window.THREE.CanvasTexture(canvas);
+        texture.colorSpace = window.THREE.SRGBColorSpace || texture.colorSpace;
+        texture.needsUpdate = true;
+        const material = new window.THREE.MeshBasicMaterial({ map: texture });
         const mesh = new window.THREE.Mesh(geometry, material);
         mesh.rotation.x = -Math.PI / 2;
         state.scene.add(mesh);
