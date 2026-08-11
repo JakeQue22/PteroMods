@@ -16,12 +16,14 @@ final class DayZDashboardService
     /** DayZ's default slot count, used when the max player count is unknown. */
     private const DEFAULT_MAX_PLAYERS = 64;
     private const DEFAULT_MAP = 'ChernarusPlus';
+    private const STATS_CACHE_SECONDS = 120;
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZWorkshopService $workshop = new DayZWorkshopService(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -32,10 +34,15 @@ final class DayZDashboardService
     {
         $resolved = $this->context->resolve($server);
         $model = $resolved['model'];
-        $installedMods = $this->workshop->installedMods($model);
-        $live = $this->query->query($model);
-        $details = $this->gateway->details($model);
+        $stats = $this->cachedStats($model);
+        $live = $stats['live'];
+        $details = $stats['details'];
         $usage = is_array($details['utilization'] ?? null) ? $details['utilization'] : [];
+
+        // Delegate to the workshop service directly so that the dashboard and
+        // the Workshop Mods page share the same stale-while-revalidate cache,
+        // rather than each maintaining an independent copy that can diverge.
+        $installedMods = $this->workshop->installedMods($model);
 
         $cpuLimit = $this->context->attribute($model, ['cpu', 'cpu_limit']);
         $memoryLimitMb = $this->intValue($model, ['memory', 'memory_limit']);
@@ -60,6 +67,38 @@ final class DayZDashboardService
             'connection_address'   => $this->query->connectionAddress($model) ?? 'Unknown',
             'query_endpoint'       => $live['endpoint'] ?? 'Unknown',
             'query_online'         => $live['online'],
+        ];
+    }
+
+    /**
+     * @return array{live: array<string, mixed>, details: array<string, mixed>|null}
+     */
+    private function cachedStats(mixed $model): array
+    {
+        $key = 'pteromods.dayz.dashboard.stats.' . md5($this->context->attribute($model, ['uuid', 'uuidShort', 'id']));
+        $fallback = [
+            'live'    => ['online' => false, 'players' => null, 'max_players' => null, 'map' => null, 'version' => null, 'endpoint' => null, 'name' => null],
+            'details' => null,
+        ];
+        $stats = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            fn (): array => $this->gatherStats($model),
+            $fallback,
+        );
+
+        return is_array($stats) ? $stats : $fallback;
+    }
+
+    /**
+     * @return array{live: array<string, mixed>, details: array<string, mixed>|null}
+     */
+    private function gatherStats(mixed $model): array
+    {
+        return [
+            'live' => $this->query->query($model),
+            'details' => $this->gateway->details($model),
         ];
     }
 
@@ -109,19 +148,30 @@ final class DayZDashboardService
      */
     private function installedBuildId(mixed $model): string
     {
-        foreach (['/steamapps/appmanifest_223350.acf', '/appmanifest_223350.acf'] as $path) {
-            $contents = $this->gateway->readFile($model, $path);
+        $key = 'pteromods.dayz.dashboard.buildid.' . md5($this->context->attribute($model, ['uuid', 'uuidShort', 'id']));
+        $buildId = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            function () use ($model): string {
+                foreach (['/steamapps/appmanifest_223350.acf', '/appmanifest_223350.acf'] as $path) {
+                    $contents = $this->gateway->readFile($model, $path);
 
-            if ($contents === null || $contents === '') {
-                continue;
-            }
+                    if ($contents === null || $contents === '') {
+                        continue;
+                    }
 
-            if (preg_match('/"buildid"\s*"(\d+)"/i', $contents, $matches) === 1) {
-                return $matches[1];
-            }
-        }
+                    if (preg_match('/"buildid"\s*"(\d+)"/i', $contents, $matches) === 1) {
+                        return $matches[1];
+                    }
+                }
 
-        return '';
+                return '';
+            },
+            '',
+        );
+
+        return is_string($buildId) ? $buildId : '';
     }
 
     private function fallback(string $value, string $fallback = 'N/A'): string
@@ -166,7 +216,7 @@ final class DayZDashboardService
      */
     public function formatPlayerCount(array $live): string
     {
-        $players = $live['online'] && $live['players'] !== null ? $live['players'] : 0;
+        $players = $live['players'] !== null ? $live['players'] : 0;
         $maxPlayers = $live['max_players'] !== null && $live['max_players'] > 0
             ? $live['max_players']
             : self::DEFAULT_MAX_PLAYERS;

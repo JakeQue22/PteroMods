@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
+use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZWorkshopService;
 use Throwable;
@@ -16,8 +18,10 @@ final class DayZWorkshopController
 {
     public function __construct(
         private readonly DayZWorkshopService $service = new DayZWorkshopService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
 
@@ -27,8 +31,10 @@ final class DayZWorkshopController
     public function index(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         try {
+            $this->logScrub->tick($resolved['model']);
             $data = [
                 'client_id'      => $this->context->clientIdentifier($resolved['model'], $resolved['id']),
                 'settings'       => $this->service->settings($resolved['model']),
@@ -53,18 +59,22 @@ final class DayZWorkshopController
      * @param array<string, array{dependencies?: list<string>, requires_cf?: bool}> $metadata
      * @return array<string, mixed>
      */
-    public function install(mixed $server = null, string $reference = '', array $metadata = []): array
+    public function install(mixed $server = null, string $reference = '', array $metadata = []): mixed
     {
-        $model = $this->manage($server);
+        try {
+            $model = $this->manage($server);
 
-        $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
-        $forceRestart = filter_var(
-            $this->context->input('force_restart', false),
-            FILTER_VALIDATE_BOOL,
-            FILTER_NULL_ON_FAILURE,
-        ) ?? false;
+            $reference = $reference !== '' ? $reference : $this->context->stringInput('reference');
+            $forceRestart = filter_var(
+                $this->context->input('force_restart', false),
+                FILTER_VALIDATE_BOOL,
+                FILTER_NULL_ON_FAILURE,
+            ) ?? false;
 
-        return $this->service->installPlan($reference, $metadata, $model, $forceRestart);
+            return $this->service->installPlan($reference, $metadata, $model, $forceRestart);
+        } catch (Throwable $exception) {
+            return $this->errorResponse($exception->getMessage());
+        }
     }
 
     /**
@@ -151,66 +161,86 @@ final class DayZWorkshopController
     }
 
     /**
-     * @return array<string, mixed>
+     * @return mixed
      */
-    public function update(mixed $server = null, string $workshopId = ''): array
+    public function update(mixed $server = null, string $workshopId = ''): mixed
     {
-        $this->manage($server);
+        try {
+            $this->manage($server);
 
-        return $this->service->update($this->workshopId($workshopId));
+            return $this->service->update($this->workshopId($workshopId));
+        } catch (Throwable $exception) {
+            return $this->errorResponse($exception->getMessage());
+        }
     }
 
     /**
-     * @return array<string, mixed>
+     * @return mixed
      */
-    public function remove(mixed $server = null, string $workshopId = ''): array
+    public function remove(mixed $server = null, string $workshopId = ''): mixed
     {
-        $model = $this->manage($server);
-        $queueOnly = filter_var(
-            $this->context->input('queue_only', false),
-            FILTER_VALIDATE_BOOL,
-            FILTER_NULL_ON_FAILURE,
-        ) ?? false;
+        try {
+            $model = $this->manage($server);
+            $queueOnly = filter_var(
+                $this->context->input('queue_only', false),
+                FILTER_VALIDATE_BOOL,
+                FILTER_NULL_ON_FAILURE,
+            ) ?? false;
 
-        return $queueOnly
-            ? $this->service->removeQueued($this->workshopId($workshopId), $model)
-            : $this->service->remove($this->workshopId($workshopId), $model);
+            return $queueOnly
+                ? $this->service->removeQueued($this->workshopId($workshopId), $model)
+                : $this->service->remove($this->workshopId($workshopId), $model);
+        } catch (Throwable $exception) {
+            return $this->errorResponse($exception->getMessage());
+        }
     }
 
     /**
-     * @return array<string, mixed>
+     * @return mixed
      */
-    public function enable(mixed $server = null, string $workshopId = ''): array
+    public function enable(mixed $server = null, string $workshopId = ''): mixed
     {
-        $model = $this->manage($server);
+        try {
+            $model = $this->manage($server);
 
-        return $this->service->toggle($this->workshopId($workshopId), true, $model);
+            return $this->service->toggle($this->workshopId($workshopId), true, $model);
+        } catch (Throwable $exception) {
+            return $this->errorResponse($exception->getMessage());
+        }
     }
 
     /**
-     * @return array<string, mixed>
+     * @return mixed
      */
-    public function disable(mixed $server = null, string $workshopId = ''): array
+    public function disable(mixed $server = null, string $workshopId = ''): mixed
     {
-        $model = $this->manage($server);
+        try {
+            $model = $this->manage($server);
 
-        return $this->service->toggle($this->workshopId($workshopId), false, $model);
+            return $this->service->toggle($this->workshopId($workshopId), false, $model);
+        } catch (Throwable $exception) {
+            return $this->errorResponse($exception->getMessage());
+        }
     }
 
     /**
      * @param list<string> $orderedWorkshopIds  Workshop IDs in the desired load order.
-     * @return array<string, mixed>
+     * @return mixed
      */
-    public function reorder(mixed $server = null, array $orderedWorkshopIds = []): array
+    public function reorder(mixed $server = null, array $orderedWorkshopIds = []): mixed
     {
-        $model = $this->manage($server);
+        try {
+            $model = $this->manage($server);
 
-        if ($orderedWorkshopIds === []) {
-            $input = $this->context->input('ordered_ids', []);
-            $orderedWorkshopIds = is_array($input) ? array_values($input) : [];
+            if ($orderedWorkshopIds === []) {
+                $input = $this->context->input('ordered_ids', []);
+                $orderedWorkshopIds = is_array($input) ? array_values($input) : [];
+            }
+
+            return $this->service->reorder($orderedWorkshopIds, $model);
+        } catch (Throwable $exception) {
+            return $this->errorResponse($exception->getMessage());
         }
-
-        return $this->service->reorder($orderedWorkshopIds, $model);
     }
 
     /**
@@ -227,5 +257,25 @@ final class DayZWorkshopController
     private function workshopId(string $workshopId): string
     {
         return $workshopId !== '' ? $workshopId : $this->context->stringInput('workshop_id');
+    }
+
+    /**
+     * Turns an uncaught exception into a well-formed JSON error payload
+     * instead of letting it bubble up as a raw framework 500. The Browse
+     * Workshop / queue JS reads `data.message` regardless of HTTP status, so
+     * callers still see a meaningful reason for the failure instead of a
+     * bare, body-less 500 (which is what the user saw when queueing a mod
+     * from Browse Workshop, even though the queue persistence had already
+     * happened before the exception was thrown).
+     */
+    private function errorResponse(string $message): mixed
+    {
+        $payload = ['status' => 'failed', 'message' => $message !== '' ? $message : 'Request failed.'];
+
+        if (function_exists('response')) {
+            return response($payload, 500);
+        }
+
+        return $payload;
     }
 }

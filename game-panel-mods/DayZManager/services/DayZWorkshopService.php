@@ -25,6 +25,7 @@ final class DayZWorkshopService
 {
     /** Upper bound on scanned mod folders, to keep page loads predictable. */
     private const MAX_MODS = 60;
+    private const STATS_CACHE_SECONDS = 120;
 
     /** How long a fetched Workshop item description is cached for. */
     private const INFO_CACHE_SECONDS = 3600;
@@ -41,6 +42,7 @@ final class DayZWorkshopService
         private readonly WorkshopInfoClient $info = new WorkshopInfoClient(),
         private readonly WorkshopBrowseClient $browseClient = new WorkshopBrowseClient(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -65,9 +67,10 @@ final class DayZWorkshopService
     public function settings(mixed $server = null): array
     {
         $server = $this->resolveServer($server);
-        $startup = $this->startup->startup($server);
-        $installed = $this->installedMods($server);
-        $enabled = $this->enabledFolders($server);
+        $stats = $this->cachedWorkshopStats($server);
+        $startup = $stats['startup'];
+        $installed = $stats['installed'];
+        $enabled = $stats['enabled'];
 
         return [
             'mod_directory'          => '/ (server root)',
@@ -94,6 +97,48 @@ final class DayZWorkshopService
             return $this->memo[$memoKey];
         }
 
+        return $this->memo[$memoKey] = $this->cachedInstalledMods($server, $memoKey);
+    }
+
+    /**
+     * Stale-while-revalidate cache around the expensive mod scan (file
+     * listing + per-folder meta.cpp reads + per-mod Workshop API lookups),
+     * whose cost grows with the number of installed mods. Without this, the
+     * Workshop Mods page recomputed the full scan from scratch on every
+     * request, which made `/dayz/mods` progressively slower to load the more
+     * mods were active. `settings()` already benefited from this caching via
+     * `cachedWorkshopStats()`, but `installedMods()` itself (used directly by
+     * the mods page and dashboard) did not, so the expensive work still ran
+     * on every request that only needed the mod list.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function cachedInstalledMods(mixed $server, string $memoKey): array
+    {
+        $key = 'pteromods.dayz.workshop.installed_mods.' . md5($memoKey);
+        $mods = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            fn (): array => $this->scanInstalledMods($server),
+            [],
+            // Never replace a non-empty mod list with an empty one.  A transient
+            // Wings API error, a race during container startup, or any other
+            // reason the scan returns 0 mods must not wipe out the last known
+            // good list.  Stale mod data is always preferable to showing 0 mods.
+            static fn (mixed $new, mixed $old): bool =>
+                !is_array($old) || count($old) === 0
+                || (is_array($new) && count($new) > 0),
+        );
+
+        return is_array($mods) ? $mods : [];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function scanInstalledMods(mixed $server): array
+    {
         $startup = $this->startup->startup($server);
         $loadOrder = $startup['mods'];
         $serverMods = $startup['server_mods'];
@@ -101,7 +146,7 @@ final class DayZWorkshopService
         $folders = $this->modFolders($server);
 
         if ($folders === [] && $loadOrder === [] && $serverMods === []) {
-            return $this->memo[$memoKey] = $this->databaseMods();
+            return $this->databaseMods();
         }
 
         // Proactively rename any folder still using its numeric Workshop ID
@@ -132,7 +177,23 @@ final class DayZWorkshopService
         $known = [];
 
         foreach ($folders as $folder) {
-            $known[strtolower($folder['name'])] = $folder;
+            $folderKey = strtolower($folder['name']);
+            $known[$folderKey] = $folder;
+
+            // Also index by the "other" form (bare numeric <-> @-prefixed) so a
+            // folder on disk always matches regardless of which form the
+            // startup command's load order happens to reference it by. This
+            // is what makes a freshly-installed mod's tile resolve to its
+            // real `@<id>` folder instead of showing as "files missing":
+            // appendToEnabledLoadOrder() (further below) records the bare
+            // numeric Workshop ID in the load order, while the folder on disk
+            // is always named `@<id>` (or renamed to a friendly name).
+            $bareKey = ltrim($folderKey, '@');
+
+            if (ctype_digit($bareKey)) {
+                $known[$bareKey] ??= $folder;
+                $known['@' . $bareKey] ??= $folder;
+            }
         }
 
         // Mods referenced by the startup command come first, in load order, so
@@ -298,7 +359,7 @@ final class DayZWorkshopService
             $mods[$idx]['position'] = $idx;
         }
 
-        return $this->memo[$memoKey] = $mods;
+        return $mods;
     }
 
     /**
@@ -511,6 +572,7 @@ final class DayZWorkshopService
 
         $this->persistQueue($server, $queue);
         $this->gateway->clearFileListingCache($server);
+        $this->invalidateModsCache($server);
 
         // Append the new workshop IDs to the egg's MODS variable so the
         // startup script can pass them to SteamCMD on the next boot.
@@ -529,10 +591,28 @@ final class DayZWorkshopService
         // queued + newly-planned) so the file the server/egg reads for mod
         // downloads always reflects everything currently queued, not just
         // this single request's IDs.
-        $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
+        //
+        // This write is the *only* mechanism that actually reaches SteamCMD
+        // for eggs whose mod variable (e.g. `MODIFICATIONS`) is not one of
+        // DayZStartupService::MOD_LIST_VARIABLES, so a silent failure here
+        // (Wings unreachable, container not yet created, etc.) means the
+        // Workshop ID never gets communicated to the startup script at all —
+        // the mod would then sit in the queue forever, since nothing ever
+        // asked SteamCMD to fetch it. Surface that failure in the response
+        // instead of swallowing it, so the operator knows to retry.
+        $modlistSynced = $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server, $plan));
 
         // Restart only when explicitly requested by the operator.
         $restarted = $forceRestart ? $this->gateway->power($server, 'restart') : false;
+
+        $message = $restarted
+            ? 'Install queued. The server is restarting so its startup script can download queued mods via SteamCMD.'
+            : 'Install queued. Restart the server when you are ready to download queued mods via SteamCMD.';
+
+        if (!$modlistSynced) {
+            $message = 'Install queued, but the modlist could not be updated on the server (the node may be offline). '
+                . 'The mod will stay in the queue until you retry the install so SteamCMD is actually told to download it.';
+        }
 
         return [
             'workshop_id' => $workshopId,
@@ -545,10 +625,8 @@ final class DayZWorkshopService
             'restart_after_update' => $restarted,
             'restart_required' => true,
             'auto_dependency_installation' => true,
-            'status' => 'queued',
-            'message' => $restarted
-                ? 'Install queued. The server is restarting so its startup script can download queued mods via SteamCMD.'
-                : 'Install queued. Restart the server when you are ready to download queued mods via SteamCMD.',
+            'status' => $modlistSynced ? 'queued' : 'failed',
+            'message' => $message,
         ];
     }
 
@@ -587,6 +665,7 @@ final class DayZWorkshopService
         // Clear the file-listing cache so the status check always reads the
         // latest files from Wings rather than a 30-second-old snapshot.
         $this->gateway->clearFileListingCache($server);
+        $this->invalidateModsCache($server);
 
         $statusQueue = array_map(fn (string $id): array => $this->queueEntry($id, $server), $workshopIds);
         $complete = $statusQueue !== [] && !in_array(false, array_column($statusQueue, 'installed'), true);
@@ -611,12 +690,57 @@ final class DayZWorkshopService
             // to manually enable each one. This must happen after queue/startup
             // cleanup so the order reflects the final on-disk state.
             $this->appendToEnabledLoadOrder($server, $installedIds);
+
+            // The mods are now downloaded and enabled in the load order, but the
+            // DayZ egg's startup script only actually launches with them after a
+            // restart that happens *after* this point. Mark the server as
+            // needing a follow-up restart (and, once running again, a DZSA
+            // Launcher submission) so DayZServerService::tickModInstallFollowUp()
+            // can act on it without the operator needing to notice manually.
+            $this->markPendingModInstallFollowUp($server);
         }
 
         return [
             'queue' => $queue,
             'complete' => $complete || $queue === [],
         ];
+    }
+
+    /**
+     * Records that this server has newly-installed mods waiting for a
+     * follow-up restart (and DZSA submission) so
+     * DayZServerService::tickModInstallFollowUp() can process it later.
+     */
+    private function markPendingModInstallFollowUp(mixed $server): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return;
+            }
+
+            $exists = \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')
+                ->where('server_id', $serverId)
+                ->exists();
+
+            \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')->updateOrInsert(
+                ['server_id' => $serverId],
+                array_merge(
+                    ['status' => 'waiting', 'updated_at' => date('Y-m-d H:i:s')],
+                    $exists ? [] : ['created_at' => date('Y-m-d H:i:s')],
+                ),
+            );
+        } catch (Throwable) {
+            // Best-effort bookkeeping; missing this only means the operator
+            // needs to notice and restart/refresh DZSA manually.
+        }
     }
 
     /**
@@ -790,6 +914,34 @@ final class DayZWorkshopService
     }
 
     /**
+     * Clears both the per-request memo and the persistent stale-while-
+     * revalidate cache for a server's installed-mods list, so a mutation
+     * (install/remove/enable/disable/rename) is reflected immediately
+     * instead of waiting up to STATS_CACHE_SECONDS for the cache to expire.
+     */
+    private function invalidateModsCache(mixed $server): void
+    {
+        $this->memo = [];
+
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        $memoKey = $this->serverIdentifier($server);
+
+        if ($memoKey === '') {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.workshop.installed_mods.' . md5($memoKey));
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.workshop.stats.' . md5($memoKey));
+        } catch (Throwable) {
+            // Best-effort invalidation only.
+        }
+    }
+
+    /**
      * Ensures newly queued Workshop IDs are present in the `-mod=` load order
      * so they stay enabled after install unless explicitly disabled.
      *
@@ -807,27 +959,46 @@ final class DayZWorkshopService
         }
 
         $order = $this->enabledFolders($server);
+        $resolvedFolders = [];
+
+        foreach ($this->installedMods($server) as $mod) {
+            $id = trim((string) ($mod['workshop_id'] ?? ''));
+            $folder = trim((string) ($mod['folder_name'] ?? ''));
+
+            if ($id !== '' && $folder !== '' && in_array($id, $workshopIds, true)) {
+                $resolvedFolders[$id] = $folder;
+            }
+        }
+
         $changed = false;
 
         foreach ($workshopIds as $workshopId) {
+            $folder = $resolvedFolders[$workshopId] ?? ('@' . $workshopId);
+            $updated = $this->replaceLoadOrderReferences($order, $workshopId, $folder);
+
+            if ($updated !== $order) {
+                $order = $updated;
+                $changed = true;
+            }
+
             $exists = false;
 
             foreach ($order as $entry) {
-                if (ltrim(strtolower($entry), '@') === strtolower($workshopId)) {
+                if (strcasecmp($entry, $folder) === 0 || ltrim(strtolower($entry), '@') === strtolower($workshopId)) {
                     $exists = true;
                     break;
                 }
             }
 
             if (!$exists) {
-                $order[] = $workshopId;
+                $order[] = $folder;
                 $changed = true;
             }
         }
 
         if ($changed) {
             $this->startup->saveModList($server, $order);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
     }
 
@@ -840,19 +1011,16 @@ final class DayZWorkshopService
      */
     private function workshopInfo(string $workshopId): array
     {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return $this->info->fetch($workshopId) ?? [];
-        }
+        $key = 'pteromods.dayz.workshop_info.' . $workshopId;
+        $info = $this->staleCache->remember(
+            $key,
+            self::INFO_CACHE_SECONDS,
+            self::INFO_CACHE_SECONDS * 20,
+            fn (): array => $this->info->fetch($workshopId) ?? [],
+            [],
+        );
 
-        try {
-            return \Illuminate\Support\Facades\Cache::remember(
-                'pteromods.dayz.workshop_info.' . $workshopId,
-                self::INFO_CACHE_SECONDS,
-                fn (): array => $this->info->fetch($workshopId) ?? [],
-            );
-        } catch (Throwable) {
-            return $this->info->fetch($workshopId) ?? [];
-        }
+        return is_array($info) ? $info : [];
     }
 
     /**
@@ -922,7 +1090,7 @@ final class DayZWorkshopService
 
         if ($deleteFiles && ($mod['installed'] ?? false)) {
             $filesDeleted = $this->gateway->deletePath($server, '/' . $folder);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
 
         // Remove the mod from the persisted full-order table so re-installing
@@ -1159,7 +1327,7 @@ final class DayZWorkshopService
         $result = $this->startup->saveModList($server, $order);
         // Clear the memo before reading the updated Workshop ID list so that
         // modlist.html reflects the new enabled state, not the stale cache.
-        $this->memo = [];
+        $this->invalidateModsCache($server);
         $this->startup->syncModlistHtml($server, $this->modlistWorkshopIds($server));
 
         return [
@@ -1208,7 +1376,7 @@ final class DayZWorkshopService
         foreach ($this->gateway->listDirectory($server, '/') as $entry) {
             $name = $entry['name'];
 
-            if ($name === '' || !str_starts_with($name, '@') || $entry['file']) {
+            if ($name === '' || !str_starts_with($name, '@') || $entry['file'] || $this->isTransientModFolder($name)) {
                 continue;
             }
 
@@ -1233,14 +1401,19 @@ final class DayZWorkshopService
         int $position,
     ): array {
         $meta = $installed ? $this->modMetadata($server, $folder) : [];
-        $workshopId = $meta['publishedid'] ?? '';
+        $workshopId = $this->resolveWorkshopId($folder, $meta);
         $info = $workshopId !== '' ? $this->workshopInfo($workshopId) : [];
+        $author = trim((string) ($meta['author'] ?? ''));
+
+        if ($author === '' && isset($info['author']) && is_string($info['author'])) {
+            $author = trim((string) $info['author']);
+        }
 
         return [
             'workshop_id'     => $workshopId,
             'title'           => $meta['name'] ?? ($info['title'] ?? ltrim($folder, '@')),
             'folder_name'     => $folder,
-            'author'          => $meta['author'] ?? '',
+            'author'          => $author,
             'thumbnail'       => (string) ($info['thumbnail'] ?? ''),
             'current_version' => $meta['version'] ?? '',
             'latest_version'  => '',
@@ -1268,16 +1441,83 @@ final class DayZWorkshopService
         // meta.cpp is read first and owns the Workshop ID; mod.cpp then adds the
         // author and version without overwriting what meta.cpp provided.
         foreach (['meta.cpp', 'mod.cpp'] as $file) {
-            $contents = $this->gateway->readFile($server, '/' . $folder . '/' . $file);
+            foreach (['/' . $folder . '/' . $file, '/' . $folder . '/keys/' . $file] as $path) {
+                $contents = $this->gateway->readFile($server, $path);
 
-            if ($contents === null || $contents === '') {
-                continue;
+                if ($contents === null || $contents === '') {
+                    continue;
+                }
+
+                $metadata += $this->meta->parse($contents);
             }
-
-            $metadata += $this->meta->parse($contents);
         }
 
         return $metadata;
+    }
+
+    /**
+     * @return array{startup: array<string, mixed>, installed: list<array<string, mixed>>, enabled: list<string>}
+     */
+    private function cachedWorkshopStats(mixed $server): array
+    {
+        $key = 'pteromods.dayz.workshop.stats.' . md5($this->serverIdentifier($server));
+        $fallback = [
+            'startup' => ['mods' => [], 'server_mods' => []],
+            'installed' => [],
+            'enabled' => [],
+        ];
+        $stats = $this->staleCache->remember(
+            $key,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            fn (): array => $this->gatherWorkshopStats($server),
+            $fallback,
+            // Mirror the same guard as cachedInstalledMods: never let a
+            // background refresh that returns 0 installed mods overwrite a
+            // previously cached list that had mods in it.
+            static fn (mixed $new, mixed $old): bool =>
+                !is_array($old) || count($old['installed'] ?? []) === 0
+                || (is_array($new) && count($new['installed'] ?? []) > 0),
+        );
+
+        return is_array($stats) ? $stats : $fallback;
+    }
+
+    /**
+     * @return array{startup: array<string, mixed>, installed: list<array<string, mixed>>, enabled: list<string>}
+     */
+    private function gatherWorkshopStats(mixed $server): array
+    {
+        $installed = $this->installedMods($server);
+
+        return [
+            'startup' => $this->startup->startup($server),
+            'installed' => $installed,
+            'enabled' => array_values(array_filter(array_map(
+                static fn (array $mod): string => ($mod['enabled'] ?? false) ? (string) ($mod['folder_name'] ?? '') : '',
+                $installed,
+            ))),
+        ];
+    }
+
+    private function resolveWorkshopId(string $folder, array $meta): string
+    {
+        $publishedId = trim((string) ($meta['publishedid'] ?? ''));
+
+        if ($publishedId !== '') {
+            return $publishedId;
+        }
+
+        $bare = ltrim($folder, '@');
+
+        return ctype_digit($bare) ? $bare : '';
+    }
+
+    private function isTransientModFolder(string $folder): bool
+    {
+        $bare = ltrim($folder, '@');
+
+        return str_ends_with(strtolower($bare), '.tmp') || str_ends_with(strtolower($bare), '.temp');
     }
 
     /**
@@ -1495,7 +1735,7 @@ final class DayZWorkshopService
         }
 
         if ($renamed) {
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
 
         return $renamed;
@@ -1575,7 +1815,7 @@ final class DayZWorkshopService
             // can no longer read save data written by the newer one, crashing the
             // server in a restart loop.
             $this->gateway->clearFileListingCache($server);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
             $existingFolders = $this->modFolders($server);
             $targetExists = array_filter(
                 $existingFolders,
@@ -1589,7 +1829,7 @@ final class DayZWorkshopService
                     return $folderName;
                 }
 
-                $this->memo = [];
+                $this->invalidateModsCache($server);
 
                 if (!$this->gateway->renameFile($server, '/', $folderName, $newFolderName)) {
                     // The rename still failed after clearing the stale folder; leave
@@ -1597,20 +1837,17 @@ final class DayZWorkshopService
                     return $folderName;
                 }
 
-                $this->memo = [];
+                $this->invalidateModsCache($server);
 
                 // Rewrite the load order to use the named folder so the numeric
                 // Workshop ID is removed from startup variables (preventing the
                 // egg from re-downloading the mod into @workshopId on every restart).
                 $order = $this->enabledFolders($server);
-                $updated = array_map(
-                    static fn (string $f): string => strcasecmp($f, $folderName) === 0 ? $newFolderName : $f,
-                    $order,
-                );
+                $updated = $this->replaceLoadOrderReferences($order, $workshopId, $newFolderName);
 
                 if ($updated !== $order) {
                     $this->startup->saveModList($server, $updated);
-                    $this->memo = [];
+                    $this->invalidateModsCache($server);
                 }
 
                 $this->renameInFullOrder($server, $folderName, $newFolderName);
@@ -1622,18 +1859,15 @@ final class DayZWorkshopService
         }
 
         // Clear the per-request memo so the next call re-reads the server root.
-        $this->memo = [];
+        $this->invalidateModsCache($server);
 
         // Rewrite the load order to use the new folder name.
         $order = $this->enabledFolders($server);
-        $updated = array_map(
-            static fn (string $f): string => strcasecmp($f, $folderName) === 0 ? $newFolderName : $f,
-            $order,
-        );
+        $updated = $this->replaceLoadOrderReferences($order, $workshopId, $newFolderName);
 
         if ($updated !== $order) {
             $this->startup->saveModList($server, $updated);
-            $this->memo = [];
+            $this->invalidateModsCache($server);
         }
 
         // Keep the persisted full-order table in sync with the renamed folder.
@@ -1657,6 +1891,36 @@ final class DayZWorkshopService
         }
 
         return '@' . $clean;
+    }
+
+    /**
+     * Rewrites every load-order reference for a Workshop ID to the canonical
+     * on-disk folder name, collapsing duplicates when both forms are present.
+     *
+     * @param list<string> $order
+     * @return list<string>
+     */
+    private function replaceLoadOrderReferences(array $order, string $workshopId, string $folderName): array
+    {
+        $updated = [];
+        $seen = [];
+        $needle = strtolower($workshopId);
+
+        foreach ($order as $entry) {
+            $candidate = ltrim(strtolower(trim($entry)), '@') === $needle
+                ? $folderName
+                : $entry;
+            $key = strtolower($candidate);
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $updated[] = $candidate;
+        }
+
+        return $updated;
     }
 
     private function formatBytes(int $bytes): string

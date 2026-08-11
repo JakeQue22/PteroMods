@@ -55,6 +55,77 @@ final class DayZManagerSettingsService
          * mod under `@<id>` on every restart once its folder is renamed.
          */
         'rename_mods_to_friendly_names' => false,
+
+        /**
+         * When false (the default) DayZ Manager never contacts the DZSA
+         * Launcher service on its own. Mods installed while a server is
+         * offline are not picked up by DZSA until the server restarts a
+         * second time (once to download the mod, once more for the egg's
+         * startup script to actually enable it) — set this to true so DayZ
+         * Manager automatically submits a server-check request to
+         * https://dayzsalauncher.com once that second restart finishes and
+         * the server reports itself running, instead of requiring an
+         * operator to click "Update DZSA Server Listing" manually.
+         */
+        'auto_submit_dzsa' => false,
+
+        /**
+         * When false (the default) DayZ Manager never restarts a server on
+         * its own after mods finish downloading. The DayZ egg's startup
+         * script only picks up newly-downloaded mods on the boot *after*
+         * they land on disk, so a mod queued and installed during a restart
+         * still needs a second restart before it is actually active.
+         *
+         * Set to true to have DayZ Manager automatically trigger that
+         * second restart as soon as it detects the queued mods have
+         * finished downloading and been added to the load order, instead of
+         * requiring an operator to notice and restart manually.
+         */
+        'auto_restart_after_mod_install' => false,
+
+        /**
+         * When enabled, DayZ Manager periodically removes old profile log files
+         * from `/profiles` using the configured retention window.
+         */
+        'auto_scrub_profile_logs' => false,
+
+        /**
+         * Number of days `script_*.log` files are kept before auto-scrub deletes them.
+         */
+        'script_log_retention_days' => 14,
+
+        /**
+         * Number of days `crash_*.log` files are kept before auto-scrub deletes them.
+         */
+        'crash_log_retention_days' => 14,
+
+        /**
+         * Number of days `TM_GeneralLogs_*.log` files are kept before auto-scrub deletes them.
+         */
+        'tm_general_log_retention_days' => 14,
+
+        /**
+         * Shared secret used by the optional server-side DayZ live-map bridge.
+         */
+        'live_map_bridge_secret' => '',
+
+        /**
+         * When true, DayZ Manager automatically takes a database backup at the
+         * configured interval.
+         */
+        'auto_backup_enabled' => false,
+
+        /**
+         * Interval between automatic backups (in minutes).
+         * Useful values: 60, 360, 720, 1440 (daily).
+         */
+        'auto_backup_interval_minutes' => 1440,
+
+        /**
+         * Maximum number of backups to keep per server.  Oldest backups are
+         * pruned automatically after every create (manual or auto).
+         */
+        'auto_backup_keep' => 10,
     ];
 
     /**
@@ -65,6 +136,9 @@ final class DayZManagerSettingsService
     public const LABELS = [
         'use_workshop_subscriptions' => 'Use Steam account Workshop subscription list',
         'rename_mods_to_friendly_names' => 'Rename mod folders to their friendly Workshop name',
+        'auto_submit_dzsa' => 'Automatically submit to DZSA Launcher after mod installs',
+        'auto_restart_after_mod_install' => 'Automatically restart the server once queued mods finish installing',
+        'auto_scrub_profile_logs' => 'Automatically scrub old profile logs in /profiles',
     ];
 
     /**
@@ -74,6 +148,10 @@ final class DayZManagerSettingsService
      */
     public const TEXT_LABELS = [
         'steam_web_api_key' => 'Steam Web API Key',
+        'script_log_retention_days' => 'script_*.log retention (days)',
+        'crash_log_retention_days' => 'crash_*.log retention (days)',
+        'tm_general_log_retention_days' => 'TM_GeneralLogs_*.log retention (days)',
+        'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
     ];
 
     /**
@@ -101,6 +179,37 @@ final class DayZManagerSettingsService
             . 'will re-download that mod into a new duplicate "@<id>" folder on every '
             . 'server restart. Only enable this if your egg/image has its own logic that '
             . 'tolerates renamed mod folders.',
+        'auto_submit_dzsa' =>
+            'Disabled by default. New mods only start downloading after the server restarts, '
+            . 'and the DayZ egg\'s startup script needs a second restart before it actually '
+            . 'enables them — DZSA Launcher will not show the correct mod list until then. '
+            . 'When enabled, DayZ Manager watches for a mod-install restart to complete and, '
+            . 'once the server reports itself running again, automatically sends a '
+            . 'server-check request to dayzsalauncher.com so the launcher refreshes the '
+            . 'mod listing without you needing to open the DZSA tab and click the button '
+            . 'yourself.',
+        'auto_restart_after_mod_install' =>
+            'Disabled by default. The DayZ egg only downloads newly queued mods on the boot '
+            . 'right after they are added, then needs one more restart before its startup '
+            . 'script actually enables them. When enabled, DayZ Manager watches the install '
+            . 'queue and, as soon as it detects the queued mods have finished downloading '
+            . 'and been added to the enabled load order, automatically triggers that second '
+            . 'restart for you (connected players will be disconnected). Leave disabled if '
+            . 'you would rather restart manually when convenient.',
+        'auto_scrub_profile_logs' =>
+            'Disabled by default. When enabled, DayZ Manager periodically scans `/profiles` and '
+            . 'deletes old `script_*.log`, `crash_*.log`, and `TM_GeneralLogs_*.log` files older '
+            . 'than each type\'s configured retention window.',
+        'script_log_retention_days' =>
+            'How many days to keep `script_*.log` files before automatic cleanup removes them.',
+        'crash_log_retention_days' =>
+            'How many days to keep `crash_*.log` files before automatic cleanup removes them.',
+        'tm_general_log_retention_days' =>
+            'How many days to keep `TM_GeneralLogs_*.log` files before automatic cleanup removes them.',
+        'live_map_bridge_secret' =>
+            'Optional shared secret for a server-side DayZ script to write player snapshots to '
+            . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '
+            . '`/profiles/PteroMods/live_map_players.json` without secret signing.',
     ];
 
     /**

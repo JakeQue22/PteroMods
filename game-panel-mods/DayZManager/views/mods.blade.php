@@ -21,7 +21,7 @@
         <div class="dz-input-wrap" style="flex:1 1 18rem;min-width:0;">
             <input id="ptero-workshop-ref" class="dz-input" type="text" placeholder="Workshop ID or Steam Workshop URL" autocomplete="off" />
         </div>
-        <button class="dz-btn" onclick="pteroInstallMod()">Install</button>
+        <button class="dz-btn" onclick="pteroInstallMod()">Queue</button>
         <button class="dz-btn dz-btn-amber" onclick="pteroInstallMod(true)">Install + Restart</button>
         @if (!empty($browse_enabled))
             <button class="dz-btn dz-btn-ghost" onclick="pteroOpenBrowseModal()">Browse Workshop</button>

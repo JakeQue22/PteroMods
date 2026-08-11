@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZDashboardService;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZPanelGateway;
+use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZServerQueryService;
 use GamePanelMods\DayZManager\Services\DayZServerService;
@@ -22,10 +24,12 @@ final class DayZServerController
         private readonly DayZServerService $service = new DayZServerService(),
         private readonly DayZWorkshopService $workshop = new DayZWorkshopService(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZDashboardService $dashboard = new DayZDashboardService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
 
@@ -38,8 +42,9 @@ final class DayZServerController
     public function queryStatus(mixed $server = null): array
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
         $this->query->clearCache($resolved['model']);
-        $live = $this->query->query($resolved['model']);
+        $live = $this->query->query($resolved['model'], true);
         $details = $this->gateway->details($resolved['model']);
         $powerState = $this->gateway->state($resolved['model']) ?? '';
         $live['player_count'] = $this->dashboard->formatPlayerCount($live);
@@ -123,6 +128,34 @@ final class DayZServerController
     }
 
     /**
+     * Progresses the pending follow-up restart / DZSA Launcher submission
+     * after queued mods finish installing. See
+     * DayZServerService::tickModInstallFollowUp() for the state machine.
+     *
+     * @return array<string, mixed>
+     */
+    public function tickModInstallFollowUp(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->service->tickModInstallFollowUp($model);
+    }
+
+    /**
+     * Removes old profile logs according to DayZ Manager retention settings.
+     *
+     * @return array<string, mixed>
+     */
+    public function tickProfileLogScrub(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        return $this->logScrub->tick($model);
+    }
+
+    /**
      * Schedules a one-time timed restart with countdown warnings.
      *
      * @return array<string, mixed>
@@ -159,6 +192,7 @@ final class DayZServerController
     public function dzsa(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         $dzsaEndpoint = $this->query->dzsaEndpoint($resolved['model']);
         $payload = [
@@ -185,6 +219,7 @@ final class DayZServerController
     public function launchParameters(mixed $server = null, array $enabledFolders = [])
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         try {
             $folders = $enabledFolders !== [] ? $enabledFolders : $this->workshop->enabledFolders($resolved['model']);

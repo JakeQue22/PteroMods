@@ -9,6 +9,8 @@ $pages = [
     '/players'       => 'DayZPlayerController@index',
     '/server'        => 'DayZServerController@launchParameters',
     '/dzsa'          => 'DayZServerController@dzsa',
+    '/live-map'      => 'DayZLiveMapController@index',
+    '/backups'       => 'DayZBackupController@index',
     '/settings'      => 'DayZManagerSettingsController@index',
 ];
 

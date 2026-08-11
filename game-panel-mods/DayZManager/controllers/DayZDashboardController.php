@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZDashboardService;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
 
@@ -16,8 +18,10 @@ final class DayZDashboardController
 {
     public function __construct(
         private readonly DayZDashboardService $service = new DayZDashboardService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
 
@@ -27,8 +31,10 @@ final class DayZDashboardController
     public function show(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         try {
+            $this->logScrub->tick($resolved['model']);
             $dashboard = $this->service->dashboard($resolved['model'] ?? $resolved['id']);
             $dashboard['client_id'] = $this->context->clientIdentifier($resolved['model'], $resolved['id']);
         } catch (Throwable $exception) {

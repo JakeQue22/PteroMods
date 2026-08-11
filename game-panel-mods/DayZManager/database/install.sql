@@ -98,3 +98,48 @@ ALTER TABLE `dayz_restart_schedules`
     ADD COLUMN IF NOT EXISTS `timed_warnings_sent`   VARCHAR(255)  NOT NULL DEFAULT '' AFTER `timed_restart_at`,
     ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1' AFTER `warnings_sent`,
     ADD COLUMN IF NOT EXISTS `warning_messages`      TEXT          NULL AFTER `warning_minutes_enabled`;
+
+CREATE TABLE IF NOT EXISTS `dayz_dzsa_pending` (
+    `id`           INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`    VARCHAR(64)   NOT NULL,
+    `status`       VARCHAR(16)   NOT NULL DEFAULT 'waiting',
+    `created_at`   TIMESTAMP     NULL DEFAULT NULL,
+    `updated_at`   TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_dayz_dzsa_pending_server` (`server_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dayz_backups` (
+    `id`          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`   VARCHAR(64)   NOT NULL,
+    `label`       VARCHAR(255)  NOT NULL DEFAULT '',
+    `trigger`     VARCHAR(32)   NOT NULL DEFAULT 'manual',
+    `payload`     LONGTEXT      NOT NULL,
+    `created_at`  TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_dayz_backups_server` (`server_id`),
+    KEY `idx_dayz_backups_created` (`server_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dayz_observed_players` (
+    `id`              INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`       VARCHAR(64)   NOT NULL,
+    `player_id`       VARCHAR(64)   NOT NULL,
+    `player_name`     VARCHAR(255)  NOT NULL DEFAULT '',
+    `last_map`        VARCHAR(64)   NOT NULL DEFAULT '',
+    `last_x`          DECIMAL(10,2) NULL DEFAULT NULL,
+    `last_y`          DECIMAL(10,2) NULL DEFAULT NULL,
+    `last_z`          DECIMAL(10,2) NULL DEFAULT NULL,
+    `last_direction`  DECIMAL(7,2)  NULL DEFAULT NULL,
+    `last_alive`      TINYINT(1)    NOT NULL DEFAULT 1,
+    `last_health`     DECIMAL(7,2)  NULL DEFAULT NULL,
+    `inventory_json`  LONGTEXT      NULL,
+    `metadata_json`   LONGTEXT      NULL,
+    `first_seen_at`   TIMESTAMP     NULL DEFAULT NULL,
+    `last_seen_at`    TIMESTAMP     NULL DEFAULT NULL,
+    `created_at`      TIMESTAMP     NULL DEFAULT NULL,
+    `updated_at`      TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_dayz_observed_players_server_player` (`server_id`, `player_id`),
+    KEY `idx_dayz_observed_players_server_seen` (`server_id`, `last_seen_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

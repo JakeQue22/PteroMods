@@ -29,6 +29,7 @@ final class DayZPanelGateway
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -44,14 +45,15 @@ final class DayZPanelGateway
         }
 
         $cacheKey = $this->cacheKey('details', $server, '');
-        $cached = $this->fromCache($cacheKey);
 
-        if (is_array($cached)) {
-            return $cached['value'] ?? null;
-        }
-
-        $details = $this->fetchDetails($server);
-        $this->toCache($cacheKey, ['value' => $details], self::DETAILS_CACHE_SECONDS);
+        /** @var array{state: string, is_suspended: bool, utilization: array<string, mixed>}|null $details */
+        $details = $this->staleCache->remember(
+            $cacheKey,
+            self::DETAILS_CACHE_SECONDS,
+            self::DETAILS_CACHE_SECONDS * 20,
+            fn (): ?array => $this->fetchDetails($server),
+            null,
+        );
 
         return $details;
     }
@@ -68,17 +70,25 @@ final class DayZPanelGateway
     }
 
     /**
-     * Clears the cached directory listing for a server's root, so the next
-     * `listDirectory()` call fetches live data from Wings.
+     * Clears the cached directory listing for a server.
+     *
+     * Pass an explicit `$path` to clear only that directory's listing (e.g.
+     * `/profiles` after a log-scrub run).  When `$path` is `null` the default
+     * well-known paths (server root and the Workshop download directory) are
+     * cleared, which is the behaviour used by the mod-install pipeline.
      */
-    public function clearFileListingCache(mixed $server): void
+    public function clearFileListingCache(mixed $server, ?string $path = null): void
     {
         if ($server === null) {
             return;
         }
 
-        foreach (['/', '/steamapps/workshop/content/221100'] as $path) {
-            $this->forget($this->cacheKey('files', $server, $this->normalizePath($path)));
+        $paths = $path !== null
+            ? [$path]
+            : ['/', '/steamapps/workshop/content/221100'];
+
+        foreach ($paths as $p) {
+            $this->forget($this->cacheKey('files', $server, $this->normalizePath($p)));
         }
     }
 
@@ -95,20 +105,18 @@ final class DayZPanelGateway
 
         $path = $this->normalizePath($path);
         $cacheKey = $this->cacheKey('files', $server, $path);
-        $cached = $this->fromCache($cacheKey);
-
-        if (is_array($cached)) {
-            return is_array($cached['value'] ?? null) ? $cached['value'] : [];
-        }
-
-        $entries = array_map(
-            fn (array $entry): array => $this->normalizeEntry($entry),
-            $this->fetchDirectory($server, $path),
+        $entries = $this->staleCache->remember(
+            $cacheKey,
+            self::FILES_CACHE_SECONDS,
+            self::FILES_CACHE_SECONDS * 20,
+            fn (): array => array_map(
+                fn (array $entry): array => $this->normalizeEntry($entry),
+                $this->fetchDirectory($server, $path),
+            ),
+            [],
         );
 
-        $this->toCache($cacheKey, ['value' => $entries], self::FILES_CACHE_SECONDS);
-
-        return $entries;
+        return is_array($entries) ? $entries : [];
     }
 
     /**
@@ -122,16 +130,15 @@ final class DayZPanelGateway
 
         $path = $this->normalizePath($path);
         $cacheKey = $this->cacheKey('file', $server, $path);
-        $cached = $this->fromCache($cacheKey);
+        $contents = $this->staleCache->remember(
+            $cacheKey,
+            self::FILES_CACHE_SECONDS,
+            self::FILES_CACHE_SECONDS * 20,
+            fn (): ?string => $this->fetchFile($server, $path),
+            null,
+        );
 
-        if (is_array($cached)) {
-            return is_string($cached['value'] ?? null) ? $cached['value'] : null;
-        }
-
-        $contents = $this->fetchFile($server, $path);
-        $this->toCache($cacheKey, ['value' => $contents], self::FILES_CACHE_SECONDS);
-
-        return $contents;
+        return is_string($contents) ? $contents : null;
     }
 
     /**
@@ -319,6 +326,58 @@ final class DayZPanelGateway
         }
 
         return $this->daemonRequest($server, 'POST', '/commands', ['commands' => [$command]]) !== null;
+    }
+
+    /**
+     * Tail of the server's live console output (stdout/stderr from the game
+     * process), used to confirm specific startup/mod-update log lines have
+     * actually appeared before acting on them (e.g. before restarting again).
+     *
+     * Not cached: callers poll this repeatedly for a short window right
+     * after a restart, and stale data would defeat the purpose.
+     *
+     * @return list<string> Lines, oldest first.
+     */
+    public function consoleLogs(mixed $server): array
+    {
+        if ($server === null) {
+            return [];
+        }
+
+        $repository = $this->serverRepository($server);
+
+        if ($repository !== null && method_exists($repository, 'getLogs')) {
+            try {
+                $logs = $repository->getLogs();
+
+                return $this->normalizeLogs($logs);
+            } catch (Throwable) {
+                // Fall through to the direct daemon call below.
+            }
+        }
+
+        $response = $this->daemonRequest($server, 'GET', '/logs');
+
+        return $this->normalizeLogs($response['data'] ?? $response ?? []);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function normalizeLogs(mixed $logs): array
+    {
+        if (is_string($logs)) {
+            $logs = preg_split('/\r\n|\r|\n/', $logs) ?: [];
+        }
+
+        if (!is_array($logs)) {
+            return [];
+        }
+
+        return array_values(array_map(
+            static fn (mixed $line): string => (string) $line,
+            array_filter($logs, static fn (mixed $line): bool => is_scalar($line)),
+        ));
     }
 
     /**
@@ -567,37 +626,4 @@ final class DayZPanelGateway
         }
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function fromCache(string $key): ?array
-    {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return null;
-        }
-
-        try {
-            $cached = \Illuminate\Support\Facades\Cache::get($key);
-
-            return is_array($cached) ? $cached : null;
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * @param array<string, mixed> $value
-     */
-    private function toCache(string $key, array $value, int $seconds): void
-    {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return;
-        }
-
-        try {
-            \Illuminate\Support\Facades\Cache::put($key, $value, $seconds);
-        } catch (Throwable) {
-            // Caching is best-effort only.
-        }
-    }
 }

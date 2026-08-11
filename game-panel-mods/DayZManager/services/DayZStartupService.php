@@ -479,14 +479,37 @@ final class DayZStartupService
         return implode("\n", $lines) . "\n";
     }
 
+    /**
+     * Resolves the friendly title for a Workshop ID from the mod folder's own
+     * `meta.cpp`/`mod.cpp`, without depending on `DayZWorkshopService` (which
+     * itself depends on this class), to avoid a circular dependency.
+     */
     private function modlistLabel(mixed $server, string $workshopId): string
     {
-        foreach ($this->installedMods($server) as $mod) {
-            if ((string) ($mod['workshop_id'] ?? '') !== $workshopId) {
+        foreach ($this->gateway->listDirectory($server, '/') as $entry) {
+            $name = $entry['name'] ?? '';
+
+            if ($name === '' || !str_starts_with($name, '@') || ($entry['file'] ?? false)) {
                 continue;
             }
 
-            $title = trim((string) ($mod['title'] ?? ''));
+            $metadata = [];
+
+            foreach (['meta.cpp', 'mod.cpp'] as $file) {
+                $contents = $this->gateway->readFile($server, '/' . $name . '/' . $file);
+
+                if ($contents === null || $contents === '') {
+                    continue;
+                }
+
+                $metadata += $this->meta->parse($contents);
+            }
+
+            if ((string) ($metadata['publishedid'] ?? '') !== $workshopId) {
+                continue;
+            }
+
+            $title = trim((string) ($metadata['name'] ?? ''));
 
             if ($title !== '' && strcasecmp($title, $workshopId) !== 0) {
                 return $title;

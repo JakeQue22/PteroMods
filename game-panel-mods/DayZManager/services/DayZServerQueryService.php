@@ -50,6 +50,7 @@ final class DayZServerQueryService
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly HostAddressResolver $addresses = new HostAddressResolver(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -76,6 +77,7 @@ final class DayZServerQueryService
 
         try {
             \Illuminate\Support\Facades\Cache::forget($cacheKey);
+            \Illuminate\Support\Facades\Cache::forget($cacheKey . '.lock');
         } catch (Throwable) {
             // Best-effort cache clearing.
         }
@@ -94,7 +96,7 @@ final class DayZServerQueryService
      *
      * @return array{online: bool, map: string|null, players: int|null, max_players: int|null, version: string|null, name: string|null, endpoint: string|null}
      */
-    public function query(mixed $server): array
+    public function query(mixed $server, bool $preferFresh = false): array
     {
         $candidates = $this->resolveEndpointCandidates($server);
 
@@ -106,38 +108,32 @@ final class DayZServerQueryService
             static fn (array $candidate): string => $candidate[0] . ':' . $candidate[1],
             $candidates,
         )));
-        $cached = $this->fromCache($cacheKey);
-
-        if (is_array($cached)) {
-            return $cached;
+        if ($preferFresh) {
+            return $this->fetchAndCache($cacheKey, $candidates, $server);
         }
 
-        $result = null;
+        $fallback = $this->offline($candidates[0][0] . ':' . $candidates[0][1]);
+        $result = $this->staleCache->remember(
+            $cacheKey,
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            function () use ($candidates, $server): array {
+                $result = $this->queryCandidates($candidates);
 
-        foreach ($candidates as [$host, $port]) {
-            $endpointLabel = $host . ':' . $port;
-            $info = $this->client->info($host, $port);
+                if (!$result['online']) {
+                    $bridgeCount = $this->bridgePlayerCount($server);
 
-            if ($info !== null) {
-                $result = [
-                    'online'      => true,
-                    'map'         => $info['map'] !== '' ? $info['map'] : null,
-                    'players'     => $info['players'],
-                    'max_players' => $info['max_players'],
-                    'version'     => $info['version'] !== '' ? $info['version'] : null,
-                    'name'        => $info['name'] !== '' ? $info['name'] : null,
-                    'endpoint'    => $endpointLabel,
-                ];
+                    if ($bridgeCount !== null) {
+                        $result['players'] = $bridgeCount;
+                    }
+                }
 
-                break;
-            }
-        }
+                return $result;
+            },
+            $fallback,
+        );
 
-        $result ??= $this->offline($candidates[0][0] . ':' . $candidates[0][1]);
-
-        $this->toCache($cacheKey, $result);
-
-        return $result;
+        return is_array($result) ? $result : $fallback;
     }
 
     /**
@@ -492,36 +488,102 @@ final class DayZServerQueryService
     }
 
     /**
-     * @return array<string, mixed>|null
+     * @param list<array{0: string, 1: int}> $candidates
+     * @return array{online: bool, map: string|null, players: int|null, max_players: int|null, version: string|null, name: string|null, endpoint: string|null}
      */
-    private function fromCache(string $key): ?array
+    private function queryCandidates(array $candidates): array
     {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return null;
+        $result = null;
+
+        foreach ($candidates as [$host, $port]) {
+            $endpointLabel = $host . ':' . $port;
+            $info = $this->client->info($host, $port);
+
+            if ($info !== null) {
+                $result = [
+                    'online'      => true,
+                    'map'         => $info['map'] !== '' ? $info['map'] : null,
+                    'players'     => $info['players'],
+                    'max_players' => $info['max_players'],
+                    'version'     => $info['version'] !== '' ? $info['version'] : null,
+                    'name'        => $info['name'] !== '' ? $info['name'] : null,
+                    'endpoint'    => $endpointLabel,
+                ];
+
+                break;
+            }
         }
 
-        try {
-            $cached = \Illuminate\Support\Facades\Cache::get($key);
-
-            return is_array($cached) ? $cached : null;
-        } catch (Throwable) {
-            return null;
-        }
+        return $result ?? $this->offline($candidates[0][0] . ':' . $candidates[0][1]);
     }
 
     /**
-     * @param array<string, mixed> $value
+     * @param list<array{0: string, 1: int}> $candidates
+     * @return array{online: bool, map: string|null, players: int|null, max_players: int|null, version: string|null, name: string|null, endpoint: string|null}
      */
-    private function toCache(string $key, array $value): void
+    private function fetchAndCache(string $cacheKey, array $candidates, mixed $server): array
     {
-        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return;
+        $result = $this->queryCandidates($candidates);
+
+        if (!$result['online']) {
+            $bridgeCount = $this->bridgePlayerCount($server);
+
+            if ($bridgeCount !== null) {
+                $result['players'] = $bridgeCount;
+            }
         }
 
-        try {
-            \Illuminate\Support\Facades\Cache::put($key, $value, self::CACHE_SECONDS);
-        } catch (Throwable) {
-            // Caching is best-effort only.
+        $this->staleCache->refreshNow(
+            $cacheKey,
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            static fn (): array => $result,
+        );
+
+        return $result;
+    }
+
+    /**
+     * Reads the live map bridge file from the server container and returns the
+     * number of players listed in it.  Used as a fallback when the Steam query
+     * is unreachable (e.g. the panel and Wings nodes are on different networks
+     * or the query port is firewalled).  Returns null when no usable bridge
+     * file is found.
+     */
+    private function bridgePlayerCount(mixed $server): ?int
+    {
+        $bridgeFiles = [
+            '/profiles/PteroMods/live_map_players.json',
+            '/profiles/live_map_players.json',
+        ];
+
+        foreach ($bridgeFiles as $path) {
+            try {
+                $raw = $this->gateway->readFile($server, $path);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if (!is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+
+            $data = json_decode($raw, true);
+
+            if (!is_array($data)) {
+                continue;
+            }
+
+            // Support the signed envelope format {"payload": {...}, "signature": "..."}.
+            if (isset($data['payload']) && is_array($data['payload'])) {
+                $data = $data['payload'];
+            }
+
+            if (isset($data['players']) && is_array($data['players'])) {
+                return count($data['players']);
+            }
         }
+
+        return null;
     }
 }

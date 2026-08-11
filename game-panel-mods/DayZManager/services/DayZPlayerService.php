@@ -10,6 +10,19 @@ namespace GamePanelMods\DayZManager\Services;
 final class DayZPlayerService
 {
     private const VALID_LIST_TYPES = ['ban', 'whitelist', 'priority'];
+    private const LIST_FILES = [
+        'ban' => '/ban.txt',
+        'whitelist' => '/whitelist.txt',
+        'priority' => '/priority.txt',
+    ];
+
+    private const CACHE_SECONDS = 120;
+
+    public function __construct(
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
+        private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+    ) {
+    }
 
     /**
      * @return list<array{player_id: string, note: string, added_by: string, created_at: string|null}>
@@ -17,33 +30,16 @@ final class DayZPlayerService
     public function list(string $listType): array
     {
         $this->assertValidListType($listType);
+        $key = 'pteromods.dayz.players.' . $listType;
+        $rows = $this->staleCache->remember(
+            $key,
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->fetchList($listType),
+            [],
+        );
 
-        try {
-            if (class_exists('Illuminate\\Support\\Facades\\Schema')
-                && class_exists('Illuminate\\Support\\Facades\\DB')
-                && \Illuminate\Support\Facades\Schema::hasTable('dayz_player_lists')) {
-                $rows = \Illuminate\Support\Facades\DB::table('dayz_player_lists')
-                    ->where('list_type', $listType)
-                    ->orderBy('player_id')
-                    ->get()
-                    ->toArray();
-
-                return array_map(static function ($row): array {
-                    $row = (array) $row;
-
-                    return [
-                        'player_id'  => (string) ($row['player_id'] ?? ''),
-                        'note'       => (string) ($row['note'] ?? ''),
-                        'added_by'   => (string) ($row['added_by'] ?? ''),
-                        'created_at' => isset($row['created_at']) ? (string) $row['created_at'] : null,
-                    ];
-                }, $rows);
-            }
-        } catch (\Throwable) {
-            // The module works without its database tables; fall through to an empty list.
-        }
-
-        return [];
+        return is_array($rows) ? $rows : [];
     }
 
     /**
@@ -73,34 +69,72 @@ final class DayZPlayerService
     /**
      * @return array<string, mixed>
      */
-    public function add(string $listType, string $playerId, string $note = '', string $addedBy = ''): array
+    public function add(string $listType, string $playerId, string $note = '', string $addedBy = '', mixed $server = null): array
     {
         $this->assertValidListType($listType);
         $this->assertValidPlayerId($playerId);
 
+        if (!$this->tableAvailable()) {
+            return ['status' => 'error', 'message' => 'Player-list storage is not available.'];
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table('dayz_player_lists')->updateOrInsert(
+                ['list_type' => $listType, 'player_id' => $playerId],
+                [
+                    'note' => trim($note),
+                    'added_by' => trim($addedBy),
+                    'created_at' => date('Y-m-d H:i:s'),
+                ],
+            );
+        } catch (\Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+
+        $this->forgetListCache($listType);
+        $synced = $this->syncListFile($listType, $server);
+
         return [
-            'status'    => 'queued',
+            'status'    => 'saved',
             'action'    => 'add',
             'list_type' => $listType,
             'player_id' => $playerId,
             'note'      => $note,
             'added_by'  => $addedBy,
+            'file_synced' => $synced,
         ];
     }
 
     /**
      * @return array<string, string>
      */
-    public function remove(string $listType, string $playerId): array
+    public function remove(string $listType, string $playerId, mixed $server = null): array
     {
         $this->assertValidListType($listType);
         $this->assertValidPlayerId($playerId);
 
+        if (!$this->tableAvailable()) {
+            return ['status' => 'error', 'message' => 'Player-list storage is not available.'];
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table('dayz_player_lists')
+                ->where('list_type', $listType)
+                ->where('player_id', $playerId)
+                ->delete();
+        } catch (\Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+
+        $this->forgetListCache($listType);
+        $synced = $this->syncListFile($listType, $server);
+
         return [
-            'status'    => 'queued',
+            'status'    => 'deleted',
             'action'    => 'remove',
             'list_type' => $listType,
             'player_id' => $playerId,
+            'file_synced' => $synced,
         ];
     }
 
@@ -118,5 +152,75 @@ final class DayZPlayerService
         if (trim($playerId) === '') {
             throw new \InvalidArgumentException('Player ID must not be empty.');
         }
+    }
+
+    /**
+     * @return list<array{player_id: string, note: string, added_by: string, created_at: string|null}>
+     */
+    private function fetchList(string $listType): array
+    {
+        try {
+            if ($this->tableAvailable()) {
+                $rows = \Illuminate\Support\Facades\DB::table('dayz_player_lists')
+                    ->where('list_type', $listType)
+                    ->orderBy('player_id')
+                    ->get()
+                    ->toArray();
+
+                return array_map(static function ($row): array {
+                    $row = (array) $row;
+
+                    return [
+                        'player_id'  => (string) ($row['player_id'] ?? ''),
+                        'note'       => (string) ($row['note'] ?? ''),
+                        'added_by'   => (string) ($row['added_by'] ?? ''),
+                        'created_at' => isset($row['created_at']) ? (string) $row['created_at'] : null,
+                    ];
+                }, $rows);
+            }
+        } catch (\Throwable) {
+            // The module works without its database tables; fall through to an empty list.
+        }
+
+        return [];
+    }
+
+    private function tableAvailable(): bool
+    {
+        return class_exists('Illuminate\\Support\\Facades\\Schema')
+            && class_exists('Illuminate\\Support\\Facades\\DB')
+            && \Illuminate\Support\Facades\Schema::hasTable('dayz_player_lists');
+    }
+
+    private function forgetListCache(string $listType): void
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.players.' . $listType);
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.players.' . $listType . '.lock');
+        } catch (\Throwable) {
+            // Best-effort cache invalidation only.
+        }
+    }
+
+    private function syncListFile(string $listType, mixed $server): bool
+    {
+        $path = self::LIST_FILES[$listType] ?? null;
+
+        if ($path === null || $server === null) {
+            return false;
+        }
+
+        $entries = array_map(
+            static fn (array $entry): string => trim((string) ($entry['player_id'] ?? '')),
+            $this->fetchList($listType),
+        );
+        $entries = array_values(array_filter(array_unique($entries), static fn (string $entry): bool => $entry !== ''));
+        $content = $entries === [] ? '' : implode("\n", $entries) . "\n";
+
+        return $this->gateway->writeFile($server, $path, $content);
     }
 }

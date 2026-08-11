@@ -247,6 +247,35 @@ if [[ ! -f "$STATE_FILE" ]] || [[ "$(cat "$STATE_FILE")" == "{}" ]]; then
     success ".module-state.json written."
 fi
 
+# ── step 7b: live map bridge template ────────────────────────────────────────
+#
+# The bridge SQF script (pteromods_live_map.sqf) is bundled with the module and
+# needs to be present in the panel's asset directory so the panel can push it to
+# each game-server container via the Wings file API on first use.
+#
+# The panel deploys it automatically the first time a user opens the Live Map
+# page for any DayZ server.  To force re-deployment for all servers you can also
+# POST to /api/server/{server}/dayz/live-map/setup-bridge from the panel.
+
+echo ""
+echo "── Step 7b: Verifying live map bridge template ──"
+
+BRIDGE_TEMPLATE="$PANEL_ROOT/game-panel-mods/DayZManager/assets/bridge/pteromods_live_map.sqf"
+
+if [[ -f "$BRIDGE_TEMPLATE" ]]; then
+    success "Bridge template present: $BRIDGE_TEMPLATE"
+else
+    warn "Bridge template not found at $BRIDGE_TEMPLATE"
+    warn "Re-run install.sh or manually copy:"
+    warn "  game-panel-mods/DayZManager/assets/bridge/pteromods_live_map.sqf"
+    warn "  → $BRIDGE_TEMPLATE"
+    echo ""
+    echo "  Once the template is in place the bridge script will be deployed to"
+    echo "  each DayZ server's /profiles/PteroMods/ directory automatically when"
+    echo "  you first open the Live Map page for that server, or via:"
+    echo "  POST /api/server/{server}/dayz/live-map/setup-bridge"
+fi
+
 # ── step 8: clear caches ─────────────────────────────────────────────────────
 
 echo ""

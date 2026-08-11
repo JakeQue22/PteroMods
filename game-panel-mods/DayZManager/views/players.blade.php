@@ -1,6 +1,71 @@
 <section class="dz-card">
-    <h2>Player Lists</h2>
-    <p class="dz-sub">Manage the DayZ ban list, whitelist, and priority queue by Steam64 ID or GUID.</p>
+    <h2>Player Manager</h2>
+    <p class="dz-sub">View live and previously observed players, then manage the ban list, whitelist, and priority queue.</p>
+</section>
+
+<section class="dz-card">
+    <h2>Observed Players</h2>
+    <p class="dz-sub">
+        {{ (int) ($online_count ?? 0) }} online now · {{ count($activity ?? []) }} observed player(s)
+        @if (!empty($map_definition['name']))
+            · Map: {{ $map_definition['name'] }}
+        @endif
+    </p>
+
+    @if (!empty($map_definition['locations']))
+        <ul class="dz-tags">
+            @foreach (array_slice($map_definition['locations'], 0, 8) as $location)
+                <li>{{ $location['name'] }} ({{ (int) $location['x'] }}, {{ (int) $location['z'] }})</li>
+            @endforeach
+        </ul>
+    @endif
+
+    <div class="dz-list">
+        @forelse ($activity ?? [] as $player)
+            <div class="dz-player-card">
+                <div class="dz-player-card__head">
+                    <div>
+                        <strong>{{ $player['name'] ?: $player['steam64'] }}</strong>
+                        <div class="dz-sub">
+                            {{ $player['steam64'] }}
+                            @if (!empty($player['last_seen_at']))
+                                · Last seen {{ $player['last_seen_at'] }}
+                            @endif
+                        </div>
+                    </div>
+                    <span class="dz-badge {{ !empty($player['online']) ? 'dz-badge-on' : 'dz-badge-off' }}">
+                        {{ !empty($player['online']) ? 'Online' : 'Offline' }}
+                    </span>
+                </div>
+
+                <dl class="dz-browse-meta" style="margin-top:0.75rem;">
+                    <div><dt>Coordinates</dt><dd>{{ $player['x'] ?? '—' }}, {{ $player['z'] ?? '—' }}</dd></div>
+                    <div><dt>Height</dt><dd>{{ $player['y'] ?? '—' }}</dd></div>
+                    <div><dt>Direction</dt><dd>{{ isset($player['direction']) ? $player['direction'] . '°' : '—' }}</dd></div>
+                    <div><dt>Status</dt><dd>{{ !empty($player['alive']) ? 'Alive' : 'Dead / last known dead' }}</dd></div>
+                    <div><dt>Health</dt><dd>{{ $player['health'] ?? 'N/A' }}</dd></div>
+                </dl>
+
+                <div class="dz-mod-actions" style="margin-top:0.9rem;">
+                    @if (!empty($player['online']))
+                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer('{{ $player['steam64'] }}')">Kick</button>
+                    @endif
+                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer('{{ $player['steam64'] }}')">Ban</button>
+                </div>
+
+                @if (!empty($player['inventory']))
+                    <details style="margin-top:0.9rem;">
+                        <summary>Inventory snapshot</summary>
+                        <pre class="dz-pre">{{ json_encode($player['inventory'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre>
+                    </details>
+                @endif
+            </div>
+        @empty
+            <div class="dz-empty">No players have been observed yet. Once the live-map bridge writes snapshots, player activity appears here automatically.</div>
+        @endforelse
+    </div>
+
+    <p id="dz-player-action-status" class="dz-status dz-hidden" style="margin-top:0.75rem;"></p>
 </section>
 
 @foreach (['ban' => 'Ban List', 'whitelist' => 'Whitelist', 'priority' => 'Priority Queue'] as $type => $label)
@@ -21,3 +86,52 @@
         </ul>
     </section>
 @endforeach
+
+<script>
+(function () {
+    var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+    function apiBase() {
+        var m = window.location.pathname.match(/^\/(?:servers?|admin\/servers\/view)\/([^/]+)\/dayz/);
+        return m ? '/api/server/' + encodeURIComponent(m[1]) : '';
+    }
+
+    function req(method, path, body) {
+        var headers = {
+            'X-CSRF-TOKEN': csrf,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        };
+        var opts = { method: method, headers: headers };
+        if (body) {
+            headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        }
+        return fetch(apiBase() + path, opts).then(function (r) { return r.json(); });
+    }
+
+    function setStatus(msg, ok) {
+        var el = document.getElementById('dz-player-action-status');
+        if (!el) { return; }
+        el.textContent = msg;
+        el.className = 'dz-status' + (ok === false ? ' dz-status-error' : '');
+    }
+
+    window.pteroKickPlayer = function (playerId) {
+        if (!confirm('Kick this player from the server now?')) { return; }
+        setStatus('Sending kick command…');
+        req('POST', '/dayz/player-actions/kick', { player_id: playerId })
+            .then(function (d) { setStatus(d.message || (d.status === 'dispatched' ? 'Kick command sent.' : 'Kick failed.'), d.status === 'dispatched' ? undefined : false); })
+            .catch(function () { setStatus('Kick request failed.', false); });
+    };
+
+    window.pteroBanPlayer = function (playerId) {
+        var note = window.prompt('Optional ban note:', '');
+        if (note === null) { return; }
+        setStatus('Adding player to ban list…');
+        req('POST', '/dayz/players/ban', { player_id: playerId, note: note })
+            .then(function (d) { setStatus(d.message || (d.status === 'saved' ? 'Player added to ban list.' : 'Ban failed.'), d.status === 'saved' ? undefined : false); })
+            .catch(function () { setStatus('Ban request failed.', false); });
+    };
+}());
+</script>

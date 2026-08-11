@@ -665,7 +665,7 @@
         try {
             const res = await apiPost('install', { reference: workshopId, force_restart: false });
             const data = await res.json().catch(() => ({}));
-            if (res.ok) {
+            if (res.ok && data.status !== 'failed') {
                 if (status) {
                     status.textContent = data.message || '⧗ Install queued.';
                     status.className = 'dz-status dz-text-muted';
@@ -742,7 +742,7 @@
         try {
             const res = await apiPost('install', { reference: ref, force_restart: restartNow });
             const data = await res.json().catch(() => ({}));
-            if (res.ok) {
+            if (res.ok && data.status !== 'failed') {
                 if (status) {
                     status.textContent = data.message || '⧗ Install queued.';
                     status.className = 'dz-status dz-text-muted';

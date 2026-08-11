@@ -14,11 +14,29 @@ final class DayZServerService
 {
     /** @var list<int> */
     private const RESTART_WARNINGS_MINUTES = [180, 120, 60, 30, 20, 15, 10, 5, 2, 1];
+    private const FOLLOW_UP_RUNNING_GRACE_SECONDS = 15;
+
+    /**
+     * How long tickModInstallFollowUp() waits for the console to confirm the
+     * mod update finished before restarting anyway. Restarting mid-download
+     * (e.g. because logs are unavailable on this panel fork) would otherwise
+     * interrupt SteamCMD and risk a corrupt/incomplete mod folder, but the
+     * feature must still degrade gracefully rather than never restart.
+     */
+    private const FOLLOW_UP_LOG_CONFIRM_TIMEOUT_SECONDS = 60;
+
+    /** Marks that the previous startup's mod update has finished downloading. */
+    private const LOG_MOD_UPDATE_SUCCESSFUL = '[UPDATE]: Mod download/update successful!';
+
+    /** Marks that SteamCMD is done checking every Workshop mod for updates. */
+    private const LOG_WORKSHOP_CHECK_COMPLETE = '[UPDATE]: Steam Workshop mod update check complete!';
+    private const LAUNCH_CACHE_SECONDS = 120;
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZStartupService $startup = new DayZStartupService(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -294,6 +312,245 @@ final class DayZServerService
     }
 
     /**
+     * Handles the follow-up restart and DZSA Launcher submission after
+     * queued mods finish installing. Called periodically by client-side
+     * polling (mirroring tickRestartSchedule()) so DayZ Manager can react
+     * to state changes without a page reload.
+     *
+     * Behaviour is gated by two independent settings:
+     * - `auto_restart_after_mod_install`: once mods have been marked pending
+     *   (see DayZWorkshopService::markPendingModInstallFollowUp()), restart
+     *   the server so the egg's startup script actually loads them.
+     * - `auto_submit_dzsa`: once the server is confirmed running again,
+     *   best-effort submit a server-check request to DZSA Launcher.
+     *
+     * @return array<string, mixed>
+     */
+    public function tickModInstallFollowUp(mixed $server): array
+    {
+        $serverId = $this->serverIdentifier($server);
+        $pending = $this->pendingModInstallRow($serverId);
+
+        if ($pending === null) {
+            return ['status' => 'idle'];
+        }
+
+        $settings = new DayZManagerSettingsService();
+        $status = (string) ($pending['status'] ?? 'waiting');
+        $state = $this->gateway->state($server);
+
+        if ($status === 'waiting') {
+            if (!(bool) $settings->get('auto_restart_after_mod_install', false)) {
+                // Auto-restart disabled: leave the row as a marker for the
+                // operator (dzsa.blade.php / mods page can surface it) but
+                // do nothing further until they restart manually.
+                return ['status' => 'awaiting_manual_restart'];
+            }
+
+            // Don't restart yet: wait for the console to confirm the
+            // in-progress mod download/update actually finished first (see
+            // the 'confirming' branch below). Restarting while SteamCMD is
+            // still mid-download risks an incomplete mod folder and a crash
+            // on the next boot.
+            $this->storePendingModInstallStatus($serverId, 'confirming', date('Y-m-d H:i:s'));
+
+            return ['status' => 'awaiting_log_confirmation'];
+        }
+
+        if ($status === 'confirming') {
+            $updatedAt = strtotime((string) ($pending['updated_at'] ?? ''));
+            $elapsed = $updatedAt !== false ? time() - $updatedAt : PHP_INT_MAX;
+
+            $confirmed = $this->modUpdateConfirmedInLogs($server);
+
+            if (!$confirmed && $elapsed < self::FOLLOW_UP_LOG_CONFIRM_TIMEOUT_SECONDS) {
+                return ['status' => 'awaiting_log_confirmation'];
+            }
+
+            // Either the console confirmed the previous mod update/startup
+            // cycle finished, or the timeout elapsed (e.g. logs aren't
+            // available on this panel fork) — restart now so it never gets
+            // stuck waiting forever.
+            $this->gateway->sendCommand(
+                $server,
+                "say -1 <t color='#ff0000'>Restarting to enable newly installed mods.</t>",
+            );
+            $this->gateway->power($server, 'restart');
+            $this->storePendingModInstallStatus($serverId, 'restarting', date('Y-m-d H:i:s'));
+
+            return ['status' => 'restarted'];
+        }
+
+        if ($status === 'restarting') {
+            if ($state !== 'running') {
+                return ['status' => 'waiting_for_running'];
+            }
+
+            $updatedAt = strtotime((string) ($pending['updated_at'] ?? ''));
+
+            if ($updatedAt !== false && (time() - $updatedAt) < self::FOLLOW_UP_RUNNING_GRACE_SECONDS) {
+                return ['status' => 'waiting_for_running'];
+            }
+
+            if (!(bool) $settings->get('auto_submit_dzsa', false)) {
+                $this->clearPendingModInstall($serverId);
+
+                return ['status' => 'restart_complete'];
+            }
+
+            $submitted = $this->submitDzsa($server);
+            $this->clearPendingModInstall($serverId);
+
+            return ['status' => $submitted ? 'dzsa_submitted' : 'dzsa_submit_failed'];
+        }
+
+        $this->clearPendingModInstall($serverId);
+
+        return ['status' => 'idle'];
+    }
+
+    /**
+     * Whether the console log shows the previous startup's mod update cycle
+     * finished — both `[UPDATE]: Mod download/update successful!` and
+     * `[UPDATE]: Steam Workshop mod update check complete!` appearing, which
+     * the egg logs right before its own `[STARTUP]: Starting server with the
+     * following startup command` line. Only the most recent startup cycle is
+     * considered (the search starts from the last `[STARTUP]:` line found),
+     * so a stale confirmation from a much older boot can't be reused.
+     *
+     * Returns true (skip waiting) when logs can't be read at all, since the
+     * feature must degrade gracefully rather than block forever on panel
+     * forks without a console-log endpoint.
+     */
+    private function modUpdateConfirmedInLogs(mixed $server): bool
+    {
+        $lines = $this->gateway->consoleLogs($server);
+
+        if ($lines === []) {
+            return true;
+        }
+
+        $lastStartupIndex = null;
+
+        foreach ($lines as $index => $line) {
+            if (str_contains($line, '[STARTUP]: Starting server with the following startup command')) {
+                $lastStartupIndex = $index;
+            }
+        }
+
+        $window = $lastStartupIndex === null ? $lines : array_slice($lines, 0, $lastStartupIndex + 1);
+
+        $sawModUpdate = false;
+        $sawWorkshopCheck = false;
+
+        foreach ($window as $line) {
+            if (str_contains($line, self::LOG_MOD_UPDATE_SUCCESSFUL)) {
+                $sawModUpdate = true;
+            }
+
+            if (str_contains($line, self::LOG_WORKSHOP_CHECK_COMPLETE)) {
+                $sawWorkshopCheck = true;
+            }
+        }
+
+        return $sawModUpdate && $sawWorkshopCheck;
+    }
+
+    /**
+     * Best-effort GET to the DZSA Launcher server-check page so the
+     * launcher re-scans this server's mod listing without requiring the
+     * operator to open the tab manually.
+     */
+    private function submitDzsa(mixed $server): bool
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Http')) {
+            return false;
+        }
+
+        $endpoint = (new DayZServerQueryService())->dzsaEndpoint($server);
+
+        if ($endpoint === null) {
+            return false;
+        }
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(5)->get(
+                'https://dayzsalauncher.com/#/servercheck/' . $endpoint['ip'] . ':' . $endpoint['query_port'],
+            );
+
+            return $response->successful();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function pendingModInstallRow(string $serverId): ?array
+    {
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return null;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return null;
+            }
+
+            $row = \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')
+                ->where('server_id', $serverId)
+                ->first();
+
+            return $row === null ? null : (array) $row;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    private function storePendingModInstallStatus(string $serverId, string $status, ?string $updatedAt = null): void
+    {
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return;
+            }
+
+            \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')
+                ->where('server_id', $serverId)
+                ->update(['status' => $status, 'updated_at' => $updatedAt ?? date('Y-m-d H:i:s')]);
+        } catch (Throwable) {
+            // Best-effort; worst case the next tick re-evaluates from 'waiting'.
+        }
+    }
+
+    private function clearPendingModInstall(string $serverId): void
+    {
+        if ($serverId === ''
+            || !class_exists('Illuminate\\Support\\Facades\\Schema')
+            || !class_exists('Illuminate\\Support\\Facades\\DB')) {
+            return;
+        }
+
+        try {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('dayz_dzsa_pending')) {
+                return;
+            }
+
+            \Illuminate\Support\Facades\DB::table('dayz_dzsa_pending')->where('server_id', $serverId)->delete();
+        } catch (Throwable) {
+            // Best-effort cleanup only.
+        }
+    }
+
+    /**
      * Schedules a one-time timed restart that will send warnings in the global
      * chat and restart the server after `$minutes` minutes.
      *
@@ -404,22 +661,54 @@ final class DayZServerService
      */
     public function launchParameters(mixed $server = null, array $enabledFolders = []): array
     {
-        $startup = $this->startup->startup($server);
-        $modFolders = $startup['mods'] !== [] ? $startup['mods'] : $enabledFolders;
-        $schedule = $this->restartSchedule($server);
-
-        return [
-            'launch_parameters'  => (new LaunchParameterBuilder())->build($modFolders),
-            'mod_count'          => count(array_filter($modFolders, static fn (string $f): bool => $f !== '')),
-            'startup_raw'        => $startup['raw'],
-            'startup_rendered'   => $startup['rendered'],
-            'startup_parameters' => $startup['parameters'],
-            'startup_variables'  => $startup['variables'],
-            'startup_source'     => $startup['source'],
-            'mods'               => $startup['mods'],
-            'server_mods'        => $startup['server_mods'],
-            'restart_schedule'   => $schedule,
+        $cacheKey = 'pteromods.dayz.server.launch.' . md5($this->serverIdentifier($server));
+        $fallback = [
+            'launch_parameters' => (new LaunchParameterBuilder())->build($enabledFolders),
+            'mod_count' => count(array_filter($enabledFolders, static fn (string $f): bool => $f !== '')),
+            'startup_raw' => '',
+            'startup_rendered' => '',
+            'startup_parameters' => [],
+            'startup_variables' => [],
+            'startup_source' => 'unavailable',
+            'mods' => [],
+            'server_mods' => [],
+            'restart_schedule' => [
+                'enabled' => false,
+                'interval_minutes' => 0,
+                'next_restart_at' => null,
+                'timed_restart_at' => null,
+                'warnings_sent' => [],
+                'warning_minutes_enabled' => self::RESTART_WARNINGS_MINUTES,
+                'warning_messages' => [],
+            ],
         ];
+
+        $payload = $this->staleCache->remember(
+            $cacheKey,
+            self::LAUNCH_CACHE_SECONDS,
+            self::LAUNCH_CACHE_SECONDS * 20,
+            function () use ($server, $enabledFolders): array {
+                $startup = $this->startup->startup($server);
+                $modFolders = $startup['mods'] !== [] ? $startup['mods'] : $enabledFolders;
+                $schedule = $this->restartSchedule($server);
+
+                return [
+                    'launch_parameters'  => (new LaunchParameterBuilder())->build($modFolders),
+                    'mod_count'          => count(array_filter($modFolders, static fn (string $f): bool => $f !== '')),
+                    'startup_raw'        => $startup['raw'],
+                    'startup_rendered'   => $startup['rendered'],
+                    'startup_parameters' => $startup['parameters'],
+                    'startup_variables'  => $startup['variables'],
+                    'startup_source'     => $startup['source'],
+                    'mods'               => $startup['mods'],
+                    'server_mods'        => $startup['server_mods'],
+                    'restart_schedule'   => $schedule,
+                ];
+            },
+            $fallback,
+        );
+
+        return is_array($payload) ? $payload : $fallback;
     }
 
     private function serverIdentifier(mixed $server): string

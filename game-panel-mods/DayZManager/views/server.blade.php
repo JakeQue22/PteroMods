@@ -137,15 +137,6 @@
     <h2>Current Launch Parameters</h2>
     @if ($startup_source === 'pterodactyl')
         <p class="dz-sub">Loaded from the Pterodactyl startup command and this server's egg variables.</p>
-        <pre class="dz-pre">{{ $startup_rendered !== '' ? $startup_rendered : $startup_raw }}</pre>
-
-        @if (count($startup_parameters) > 0)
-            <ul class="dz-tags">
-                @foreach ($startup_parameters as $parameter)
-                    <li>{{ $parameter }}</li>
-                @endforeach
-            </ul>
-        @endif
 
         <dl class="dz-grid">
             <div class="dz-stat">
@@ -543,5 +534,30 @@
     // Tick immediately on load so a due restart or warning fires right away
     // rather than waiting up to 30 seconds for the first interval.
     window.pteroTickRestartSchedule();
+
+    // Progresses any pending follow-up restart / DZSA Launcher submission
+    // left over from a mod install (see DayZServerService::tickModInstallFollowUp()).
+    // Runs unconditionally on this interval; the server-side check is a
+    // cheap no-op when there is nothing pending for this server.
+    window.pteroTickModInstallFollowUp = async function () {
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        try {
+            await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/mod-install-followup/tick', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': meta ? meta.content : '',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({}),
+            });
+        } catch (err) {
+            // Follow-up tick failures are non-fatal.
+        }
+    };
+
+    setInterval(window.pteroTickModInstallFollowUp, 30000);
+    window.pteroTickModInstallFollowUp();
 }());
 </script>
