@@ -49,10 +49,35 @@ final class DayZStaleCacheService
             return $value;
         }
 
-        $this->deferRefresh($key, $freshSeconds, $retentionSeconds, $resolver);
-
         if ($hasValue) {
+            // Stale data exists — serve it immediately and refresh in the background
+            // after the response has been sent so the caller is not blocked.
+            $this->deferRefresh($key, $freshSeconds, $retentionSeconds, $resolver);
+
             return $value;
+        }
+
+        // No cached data at all.  Populate synchronously so the very first
+        // request always returns real data rather than the empty fallback.
+        // This is the correct stale-while-revalidate behaviour: serve stale
+        // when stale data exists, but block on the initial cold-cache load so
+        // nested resolvers (e.g. gatherStats → installedMods → scanInstalledMods)
+        // are each populated before their parent caches are written, avoiding
+        // the race where an outer cache is persisted with the inner cache's
+        // empty fallback.
+        $this->refreshNow($key, $freshSeconds, $retentionSeconds, $resolver);
+
+        try {
+            $refreshed = \Illuminate\Support\Facades\Cache::get($key);
+            $refreshedHasValue = is_array($refreshed) && (
+                (bool) ($refreshed['has_value'] ?? false) || array_key_exists('value', $refreshed)
+            );
+
+            if ($refreshedHasValue) {
+                return $refreshed['value'] ?? null;
+            }
+        } catch (Throwable) {
+            // Fall through to the fallback.
         }
 
         return $fallbackWhenEmpty;
@@ -112,6 +137,15 @@ final class DayZStaleCacheService
         }
 
         if (array_key_exists($key, self::$deferred)) {
+            // Lock was just acquired above but no shutdown function will be
+            // registered (another one is still pending for this key).  Release
+            // the lock so it is not held until its TTL expires.
+            try {
+                \Illuminate\Support\Facades\Cache::forget($lockKey);
+            } catch (Throwable) {
+                // Best-effort.
+            }
+
             return;
         }
 
