@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Services;
 
+use PDO;
+use PDOException;
 use SQLite3;
 use Throwable;
 
@@ -31,7 +33,7 @@ final class DayZPersistencePlayerService
      */
     public function snapshot(mixed $server, string $mapName = 'ChernarusPlus'): array
     {
-        if (!class_exists(SQLite3::class)) {
+        if (!$this->sqliteAvailable()) {
             return ['status' => 'sqlite_extension_missing', 'source_path' => null, 'players' => []];
         }
 
@@ -86,6 +88,28 @@ final class DayZPersistencePlayerService
     }
 
     /**
+     * Returns true when at least one usable SQLite driver is present in the
+     * PHP runtime.  The `SQLite3` extension and the `pdo_sqlite` PDO driver
+     * are separate; many panel images ship one but not both.
+     */
+    private function sqliteAvailable(): bool
+    {
+        if (class_exists(SQLite3::class)) {
+            return true;
+        }
+
+        if (class_exists(PDO::class)) {
+            try {
+                return in_array('sqlite', PDO::getAvailableDrivers(), true);
+            } catch (Throwable) {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return list<array<string, mixed>>|null
      */
     private function extractPlayers(string $raw, string $mapName): ?array
@@ -104,6 +128,21 @@ final class DayZPersistencePlayerService
         @chmod($tmpPath, 0600);
         file_put_contents($tmpPath, $raw);
 
+        // Prefer the native SQLite3 extension; fall back to PDO sqlite.
+        if (class_exists(SQLite3::class)) {
+            return $this->extractViaSqlite3($tmpPath, $mapName);
+        }
+
+        return $this->extractViaPdo($tmpPath, $mapName);
+    }
+
+    /**
+     * Extracts players using the native SQLite3 extension.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function extractViaSqlite3(string $tmpPath, string $mapName): ?array
+    {
         try {
             $db = new SQLite3($tmpPath, SQLITE3_OPEN_READONLY);
         } catch (Throwable) {
@@ -133,22 +172,79 @@ final class DayZPersistencePlayerService
                 }
             }
 
-            usort($merged, static function (array $left, array $right): int {
-                $rightSeen = strtotime((string) ($right['last_seen_at'] ?? '')) ?: 0;
-                $leftSeen = strtotime((string) ($left['last_seen_at'] ?? '')) ?: 0;
-
-                if ($rightSeen !== $leftSeen) {
-                    return $rightSeen <=> $leftSeen;
-                }
-
-                return strcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
-            });
-
-            return array_values($merged);
+            return $this->sortMerged($merged);
         } finally {
             $db->close();
             @unlink($tmpPath);
         }
+    }
+
+    /**
+     * Extracts players using PDO with the sqlite driver, as a fallback when
+     * the native SQLite3 PHP extension is not loaded.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    private function extractViaPdo(string $tmpPath, string $mapName): ?array
+    {
+        try {
+            $pdo = new PDO('sqlite:' . $tmpPath, null, null, [
+                PDO::ATTR_ERRMODE  => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT  => 5,
+            ]);
+        } catch (Throwable) {
+            @unlink($tmpPath);
+            return null;
+        }
+
+        try {
+            $merged = [];
+
+            foreach ($this->tablesPdo($pdo) as $table) {
+                $rows = $this->extractFromTablePdo($pdo, $table, $mapName);
+
+                foreach ($rows as $row) {
+                    $uid = (string) ($row['player_id'] ?? '');
+
+                    if ($uid === '') {
+                        continue;
+                    }
+
+                    if (!isset($merged[$uid])) {
+                        $merged[$uid] = $row;
+                        continue;
+                    }
+
+                    $merged[$uid] = $this->mergeRow($merged[$uid], $row);
+                }
+            }
+
+            return $this->sortMerged($merged);
+        } catch (Throwable) {
+            return null;
+        } finally {
+            @unlink($tmpPath);
+        }
+    }
+
+    /**
+     * @param array<string, array<string, mixed>> $merged
+     * @return list<array<string, mixed>>
+     */
+    private function sortMerged(array $merged): array
+    {
+        usort($merged, static function (array $left, array $right): int {
+            $rightSeen = strtotime((string) ($right['last_seen_at'] ?? '')) ?: 0;
+            $leftSeen = strtotime((string) ($left['last_seen_at'] ?? '')) ?: 0;
+
+            if ($rightSeen !== $leftSeen) {
+                return $rightSeen <=> $leftSeen;
+            }
+
+            return strcasecmp((string) ($left['name'] ?? ''), (string) ($right['name'] ?? ''));
+        });
+
+        return array_values($merged);
     }
 
     /**
@@ -310,6 +406,168 @@ final class DayZPersistencePlayerService
         }
 
         return null;
+    }
+
+    // ── PDO (pdo_sqlite) equivalents ──────────────────────────────────────────
+
+    /**
+     * @return list<string>
+     */
+    private function tablesPdo(PDO $pdo): array
+    {
+        try {
+            $stmt = $pdo->query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+
+            if ($stmt === false) {
+                return [];
+            }
+
+            $tables = [];
+
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $name = trim((string) ($row['name'] ?? ''));
+
+                if ($name !== '') {
+                    $tables[] = $name;
+                }
+            }
+
+            return $tables;
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function extractFromTablePdo(PDO $pdo, string $table, string $mapName): array
+    {
+        $columns = $this->columnsPdo($pdo, $table);
+
+        if ($columns === []) {
+            return [];
+        }
+
+        $uidColumn    = $this->firstColumn($columns, '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i');
+        $nameColumn   = $this->firstColumn($columns, '/(name|nickname|playername)/i');
+        $xColumn      = $this->firstColumn($columns, '/(^x$|posx|positionx|worldx|coordx)/i');
+        $yColumn      = $this->firstColumn($columns, '/(^y$|posy|positiony|worldy|coordy|height)/i');
+        $zColumn      = $this->firstColumn($columns, '/(^z$|posz|positionz|worldz|coordz)/i');
+        $vectorColumn = $this->firstColumn($columns, '/(^pos$|position|vector|location)/i');
+        $seenColumn   = $this->firstColumn($columns, '/(last.*(seen|login|played)|updated|created|timestamp|time)/i');
+        $aliveColumn  = $this->firstColumn($columns, '/(alive|is_alive|isdead|dead)/i');
+
+        if ($uidColumn === null) {
+            return [];
+        }
+
+        $select = ['"' . str_replace('"', '""', $uidColumn) . '" AS __uid'];
+
+        if ($nameColumn !== null) {
+            $select[] = '"' . str_replace('"', '""', $nameColumn) . '" AS __name';
+        }
+
+        if ($xColumn !== null) {
+            $select[] = '"' . str_replace('"', '""', $xColumn) . '" AS __x';
+        }
+
+        if ($yColumn !== null) {
+            $select[] = '"' . str_replace('"', '""', $yColumn) . '" AS __y';
+        }
+
+        if ($zColumn !== null) {
+            $select[] = '"' . str_replace('"', '""', $zColumn) . '" AS __z';
+        }
+
+        if ($vectorColumn !== null) {
+            $select[] = '"' . str_replace('"', '""', $vectorColumn) . '" AS __vector';
+        }
+
+        if ($seenColumn !== null) {
+            $select[] = '"' . str_replace('"', '""', $seenColumn) . '" AS __seen';
+        }
+
+        if ($aliveColumn !== null) {
+            $select[] = '"' . str_replace('"', '""', $aliveColumn) . '" AS __alive';
+        }
+
+        try {
+            $stmt = $pdo->query(sprintf(
+                'SELECT %s FROM "%s" LIMIT %d',
+                implode(', ', $select),
+                str_replace('"', '""', $table),
+                self::TABLE_ROW_LIMIT,
+            ));
+
+            if ($stmt === false) {
+                return [];
+            }
+
+            $players = [];
+
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $playerId = trim((string) ($row['__uid'] ?? ''));
+
+                if ($playerId === '') {
+                    continue;
+                }
+
+                $steam64 = preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null;
+                $vector  = $this->parseVector($row['__vector'] ?? null);
+                $x       = $this->floatValue($row['__x'] ?? null) ?? ($vector[0] ?? null);
+                $y       = $this->floatValue($row['__y'] ?? null) ?? ($vector[1] ?? null);
+                $z       = $this->floatValue($row['__z'] ?? null) ?? ($vector[2] ?? null);
+                $name    = trim((string) ($row['__name'] ?? ''));
+                $status  = $this->positionStatus($x, $z, $mapName);
+
+                $players[] = [
+                    'player_id'       => $playerId,
+                    'steam64'         => $steam64,
+                    'name'            => $name !== '' ? $name : $playerId,
+                    'x'               => $x,
+                    'y'               => $y,
+                    'z'               => $z,
+                    'position_status' => $status,
+                    'position_valid'  => $status === 'valid',
+                    'alive'           => $this->aliveValue($row['__alive'] ?? null),
+                    'last_seen_at'    => $this->normalizeTimestamp($row['__seen'] ?? null),
+                    'source_table'    => $table,
+                ];
+            }
+
+            return $players;
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function columnsPdo(PDO $pdo, string $table): array
+    {
+        try {
+            $stmt = $pdo->query(sprintf("PRAGMA table_info('%s')", str_replace("'", "''", $table)));
+
+            if ($stmt === false) {
+                return [];
+            }
+
+            $columns = [];
+
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $name = trim((string) ($row['name'] ?? ''));
+
+                if ($name !== '') {
+                    $columns[] = $name;
+                }
+            }
+
+            return $columns;
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     /**

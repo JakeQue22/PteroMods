@@ -1,11 +1,15 @@
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
 <section class="dz-card">
     <h2>Live Map</h2>
     <p class="dz-sub">
         Live player positions come from a server-side bridge snapshot in <code>/profiles/PteroMods/live_map_players.json</code>.
+        Map tiles: <a href="https://github.com/WoozyMasta/dzmap" target="_blank" rel="noopener noreferrer">xam.nu community CDN</a>
+        (configurable via <a href="{{ $base_url }}/settings">Settings → Live Map tile URL</a>).
     </p>
     <div class="dz-form">
         <input id="dz-live-map-search" class="dz-input" type="search" placeholder="Search players by name or Steam64" />
-        <button class="dz-btn dz-btn-ghost" type="button" onclick="window.pteroLiveMapResetCamera()">Reset Camera</button>
+        <button class="dz-btn dz-btn-ghost" type="button" onclick="window.pteroLiveMapResetCamera()">Reset View</button>
         <button class="dz-btn dz-btn-ghost" type="button" onclick="window.pteroLiveMapFullscreen()">Fullscreen</button>
     </div>
     <p class="dz-sub" id="dz-live-map-meta">
@@ -27,219 +31,264 @@
     </aside>
 </section>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN/WPeE=" crossorigin=""></script>
 <script>
 (function () {
-    const SERVER_ID = @json($server_id);
+    const SERVER_ID   = @json($server_id);
     const SNAPSHOT_URL = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/snapshot';
-    const POLL_MS = 7000;
+    const POLL_MS      = 7000;
+
+    // Tile URL template from panel settings, e.g.:
+    // https://static.xam.nu/dayz/maps/{map}/1.29/satellite/{z}/{x}/{y}.webp
+    // {map} is replaced with the map's tile id; {z}/{x}/{y} are Leaflet placeholders.
+    const TILE_URL_TPL = @json($tile_url ?? '');
+
     const state = {
-        map: @json($map_definition ?? ['name' => 'ChernarusPlus', 'world_size' => 15360]),
-        players: new Map(),
-        list: [],
+        mapDef: @json($map_definition ?? ['id' => 'chernarusplus', 'name' => 'ChernarusPlus', 'world_size' => 15360, 'locations' => []]),
+        players: new Map(),   // steam64 → player data
+        markers: new Map(),   // steam64 → L.Marker
         selected: '',
         search: '',
-        lastUpdate: '',
-        renderer: null,
-        scene: null,
-        camera: null,
-        controls: null,
-        ground: null,
-        raycaster: null,
-        mouse: null,
-        animation: 0,
-        fallback2d: null,
+        list: [],
+        leafletMap: null,
+        tileLayer: null,
+        locationLayer: null,
     };
 
-    const root = document.getElementById('dz-live-map-canvas');
-    const statusEl = document.getElementById('dz-live-map-status');
-    const listEl = document.getElementById('dz-live-map-list');
-    const detailEl = document.getElementById('dz-live-map-player');
-    const countEl = document.getElementById('dz-live-map-count');
+    const root      = document.getElementById('dz-live-map-canvas');
+    const statusEl  = document.getElementById('dz-live-map-status');
+    const listEl    = document.getElementById('dz-live-map-list');
+    const detailEl  = document.getElementById('dz-live-map-player');
+    const countEl   = document.getElementById('dz-live-map-count');
     const updatedEl = document.getElementById('dz-live-map-updated');
     const mapNameEl = document.getElementById('dz-live-map-name');
-    const searchEl = document.getElementById('dz-live-map-search');
+    const searchEl  = document.getElementById('dz-live-map-search');
 
-    function loadScript(url) {
-        return new Promise(function (resolve, reject) {
-            const existing = document.querySelector('script[data-live-map="' + url + '"]');
-            if (existing) {
-                existing.addEventListener('load', function () { resolve(); }, { once: true });
-                existing.addEventListener('error', reject, { once: true });
-                if (existing.getAttribute('data-loaded') === '1') {
-                    resolve();
-                }
-                return;
-            }
-            const script = document.createElement('script');
-            script.src = url;
-            script.async = true;
-            script.setAttribute('data-live-map', url);
-            script.addEventListener('load', function () { script.setAttribute('data-loaded', '1'); resolve(); }, { once: true });
-            script.addEventListener('error', reject, { once: true });
-            document.head.appendChild(script);
+    // ── Coordinate system ────────────────────────────────────────────────────
+    // DayZ uses a flat world grid: x = east, z = south (increasing).
+    // Leaflet L.CRS.Simple uses (lat, lng).  With the transformation below,
+    // world coord (x, z) maps to L.latLng(z, x) and the tile layer lines up.
+    //
+    // L.Transformation(a, b, c, d):
+    //   px_x = a * lng + b  →  a = 256/worldSize, b = 0     (east → right)
+    //   px_y = c * lat + d  →  c = -256/worldSize, d = 256  (south → down)
+    //
+    // Source: Sk3tch-Dev-Ux/citadel-server-manager InteractiveMap.jsx
+    function buildCRS(worldSize) {
+        const f = 256 / worldSize;
+        return L.Util.extend({}, L.CRS.Simple, {
+            transformation: new L.Transformation(f, 0, -f, 256),
         });
     }
 
-    function csrfToken() {
-        const meta = document.querySelector('meta[name="csrf-token"]');
-        return meta ? meta.content : '';
+    function dayzToLatLng(x, z) {
+        return L.latLng(z, x);
     }
 
-    function apiGet() {
-        return fetch(SNAPSHOT_URL, {
-            method: 'GET',
-            credentials: 'same-origin',
-            headers: {
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': csrfToken(),
-            },
-        }).then(function (res) {
-            if (!res.ok) {
-                throw new Error('HTTP ' + res.status);
-            }
-            return res.json();
+    // ── Map name → xam.nu tile ID ─────────────────────────────────────────
+    function tileId(mapDef) {
+        return (mapDef.id || mapDef.name || 'chernarusplus').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    function buildTileUrl(mapDef) {
+        if (!TILE_URL_TPL) {
+            return null;
+        }
+        return TILE_URL_TPL.replace('{map}', tileId(mapDef));
+    }
+
+    // ── Player marker icon ────────────────────────────────────────────────
+    function playerIcon(alive, selected) {
+        const fill   = alive !== false ? '#34d399' : '#f87171';
+        const stroke = selected ? '#ffffff' : '#0b0f19';
+        const sw     = selected ? 2.5 : 1.5;
+        const r      = selected ? 7 : 6;
+        const size   = selected ? 20 : 16;
+        return L.divIcon({
+            html: '<svg xmlns="http://www.w3.org/2000/svg" width="' + size + '" height="' + size + '">'
+                + '<circle cx="' + (size / 2) + '" cy="' + (size / 2) + '" r="' + r + '" '
+                + 'fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + sw + '"/></svg>',
+            className: '',
+            iconSize:   [size, size],
+            iconAnchor: [size / 2, size / 2],
+            tooltipAnchor: [0, -(size / 2 + 2)],
         });
     }
 
-    function worldToScene(x, z) {
-        const size = Number(state.map.world_size || 15360);
-        return {
-            x: (x - (size / 2)),
-            z: (z - (size / 2)),
-        };
+    // ── Initialise Leaflet ────────────────────────────────────────────────
+    function initLeaflet() {
+        const worldSize = Number(state.mapDef.world_size || 15360);
+        const crs = buildCRS(worldSize);
+
+        state.leafletMap = L.map(root, {
+            crs:        crs,
+            minZoom:    -2,
+            maxZoom:    7,
+            zoomSnap:   0.25,
+            zoomDelta:  0.5,
+            attributionControl: false,
+        });
+
+        L.control.attribution({ prefix: false })
+            .addAttribution('Tiles © <a href="https://dayz.xam.nu" target="_blank">xam.nu</a>')
+            .addTo(state.leafletMap);
+
+        applyTileLayer(state.mapDef);
+        applyLocationLayer(state.mapDef);
+
+        const center = dayzToLatLng(worldSize / 2, worldSize / 2);
+        state.leafletMap.setView(center, 0);
+
+        state.leafletMap.whenReady(function () {
+            state.leafletMap.fitBounds([
+                dayzToLatLng(0, 0),
+                dayzToLatLng(worldSize, worldSize),
+            ]);
+        });
     }
 
-    function worldToCanvas(x, z, width, height) {
-        const size = Number(state.map.world_size || 15360);
-        return {
-            x: Math.max(0, Math.min(width, (x / size) * width)),
-            y: Math.max(0, Math.min(height, (z / size) * height)),
-        };
-    }
-
-    function drawMapBackground(ctx, width, height) {
-        ctx.fillStyle = '#08111c';
-        ctx.fillRect(0, 0, width, height);
-
-        const gradient = ctx.createLinearGradient(0, 0, width, height);
-        gradient.addColorStop(0, '#16324a');
-        gradient.addColorStop(0.4, '#1f4d3f');
-        gradient.addColorStop(1, '#305f42');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(24, 24, width - 48, height - 48);
-
-        ctx.strokeStyle = 'rgba(12, 18, 30, 0.45)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= 15; i++) {
-            const x = (i / 15) * width;
-            const y = (i / 15) * height;
-            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+    function applyTileLayer(mapDef) {
+        if (state.tileLayer) {
+            state.leafletMap.removeLayer(state.tileLayer);
+            state.tileLayer = null;
         }
 
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-        ctx.strokeRect(24.5, 24.5, width - 49, height - 49);
+        const url = buildTileUrl(mapDef);
+        if (!url) {
+            return;
+        }
 
-        const locations = Array.isArray(state.map.locations) ? state.map.locations : [];
-        ctx.fillStyle = 'rgba(230,235,245,0.92)';
-        ctx.font = 'bold 16px sans-serif';
-        locations.forEach(function (location) {
-            const pos = worldToCanvas(Number(location.x || 0), Number(location.z || 0), width, height);
-            ctx.beginPath();
-            ctx.fillStyle = '#fbbf24';
-            ctx.arc(pos.x, pos.y, 3.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = 'rgba(230,235,245,0.92)';
-            ctx.fillText(String(location.name || ''), pos.x + 8, pos.y - 8);
+        state.tileLayer = L.tileLayer(url, {
+            tileSize:        256,
+            minNativeZoom:   0,
+            maxNativeZoom:   7,
+            minZoom:        -2,
+            maxZoom:         7,
+            errorTileUrl:    '',
+        }).addTo(state.leafletMap);
+    }
+
+    function applyLocationLayer(mapDef) {
+        if (state.locationLayer) {
+            state.leafletMap.removeLayer(state.locationLayer);
+            state.locationLayer = null;
+        }
+
+        const locations = Array.isArray(mapDef.locations) ? mapDef.locations : [];
+        if (locations.length === 0) {
+            return;
+        }
+
+        state.locationLayer = L.layerGroup();
+
+        locations.forEach(function (loc) {
+            const latlng = dayzToLatLng(Number(loc.x || 0), Number(loc.z || 0));
+            L.circleMarker(latlng, {
+                radius:      3,
+                color:       '#fbbf24',
+                fillColor:   '#fbbf24',
+                fillOpacity: 1,
+                weight:      0,
+                interactive: false,
+            }).addTo(state.locationLayer);
+
+            L.marker(latlng, {
+                icon: L.divIcon({
+                    html: '<span class="dz-map-loc">' + escapeHtml(String(loc.name || '')) + '</span>',
+                    className: '',
+                    iconAnchor: [-5, 6],
+                }),
+                interactive: false,
+            }).addTo(state.locationLayer);
         });
+
+        state.locationLayer.addTo(state.leafletMap);
     }
 
-    function sceneToScreen(vector) {
-        const width = root.clientWidth || 1;
-        const height = root.clientHeight || 1;
-        const projected = vector.clone().project(state.camera);
-        return {
-            x: (projected.x * 0.5 + 0.5) * width,
-            y: (projected.y * -0.5 + 0.5) * height,
-            visible: projected.z < 1,
-        };
-    }
-
-    function markerLabel(name) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = 'rgba(12,18,30,0.9)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = 'rgba(14,165,233,0.9)';
-        ctx.strokeRect(0.5, 0.5, canvas.width - 1, canvas.height - 1);
-        ctx.fillStyle = '#e6ebf5';
-        ctx.font = '24px sans-serif';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(name.slice(0, 24), 12, 32);
-        const texture = new window.THREE.CanvasTexture(canvas);
-        const sprite = new window.THREE.Sprite(new window.THREE.SpriteMaterial({ map: texture, transparent: true }));
-        sprite.scale.set(220, 55, 1);
-        return sprite;
-    }
-
-    function createMarker(player) {
-        const geometry = new window.THREE.ConeGeometry(45, 140, 8);
-        const material = new window.THREE.MeshBasicMaterial({ color: player.alive ? 0x34d399 : 0xf87171 });
-        const cone = new window.THREE.Mesh(geometry, material);
-        cone.userData.steam64 = player.steam64;
-        cone.rotation.x = Math.PI;
-        const label = markerLabel(player.name);
-        const group = new window.THREE.Group();
-        group.add(cone);
-        group.add(label);
-        label.position.set(0, 130, 0);
-        state.scene.add(group);
-        return { group: group, cone: cone, label: label, target: { x: 0, z: 0, dir: 0 }, data: player };
-    }
-
+    // ── Snapshot application ─────────────────────────────────────────────
     function applySnapshot(payload) {
-        state.map = payload.map_definition || state.map;
-        mapNameEl.textContent = state.map.name || payload.map || 'Unknown';
-        updatedEl.textContent = new Date(payload.last_update || Date.now()).toLocaleString();
-        state.lastUpdate = payload.last_update || '';
-        statusEl.textContent = payload.status === 'waiting_for_bridge'
-            ? 'Waiting for bridge data at ' + (payload.bridge_format && payload.bridge_format.path ? payload.bridge_format.path : '/profiles/PteroMods/live_map_players.json')
-            : (payload.status === 'invalid_bridge_payload'
-                ? 'Bridge snapshot exists but is invalid (or signature check failed).'
-                : (payload.status === 'error'
-                    ? 'Snapshot error: ' + (payload.message || 'Unknown error.')
-                    : 'Live snapshot received.'));
+        const incomingMapDef = payload.map_definition || null;
 
-        const seen = new Set();
+        if (incomingMapDef && incomingMapDef.name !== state.mapDef.name) {
+            state.mapDef = incomingMapDef;
+
+            const worldSize = Number(state.mapDef.world_size || 15360);
+            // Rebuild CRS and reinitialise layers for new map.
+            state.leafletMap.options.crs = buildCRS(worldSize);
+            applyTileLayer(state.mapDef);
+            applyLocationLayer(state.mapDef);
+            state.leafletMap.fitBounds([dayzToLatLng(0, 0), dayzToLatLng(worldSize, worldSize)]);
+
+            // Remove all existing markers (they belong to the old map).
+            state.markers.forEach(function (m) { m.remove(); });
+            state.markers.clear();
+            state.players.clear();
+        } else if (incomingMapDef) {
+            state.mapDef = incomingMapDef;
+        }
+
+        mapNameEl.textContent = state.mapDef.name || payload.map || 'Unknown';
+        updatedEl.textContent = new Date(payload.last_update || Date.now()).toLocaleString();
+
+        switch (payload.status) {
+            case 'waiting_for_bridge':
+                statusEl.textContent = 'Waiting for bridge snapshot — deploy bridge and restart the server.';
+                break;
+            case 'invalid_bridge_payload':
+                statusEl.textContent = 'Bridge snapshot exists but could not be decoded (check secret config).';
+                break;
+            case 'error':
+                statusEl.textContent = 'Snapshot error: ' + (payload.message || 'Unknown error.');
+                break;
+            default:
+                statusEl.textContent = '';
+        }
+
         const players = Array.isArray(payload.players) ? payload.players : [];
+        const seen    = new Set();
+
         players.forEach(function (player) {
             if (!player || !player.steam64) {
                 return;
             }
+
             seen.add(player.steam64);
-            const mapPos = worldToScene(Number(player.x || 0), Number(player.z || 0));
-            if (!state.players.has(player.steam64)) {
-                state.players.set(player.steam64, createMarker(player));
+            state.players.set(player.steam64, player);
+
+            const pos     = dayzToLatLng(Number(player.x || 0), Number(player.z || 0));
+            const sel     = state.selected === player.steam64;
+            const icon    = playerIcon(player.alive, sel);
+            const tooltip = escapeHtml(player.name || player.steam64);
+
+            if (!state.markers.has(player.steam64)) {
+                const marker = L.marker(pos, { icon: icon, zIndexOffset: sel ? 1000 : 0 })
+                    .addTo(state.leafletMap)
+                    .bindTooltip(tooltip, { direction: 'top', permanent: false });
+
+                marker.on('click', function () {
+                    selectPlayer(player.steam64);
+                });
+
+                state.markers.set(player.steam64, marker);
+            } else {
+                const marker = state.markers.get(player.steam64);
+                marker.setLatLng(pos);
+                marker.setIcon(icon);
+                marker.setZIndexOffset(sel ? 1000 : 0);
+                marker.setTooltipContent(tooltip);
             }
-            const marker = state.players.get(player.steam64);
-            marker.data = player;
-            marker.target.x = mapPos.x;
-            marker.target.z = mapPos.z;
-            marker.target.dir = Number(player.direction || 0);
-            marker.cone.material.color.set(player.alive ? 0x34d399 : 0xf87171);
         });
 
-        Array.from(state.players.keys()).forEach(function (steam64) {
-            if (seen.has(steam64)) {
-                return;
-            }
-            const marker = state.players.get(steam64);
-            state.scene.remove(marker.group);
-            state.players.delete(steam64);
-            if (state.selected === steam64) {
-                state.selected = '';
+        // Remove departed players.
+        Array.from(state.markers.keys()).forEach(function (steam64) {
+            if (!seen.has(steam64)) {
+                state.markers.get(steam64).remove();
+                state.markers.delete(steam64);
+                state.players.delete(steam64);
+
+                if (state.selected === steam64) {
+                    state.selected = '';
+                }
             }
         });
 
@@ -247,24 +296,23 @@
         countEl.textContent = String(players.length);
         renderPlayerList();
         renderSelection();
-
-        if (state.fallback2d) {
-            draw2dFallback(players);
-        }
     }
 
+    // ── Player list ───────────────────────────────────────────────────────
     function renderPlayerList() {
-        const needle = (state.search || '').toLowerCase();
-        const filtered = state.list.filter(function (player) {
-            const hay = (String(player.name || '') + ' ' + String(player.steam64 || '')).toLowerCase();
+        const needle   = (state.search || '').toLowerCase();
+        const filtered = state.list.filter(function (p) {
+            const hay = (String(p.name || '') + ' ' + String(p.steam64 || '')).toLowerCase();
             return needle === '' || hay.indexOf(needle) !== -1;
         });
 
         listEl.innerHTML = '';
+
         filtered.forEach(function (player) {
-            const li = document.createElement('li');
+            const li  = document.createElement('li');
             li.className = 'dz-live-map-list-item' + (state.selected === player.steam64 ? ' is-active' : '');
-            li.innerHTML = '<button type="button"><span>' + escapeHtml(player.name) + '</span><small>' + escapeHtml(player.steam64) + '</small></button>';
+            li.innerHTML = '<button type="button"><span>' + escapeHtml(player.name) + '</span>'
+                + '<small>' + escapeHtml(player.steam64) + '</small></button>';
             li.querySelector('button').addEventListener('click', function () {
                 selectPlayer(player.steam64);
                 focusPlayer(player.steam64);
@@ -274,38 +322,55 @@
     }
 
     function renderSelection() {
-        const selected = state.list.find(function (player) { return player.steam64 === state.selected; });
-        if (!selected) {
+        const player = state.list.find(function (p) { return p.steam64 === state.selected; });
+
+        if (!player) {
             detailEl.innerHTML = '<p class="dz-sub">Select a player marker to view details.</p>';
             return;
         }
+
         detailEl.innerHTML =
-            '<h4>' + escapeHtml(selected.name) + '</h4>'
+            '<h4>' + escapeHtml(player.name) + '</h4>'
             + '<dl class="dz-browse-meta">'
-            + '<div><dt>Steam64</dt><dd>' + escapeHtml(selected.steam64) + '</dd></div>'
-            + '<div><dt>Position</dt><dd>' + Number(selected.x || 0).toFixed(1) + ', ' + Number(selected.z || 0).toFixed(1) + '</dd></div>'
-            + '<div><dt>Height</dt><dd>' + Number(selected.y || 0).toFixed(1) + '</dd></div>'
-            + '<div><dt>Direction</dt><dd>' + Number(selected.direction || 0).toFixed(1) + '°</dd></div>'
-            + '<div><dt>Status</dt><dd>' + (selected.alive ? 'Alive' : 'Dead') + '</dd></div>'
-            + '<div><dt>Health</dt><dd>' + (selected.health == null ? 'N/A' : Number(selected.health).toFixed(1)) + '</dd></div>'
+            + '<div><dt>Steam64</dt><dd>' + escapeHtml(player.steam64) + '</dd></div>'
+            + '<div><dt>Position</dt><dd>' + Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1) + '</dd></div>'
+            + '<div><dt>Height</dt><dd>' + Number(player.y || 0).toFixed(1) + '</dd></div>'
+            + '<div><dt>Direction</dt><dd>' + Number(player.direction || 0).toFixed(1) + '°</dd></div>'
+            + '<div><dt>Status</dt><dd>' + (player.alive !== false ? 'Alive' : 'Dead') + '</dd></div>'
+            + '<div><dt>Health</dt><dd>' + (player.health == null ? 'N/A' : Number(player.health).toFixed(1)) + '</dd></div>'
             + '</dl>';
     }
 
     function selectPlayer(steam64) {
+        const prev = state.selected;
         state.selected = steam64;
+
+        // Refresh icon for previous selection.
+        if (prev && state.markers.has(prev)) {
+            const prevPlayer = state.players.get(prev);
+            state.markers.get(prev).setIcon(playerIcon(prevPlayer && prevPlayer.alive, false));
+            state.markers.get(prev).setZIndexOffset(0);
+        }
+
+        // Highlight new selection.
+        if (state.markers.has(steam64)) {
+            const selPlayer = state.players.get(steam64);
+            state.markers.get(steam64).setIcon(playerIcon(selPlayer && selPlayer.alive, true));
+            state.markers.get(steam64).setZIndexOffset(1000);
+        }
+
         renderPlayerList();
         renderSelection();
     }
 
     function focusPlayer(steam64) {
-        const marker = state.players.get(steam64);
-        if (!marker || !state.controls) {
-            return;
+        const marker = state.markers.get(steam64);
+        if (marker && state.leafletMap) {
+            state.leafletMap.panTo(marker.getLatLng(), { animate: true, duration: 0.4 });
         }
-        state.controls.target.set(marker.group.position.x, 0, marker.group.position.z);
-        state.controls.update();
     }
 
+    // ── Utilities ─────────────────────────────────────────────────────────
     function escapeHtml(value) {
         return String(value || '')
             .replace(/&/g, '&amp;')
@@ -315,25 +380,13 @@
             .replace(/'/g, '&#39;');
     }
 
-    function resizeRenderer() {
-        if (!state.renderer || !state.camera) {
+    function resetView() {
+        if (!state.leafletMap) {
             return;
         }
-        const width = root.clientWidth || 1;
-        const height = root.clientHeight || 1;
-        state.renderer.setSize(width, height);
-        state.camera.aspect = width / height;
-        state.camera.updateProjectionMatrix();
-    }
 
-    function resetCamera() {
-        if (!state.camera || !state.controls) {
-            return;
-        }
-        const size = Number(state.map.world_size || 15360);
-        state.camera.position.set(size * 0.25, size * 0.35, size * 0.25);
-        state.controls.target.set(0, 0, 0);
-        state.controls.update();
+        const worldSize = Number(state.mapDef.world_size || 15360);
+        state.leafletMap.fitBounds([dayzToLatLng(0, 0), dayzToLatLng(worldSize, worldSize)]);
     }
 
     function toggleFullscreen() {
@@ -341,96 +394,24 @@
             root.requestFullscreen && root.requestFullscreen();
             return;
         }
+
         document.exitFullscreen && document.exitFullscreen();
     }
 
-    function animate() {
-        if (state.fallback2d) {
-            return;
-        }
-
-        state.animation = requestAnimationFrame(animate);
-
-        state.players.forEach(function (marker) {
-            marker.group.position.x += (marker.target.x - marker.group.position.x) * 0.18;
-            marker.group.position.z += (marker.target.z - marker.group.position.z) * 0.18;
-            marker.group.rotation.y = (marker.target.dir * Math.PI / 180);
-        });
-
-        state.controls && state.controls.update();
-        state.renderer && state.renderer.render(state.scene, state.camera);
-    }
-
-    function draw2dFallback(players) {
-        if (!state.fallback2d) {
-            return;
-        }
-        const canvas = state.fallback2d;
-        const ctx = canvas.getContext('2d');
-        const width = canvas.width;
-        const height = canvas.height;
-
-        ctx.fillStyle = '#0b0f19';
-        ctx.fillRect(0, 0, width, height);
-        drawMapBackground(ctx, width, height);
-
-        players.forEach(function (player) {
-            const pos = worldToCanvas(Number(player.x || 0), Number(player.z || 0), width, height);
-            ctx.fillStyle = player.alive ? '#34d399' : '#f87171';
-            ctx.beginPath();
-            ctx.arc(pos.x, pos.y, 5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#e6ebf5';
-            ctx.font = '12px sans-serif';
-            ctx.fillText(String(player.name || ''), pos.x + 8, pos.y - 8);
-        });
-    }
-
-    function buildGround() {
-        const size = Number(state.map.world_size || 15360);
-        if (state.ground) {
-            state.scene.remove(state.ground);
-        }
-        const geometry = new window.THREE.PlaneGeometry(size, size, 50, 50);
-        const canvas = document.createElement('canvas');
-        canvas.width = 2048;
-        canvas.height = 2048;
-        drawMapBackground(canvas.getContext('2d'), canvas.width, canvas.height);
-        const texture = new window.THREE.CanvasTexture(canvas);
-        texture.colorSpace = window.THREE.SRGBColorSpace || texture.colorSpace;
-        texture.needsUpdate = true;
-        const material = new window.THREE.MeshBasicMaterial({ map: texture });
-        const mesh = new window.THREE.Mesh(geometry, material);
-        mesh.rotation.x = -Math.PI / 2;
-        state.scene.add(mesh);
-        state.ground = mesh;
-    }
-
-    function onCanvasClick(event) {
-        if (!state.raycaster || !state.camera) {
-            return;
-        }
-        const rect = root.getBoundingClientRect();
-        state.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        state.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        state.raycaster.setFromCamera(state.mouse, state.camera);
-        const meshes = [];
-        state.players.forEach(function (marker) { meshes.push(marker.cone); });
-        const hits = state.raycaster.intersectObjects(meshes, false);
-        if (hits.length > 0 && hits[0].object && hits[0].object.userData) {
-            const steam64 = hits[0].object.userData.steam64;
-            selectPlayer(steam64);
-            focusPlayer(steam64);
-        }
-    }
-
+    // ── Poll loop ─────────────────────────────────────────────────────────
     async function poll() {
         try {
-            const payload = await apiGet();
-            applySnapshot(payload);
-            if (!state.fallback2d) {
-                buildGround();
+            const res = await fetch(SNAPSHOT_URL, {
+                method:      'GET',
+                credentials: 'same-origin',
+                headers:     { 'Accept': 'application/json' },
+            });
+
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status);
             }
+
+            applySnapshot(await res.json());
         } catch (err) {
             statusEl.textContent = 'Failed to fetch live map snapshot.';
         } finally {
@@ -438,54 +419,66 @@
         }
     }
 
-    async function boot() {
-        try {
-            await loadScript('https://unpkg.com/three@0.150.0/build/three.min.js');
-            await loadScript('https://unpkg.com/three@0.150.0/examples/js/controls/OrbitControls.js');
-        } catch (err) {
-            statusEl.textContent = '3D map assets could not load. Using 2D fallback.';
-            const canvas = document.createElement('canvas');
-            canvas.width = 1200;
-            canvas.height = 800;
-            canvas.className = 'dz-live-map-fallback';
-            root.appendChild(canvas);
-            state.fallback2d = canvas;
-            poll();
-            return;
-        }
+    // ── Boot ──────────────────────────────────────────────────────────────
+    window.pteroLiveMapResetCamera = resetView;
+    window.pteroLiveMapFullscreen  = toggleFullscreen;
 
-        state.scene = new window.THREE.Scene();
-        state.scene.background = new window.THREE.Color(0x0b0f19);
-        state.camera = new window.THREE.PerspectiveCamera(55, 1, 1, 100000);
-        state.renderer = new window.THREE.WebGLRenderer({ antialias: true });
-        root.appendChild(state.renderer.domElement);
-        state.controls = new window.THREE.OrbitControls(state.camera, state.renderer.domElement);
-        state.controls.enablePan = true;
-        state.controls.enableDamping = true;
-        state.controls.maxPolarAngle = Math.PI / 2.05;
-        state.raycaster = new window.THREE.Raycaster();
-        state.mouse = new window.THREE.Vector2();
+    searchEl.addEventListener('input', function () {
+        state.search = searchEl.value || '';
+        renderPlayerList();
+    });
 
-        const light = new window.THREE.AmbientLight(0xffffff, 1);
-        state.scene.add(light);
-        state.scene.add(new window.THREE.GridHelper(18000, 24, 0x1f3a56, 0x16283d));
-
-        resetCamera();
-        resizeRenderer();
-        window.addEventListener('resize', resizeRenderer);
-        root.addEventListener('click', onCanvasClick);
-        searchEl.addEventListener('input', function () {
-            state.search = searchEl.value || '';
-            renderPlayerList();
-        });
-
-        window.pteroLiveMapResetCamera = resetCamera;
-        window.pteroLiveMapFullscreen = toggleFullscreen;
-
-        animate();
-        poll();
-    }
-
-    boot();
+    initLeaflet();
+    poll();
 }());
 </script>
+
+<style>
+/* Leaflet dark-theme overrides */
+.leaflet-container {
+    background: #0b0f19;
+    font-family: inherit;
+}
+.leaflet-bar a,
+.leaflet-bar a:hover {
+    background: var(--dz-surface-alt);
+    color: var(--dz-text);
+    border-color: var(--dz-border);
+}
+.leaflet-bar a:hover {
+    color: var(--dz-accent);
+}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+    background: var(--dz-surface);
+    color: var(--dz-text);
+    border: 1px solid var(--dz-border);
+    box-shadow: none;
+}
+.leaflet-tooltip {
+    background: rgba(11,15,25,0.92);
+    color: var(--dz-text);
+    border: 1px solid var(--dz-border);
+    border-radius: 4px;
+    font-size: 0.78rem;
+    padding: 2px 6px;
+    white-space: nowrap;
+}
+.leaflet-tooltip-top:before {
+    border-top-color: var(--dz-border);
+}
+.leaflet-control-attribution {
+    background: rgba(11,15,25,0.7);
+    color: var(--dz-muted);
+    font-size: 0.65rem;
+}
+.leaflet-control-attribution a { color: var(--dz-accent); }
+/* Named location labels */
+.dz-map-loc {
+    font-size: 0.65rem;
+    color: rgba(230,235,245,0.85);
+    white-space: nowrap;
+    text-shadow: 1px 1px 2px #0b0f19, -1px -1px 2px #0b0f19;
+    pointer-events: none;
+}
+</style>

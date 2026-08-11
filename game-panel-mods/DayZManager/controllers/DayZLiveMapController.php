@@ -6,6 +6,7 @@ namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZLiveBridgeService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
+use GamePanelMods\DayZManager\Services\DayZManagerSettingsService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
@@ -18,6 +19,7 @@ final class DayZLiveMapController
     public function __construct(
         private readonly DayZLiveMapService $service = new DayZLiveMapService(),
         private readonly DayZLiveBridgeService $bridge = new DayZLiveBridgeService(),
+        private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
     ) {
@@ -64,7 +66,9 @@ final class DayZLiveMapController
             return ['server_id' => $resolved['id']] + $snapshot;
         }
 
-        return $this->renderer->render('live-map', $snapshot, 'live-map', $resolved['id'], $resolved['name']);
+        $tileUrl = trim((string) $this->settings->get('live_map_tile_url', ''));
+
+        return $this->renderer->render('live-map', $snapshot + ['tile_url' => $tileUrl], 'live-map', $resolved['id'], $resolved['name']);
     }
 
     /**

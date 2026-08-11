@@ -110,6 +110,19 @@ final class DayZManagerSettingsService
         'live_map_bridge_secret' => '',
 
         /**
+         * Tile server URL template for the Live Map.  Placeholders:
+         *   {map}  – map id (chernarusplus, livonia, sakhal)
+         *   {z}    – zoom level
+         *   {x}    – tile column
+         *   {y}    – tile row
+         *
+         * The default points to Bohemia Interactive's official DayZ tile CDN.
+         * Set to an empty string to disable tile loading (shows a plain dark
+         * background with named locations only).
+         */
+        'live_map_tile_url' => 'https://tiles.dayz.bohemia.com/{map}/{z}/{x}/{y}.jpg',
+
+        /**
          * When true, DayZ Manager automatically takes a database backup at the
          * configured interval.
          */
@@ -152,6 +165,7 @@ final class DayZManagerSettingsService
         'crash_log_retention_days' => 'crash_*.log retention (days)',
         'tm_general_log_retention_days' => 'TM_GeneralLogs_*.log retention (days)',
         'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
+        'live_map_tile_url' => 'Live Map tile URL template',
     ];
 
     /**
@@ -210,6 +224,12 @@ final class DayZManagerSettingsService
             'Optional shared secret for a server-side DayZ script to write player snapshots to '
             . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '
             . '`/profiles/PteroMods/live_map_players.json` without secret signing.',
+        'live_map_tile_url' =>
+            'Leaflet tile URL template for the Live Map. '
+            . 'Placeholders: {map} (map id, e.g. chernarusplus), {z} (zoom), {x} (column), {y} (row). '
+            . 'Default uses the xam.nu community CDN at DayZ 1.27 — update the version number '
+            . 'after each DayZ update, e.g. replace "1.27" with "1.29". '
+            . 'Leave empty to disable tile loading (shows a plain dark background).',
     ];
 
     /**
