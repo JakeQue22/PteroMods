@@ -8,6 +8,7 @@ use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZObservedPlayerService;
+use GamePanelMods\DayZManager\Services\DayZPersistencePlayerService;
 use GamePanelMods\DayZManager\Services\DayZPlayerService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
@@ -21,6 +22,7 @@ final class DayZPlayerController
         private readonly DayZPlayerService $service = new DayZPlayerService(),
         private readonly DayZObservedPlayerService $observedPlayers = new DayZObservedPlayerService(),
         private readonly DayZLiveMapService $liveMap = new DayZLiveMapService(),
+        private readonly DayZPersistencePlayerService $persistencePlayers = new DayZPersistencePlayerService(),
         private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
@@ -46,26 +48,33 @@ final class DayZPlayerController
             }
 
             $snapshot = $this->liveMap->snapshot($resolved['model']);
-            $activity = $this->observedPlayers->activity($resolved['model'], is_array($snapshot['players'] ?? null) ? $snapshot['players'] : []);
-            $players = $this->service->allLists();
+            $livePlayers = is_array($snapshot['players'] ?? null) ? $snapshot['players'] : [];
+            $persisted = $this->persistencePlayers->snapshot($resolved['model'], (string) ($snapshot['map'] ?? 'ChernarusPlus'));
+            $playerLists = $this->service->allLists();
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'players', $resolved['id'], $resolved['name']);
         }
 
         if ($this->context->expectsJson()) {
             return [
-                'server_id' => $resolved['id'],
-                'players' => $players,
-                'activity' => $activity,
-                'map_definition' => $snapshot['map_definition'] ?? null,
+               'server_id' => $resolved['id'],
+               'players' => $persisted['players'] ?? [],
+               'live_players' => $livePlayers,
+               'player_lists' => $playerLists,
+               'persistence_status' => $persisted['status'] ?? 'not_found',
+               'persistence_source_path' => $persisted['source_path'] ?? null,
+               'map_definition' => $snapshot['map_definition'] ?? null,
             ];
         }
 
         return $this->renderer->render('players', [
-            'players' => $players,
-            'activity' => $activity,
+            'players' => $playerLists,
+            'persisted_players' => $persisted['players'] ?? [],
+            'live_players' => $livePlayers,
+            'persistence_status' => $persisted['status'] ?? 'not_found',
+            'persistence_source_path' => $persisted['source_path'] ?? null,
             'map_definition' => $snapshot['map_definition'] ?? ['name' => 'ChernarusPlus', 'locations' => []],
-            'online_count' => count(array_filter($activity, static fn (array $player): bool => (bool) ($player['online'] ?? false))),
+            'online_count' => count($livePlayers),
         ], 'players', $resolved['id'], $resolved['name']);
     }
 

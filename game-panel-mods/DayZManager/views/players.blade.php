@@ -1,12 +1,15 @@
 <section class="dz-card">
     <h2>Player Manager</h2>
-    <p class="dz-sub">View live and previously observed players, then manage the ban list, whitelist, and priority queue.</p>
+    <p class="dz-sub">View persisted character records and currently online players, then manage the ban list, whitelist, and priority queue.</p>
 </section>
 
 <section class="dz-card">
-    <h2>Observed Players</h2>
+    <h2>Players</h2>
     <p class="dz-sub">
-        {{ (int) ($online_count ?? 0) }} online now · {{ count($activity ?? []) }} observed player(s)
+        {{ count($persisted_players ?? []) }} persisted player record(s)
+        @if (!empty($persistence_source_path))
+            · Source: <code>{{ $persistence_source_path }}</code>
+        @endif
         @if (!empty($map_definition['name']))
             · Map: {{ $map_definition['name'] }}
         @endif
@@ -21,7 +24,7 @@
     @endif
 
     <div class="dz-list">
-        @forelse ($activity ?? [] as $player)
+        @forelse ($persisted_players ?? [] as $player)
             <div class="dz-player-card">
                 <div class="dz-player-card__head">
                     <div>
@@ -33,35 +36,79 @@
                             @endif
                         </div>
                     </div>
-                    <span class="dz-badge {{ !empty($player['online']) ? 'dz-badge-on' : 'dz-badge-off' }}">
-                        {{ !empty($player['online']) ? 'Online' : 'Offline' }}
+                    <span class="dz-badge {{ ($player['position_status'] ?? '') === 'valid' ? 'dz-badge-on' : 'dz-badge-off' }}">
+                        @if (($player['position_status'] ?? '') === 'valid')
+                            In Bounds
+                        @elseif (($player['position_status'] ?? '') === 'out_of_bounds')
+                            Out of Bounds
+                        @else
+                            Position Unknown
+                        @endif
                     </span>
                 </div>
 
                 <dl class="dz-browse-meta" style="margin-top:0.75rem;">
                     <div><dt>Coordinates</dt><dd>{{ $player['x'] ?? '—' }}, {{ $player['z'] ?? '—' }}</dd></div>
                     <div><dt>Height</dt><dd>{{ $player['y'] ?? '—' }}</dd></div>
+                    <div><dt>Status</dt><dd>
+                        @if (array_key_exists('alive', $player) && $player['alive'] !== null)
+                            {{ !empty($player['alive']) ? 'Alive' : 'Dead / last known dead' }}
+                        @else
+                            Unknown
+                        @endif
+                    </dd></div>
+                </dl>
+
+                <div class="dz-mod-actions" style="margin-top:0.9rem;">
+                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer('{{ $player['steam64'] }}')">Ban</button>
+                </div>
+            </div>
+        @empty
+            <div class="dz-empty">
+                @if (($persistence_status ?? '') === 'sqlite_extension_missing')
+                    SQLite support is not available in the panel PHP runtime, so characters.db cannot be read yet.
+                @elseif (($persistence_status ?? '') === 'not_found')
+                    No readable characters.db/players.db file was found in common DayZ persistence paths.
+                @else
+                    No persisted player records were found.
+                @endif
+            </div>
+        @endforelse
+    </div>
+</section>
+
+<section class="dz-card">
+    <h2>Live Players</h2>
+    <p class="dz-sub">{{ (int) ($online_count ?? 0) }} online now.</p>
+
+    <div class="dz-list">
+        @forelse ($live_players ?? [] as $player)
+            <div class="dz-player-card">
+                <div class="dz-player-card__head">
+                    <div>
+                        <strong>{{ $player['name'] ?? $player['steam64'] }}</strong>
+                        <div class="dz-sub">{{ $player['steam64'] ?? '—' }}</div>
+                    </div>
+                    <span class="dz-badge dz-badge-on">Online</span>
+                </div>
+
+                <dl class="dz-browse-meta" style="margin-top:0.75rem;">
+                    <div><dt>Coordinates</dt><dd>{{ $player['x'] ?? '—' }}, {{ $player['z'] ?? '—' }}</dd></div>
+                    <div><dt>Height</dt><dd>{{ $player['y'] ?? '—' }}</dd></div>
                     <div><dt>Direction</dt><dd>{{ isset($player['direction']) ? $player['direction'] . '°' : '—' }}</dd></div>
-                    <div><dt>Status</dt><dd>{{ !empty($player['alive']) ? 'Alive' : 'Dead / last known dead' }}</dd></div>
+                    <div><dt>Status</dt><dd>{{ !empty($player['alive']) ? 'Alive' : 'Dead / reported dead' }}</dd></div>
                     <div><dt>Health</dt><dd>{{ $player['health'] ?? 'N/A' }}</dd></div>
                 </dl>
 
                 <div class="dz-mod-actions" style="margin-top:0.9rem;">
-                    @if (!empty($player['online']))
+                    @if (!empty($player['steam64']))
                         <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer('{{ $player['steam64'] }}')">Kick</button>
+                        <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer('{{ $player['steam64'] }}')">Ban</button>
                     @endif
-                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer('{{ $player['steam64'] }}')">Ban</button>
                 </div>
-
-                @if (!empty($player['inventory']))
-                    <details style="margin-top:0.9rem;">
-                        <summary>Inventory snapshot</summary>
-                        <pre class="dz-pre">{{ json_encode($player['inventory'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</pre>
-                    </details>
-                @endif
             </div>
         @empty
-            <div class="dz-empty">No players have been observed yet. Once the live-map bridge writes snapshots, player activity appears here automatically.</div>
+            <div class="dz-empty">No players are currently online.</div>
         @endforelse
     </div>
 
