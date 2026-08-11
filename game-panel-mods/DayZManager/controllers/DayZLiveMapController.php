@@ -68,7 +68,16 @@ final class DayZLiveMapController
 
         $tileUrl = trim((string) $this->settings->get('live_map_tile_url', ''));
 
-        return $this->renderer->render('live-map', $snapshot + ['tile_url' => $tileUrl], 'live-map', $resolved['id'], $resolved['name']);
+        return $this->renderer->render('live-map', $snapshot + [
+            'tile_url' => $tileUrl,
+            'map' => 'ChernarusPlus',
+            'map_definition' => [
+                'id' => 'chernarusplus',
+                'name' => 'ChernarusPlus',
+                'world_size' => 15360.0,
+                'locations' => [],
+            ],
+        ], 'live-map', $resolved['id'], $resolved['name']);
     }
 
     /**
