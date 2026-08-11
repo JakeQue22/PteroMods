@@ -47,7 +47,7 @@ final class DayZLiveBridgeService
      * statement next to the include — a bare call at file scope makes the
      * mission fail to compile and the server refuses to load it.
      */
-    private const INIT_C_INCLUDE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c\"\n";
+    private const INIT_C_INCLUDE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"\$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c\"\n";
 
     /** Activation call injected at the start of the mission's main() function. */
     private const INIT_C_CALL = "\n\t// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n\tPteroMods_LiveMap_Init();\n";
