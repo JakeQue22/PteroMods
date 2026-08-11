@@ -12,6 +12,8 @@ use Throwable;
  */
 final class DayZPersistencePlayerService
 {
+    private const TABLE_ROW_LIMIT = 3000;
+
     private const FALLBACK_DB_PATHS = [
         '/storage_1/characters.db',
         '/storage_1/players.db',
@@ -91,6 +93,11 @@ final class DayZPersistencePlayerService
         $tmpPath = tempnam(sys_get_temp_dir(), 'pteromods-dayz-db-');
 
         if ($tmpPath === false) {
+            return null;
+        }
+
+        if (!str_starts_with($raw, "SQLite format 3\000")) {
+            @unlink($tmpPath);
             return null;
         }
 
@@ -225,9 +232,10 @@ final class DayZPersistencePlayerService
         }
 
         $query = $db->query(sprintf(
-            'SELECT %s FROM "%s" LIMIT 10000',
+            'SELECT %s FROM "%s" LIMIT %d',
             implode(', ', $select),
             str_replace('"', '""', $table),
+            self::TABLE_ROW_LIMIT,
         ));
 
         if (!$query) {
@@ -388,6 +396,9 @@ final class DayZPersistencePlayerService
         }
 
         if (($left['position_status'] ?? 'missing') !== 'valid' && ($right['position_status'] ?? 'missing') === 'valid') {
+            $left['x'] = $right['x'] ?? $left['x'] ?? null;
+            $left['y'] = $right['y'] ?? $left['y'] ?? null;
+            $left['z'] = $right['z'] ?? $left['z'] ?? null;
             $left['position_status'] = 'valid';
             $left['position_valid'] = true;
         }
