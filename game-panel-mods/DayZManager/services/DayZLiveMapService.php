@@ -96,6 +96,8 @@ final class DayZLiveMapService
                         'direction' => 180.0,
                         'alive' => true,
                         'health' => 92.5,
+                        'in_vehicle' => true,
+                        'vehicle_class' => 'OffroadHatchback',
                     ]],
                 ],
             ],
@@ -158,6 +160,8 @@ final class DayZLiveMapService
                 'direction' => $this->floatValue($entry['direction'] ?? $entry['yaw'] ?? 0.0) ?? 0.0,
                 'alive' => (bool) ($entry['alive'] ?? true),
                 'health' => $health,
+                'in_vehicle' => (bool) ($entry['in_vehicle'] ?? false),
+                'vehicle_class' => $this->stringValue($entry['vehicle_class'] ?? null),
                 'inventory' => $this->normalizeOptionalData($entry['inventory'] ?? null),
                 'metadata' => $this->normalizeMetadata($entry),
             ];
@@ -291,6 +295,13 @@ final class DayZLiveMapService
         }
 
         return null;
+    }
+
+    private function stringValue(mixed $value): ?string
+    {
+        $text = trim((string) ($value ?? ''));
+
+        return $text === '' ? null : $text;
     }
 
     /**

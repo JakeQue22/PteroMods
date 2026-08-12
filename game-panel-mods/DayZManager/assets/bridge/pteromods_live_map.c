@@ -108,10 +108,14 @@ class PteroMods_LiveMapPlayer
     float direction;
     bool alive;
     float health;       // 0 – 100 scale
+    bool in_vehicle;
+    string vehicle_class;
     ref array<ref PteroMods_LiveMapItem> inventory;  // top-level equipped items
 
     void PteroMods_LiveMapPlayer()
     {
+        in_vehicle = false;
+        vehicle_class = "";
         inventory = new array<ref PteroMods_LiveMapItem>;
     }
 }
@@ -234,6 +238,13 @@ class PteroMods_LiveMapBridge
 
             // GetHealth("", "") returns current health on a 0 – 100 scale.
             entry.health = PteroMods_LiveMap_Round2(man.GetHealth("", ""));
+
+            Object parentObj = man.GetParent();
+            if (parentObj)
+            {
+                entry.in_vehicle = true;
+                entry.vehicle_class = parentObj.GetType();
+            }
 
             // Collect top-level equipped items from common attachment slots.
             array<string> slotNames = new array<string>;

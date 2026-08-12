@@ -643,13 +643,18 @@
     function playerDetailRows(player) {
         const entry   = directoryEntry(player) || {};
         const lists   = Object.keys(entry.lists || {}).filter(function (key) { return entry.lists[key]; });
+        const location = roughLocationName(player);
 
         let html = '';
 
+        html += playerRow('Location', escapeHtml(location));
         html += playerRow('Position', Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1));
         html += playerRow('Height', Number(player.y || 0).toFixed(1));
         html += playerRow('Direction', Number(player.direction || 0).toFixed(1) + '°');
         html += playerRow('Status', player.alive !== false ? 'Alive' : 'Dead');
+        if (player.in_vehicle) {
+            html += playerRow('In Vehicle', escapeHtml(player.vehicle_class || 'Unknown'));
+        }
 
         if (player.health != null) {
             var h = Number(player.health);

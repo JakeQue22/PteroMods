@@ -193,11 +193,17 @@ final class DayZPlayerDirectoryService
         }
 
         foreach ($players as $key => $player) {
+            $resolvedPlayerId = (string) ($player['player_id'] ?? '');
             $players[$key]['position_valid'] = ($player['position_status'] ?? '') === 'valid';
             $players[$key]['lists'] = [
-                'ban' => isset($listFlags['ban'][$key]) || isset($listFlags['ban'][(string) ($player['player_id'] ?? '')]),
-                'whitelist' => isset($listFlags['whitelist'][$key]) || isset($listFlags['whitelist'][(string) ($player['player_id'] ?? '')]),
-                'priority' => isset($listFlags['priority'][$key]) || isset($listFlags['priority'][(string) ($player['player_id'] ?? '')]),
+                'ban' => isset($listFlags['ban'][$key]) || isset($listFlags['ban'][$resolvedPlayerId]),
+                'whitelist' => isset($listFlags['whitelist'][$key]) || isset($listFlags['whitelist'][$resolvedPlayerId]),
+                'priority' => isset($listFlags['priority'][$key]) || isset($listFlags['priority'][$resolvedPlayerId]),
+            ];
+            $players[$key]['list_entry_ids'] = [
+                'ban' => isset($listFlags['ban'][$key]) ? $key : (isset($listFlags['ban'][$resolvedPlayerId]) ? $resolvedPlayerId : null),
+                'whitelist' => isset($listFlags['whitelist'][$key]) ? $key : (isset($listFlags['whitelist'][$resolvedPlayerId]) ? $resolvedPlayerId : null),
+                'priority' => isset($listFlags['priority'][$key]) ? $key : (isset($listFlags['priority'][$resolvedPlayerId]) ? $resolvedPlayerId : null),
             ];
             $players[$key]['steam_profile_url'] = ($player['steam64'] ?? null) !== null
                 ? 'https://steamcommunity.com/profiles/' . $player['steam64']
