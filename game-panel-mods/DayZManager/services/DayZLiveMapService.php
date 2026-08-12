@@ -176,8 +176,8 @@ final class DayZLiveMapService
             return $value;
         }
 
-        if (preg_match('/(\d{17})/', $value, $matches) === 1) {
-            return (string) ($matches[1] ?? '');
+        if (preg_match('/(?<!\d)(\d{17})(?!\d)/', $value, $matches) === 1) {
+            return (string) $matches[1];
         }
 
         return null;
