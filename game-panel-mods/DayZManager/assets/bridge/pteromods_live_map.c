@@ -91,8 +91,7 @@ class PteroMods_LiveMapBridge : Managed
             GetGame().GetCallQueue( CALL_CATEGORY_GAMEPLAY ).CallLaterByName(
                 this,
                 "WriteSnapshot",
-                PTEROMODS_LIVEMAP_INTERVAL_MS,
-                true    // repeat: run every PTEROMODS_LIVEMAP_INTERVAL_MS ms
+                PTEROMODS_LIVEMAP_INTERVAL_MS
             );
         }
     }
@@ -142,13 +141,16 @@ class PteroMods_LiveMapBridge : Managed
                 aliveValue = "true";
 
             string entry = string.Format(
-                "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6,\"alive\":%7,\"health\":%8}",
+                "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6",
                 playerId,
                 playerName,
                 Math.Round( pos[0] * 100.0 ) / 100.0,
                 Math.Round( pos[1] * 100.0 ) / 100.0,
                 Math.Round( pos[2] * 100.0 ) / 100.0,
-                Math.Round( yaw   * 100.0 ) / 100.0,
+                Math.Round( yaw   * 100.0 ) / 100.0
+            );
+            entry += string.Format(
+                ",\"alive\":%1,\"health\":%2}",
                 aliveValue,
                 health
             );
@@ -182,6 +184,12 @@ class PteroMods_LiveMapBridge : Managed
             FPrint( fh, snapshot );
             CloseFile( fh );
         }
+
+        GetGame().GetCallQueue( CALL_CATEGORY_GAMEPLAY ).CallLaterByName(
+            this,
+            "WriteSnapshot",
+            PTEROMODS_LIVEMAP_INTERVAL_MS
+        );
     }
 }
 
