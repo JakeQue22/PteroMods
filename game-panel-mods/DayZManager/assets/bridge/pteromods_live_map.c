@@ -94,7 +94,6 @@ class PteroMods_LiveMapBridge : Managed
                 PTEROMODS_LIVEMAP_INTERVAL_MS / 1000.0,
                 this,
                 "WriteSnapshot",
-                NULL,
                 true
             );
         }
@@ -153,20 +152,15 @@ class PteroMods_LiveMapBridge : Managed
             if ( alive )
                 aliveValue = "true";
 
-            string entry = string.Format(
-                "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6",
-                playerId,
-                playerName,
-                x,
-                y,
-                z,
-                direction
-            );
-            entry += string.Format(
-                ",\"alive\":%1,\"health\":%2}",
-                aliveValue,
-                health
-            );
+            string entry = "{\"steam64\":\"" + playerId
+                + "\",\"name\":\"" + playerName
+                + "\",\"x\":" + x.ToString()
+                + ",\"y\":" + y.ToString()
+                + ",\"z\":" + z.ToString()
+                + ",\"direction\":" + direction.ToString()
+                + ",\"alive\":" + aliveValue
+                + ",\"health\":" + health.ToString()
+                + "}";
 
             if ( !first )
                 entries += ",";
