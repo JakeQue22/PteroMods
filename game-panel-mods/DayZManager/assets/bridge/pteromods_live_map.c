@@ -82,16 +82,20 @@ class PteroMods_LiveMapBridge : Managed
 {
     // Static ref prevents the garbage collector from collecting the instance.
     static ref PteroMods_LiveMapBridge s_instance;
+    protected ref Timer m_SnapshotTimer;
 
     // ── Constructor ───────────────────────────────────────────────────────────
     void PteroMods_LiveMapBridge()
     {
         if ( GetGame() && GetGame().IsServer() )
         {
-            GetGame().GetCallQueue( CALL_CATEGORY_GAMEPLAY ).CallLaterByName(
+            m_SnapshotTimer = new Timer( CALL_CATEGORY_GAMEPLAY );
+            m_SnapshotTimer.Run(
+                PTEROMODS_LIVEMAP_INTERVAL_MS / 1000.0,
                 this,
                 "WriteSnapshot",
-                PTEROMODS_LIVEMAP_INTERVAL_MS
+                NULL,
+                true
             );
         }
     }
@@ -135,7 +139,16 @@ class PteroMods_LiveMapBridge : Managed
             bool   alive = man.IsAlive();
 
             // GetHealth( "", "" ) returns 0.0 – 1.0; convert to 0 – 100.
-            float health = Math.Round( man.GetHealth( "", "" ) * 10000.0 ) / 100.0;
+            float x = Math.Round( pos[0] * 100.0 );
+            x = x / 100.0;
+            float y = Math.Round( pos[1] * 100.0 );
+            y = y / 100.0;
+            float z = Math.Round( pos[2] * 100.0 );
+            z = z / 100.0;
+            float direction = Math.Round( yaw * 100.0 );
+            direction = direction / 100.0;
+            float health = Math.Round( man.GetHealth( "", "" ) * 10000.0 );
+            health = health / 100.0;
             string aliveValue = "false";
             if ( alive )
                 aliveValue = "true";
@@ -144,10 +157,10 @@ class PteroMods_LiveMapBridge : Managed
                 "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6",
                 playerId,
                 playerName,
-                Math.Round( pos[0] * 100.0 ) / 100.0,
-                Math.Round( pos[1] * 100.0 ) / 100.0,
-                Math.Round( pos[2] * 100.0 ) / 100.0,
-                Math.Round( yaw   * 100.0 ) / 100.0
+                x,
+                y,
+                z,
+                direction
             );
             entry += string.Format(
                 ",\"alive\":%1,\"health\":%2}",
@@ -184,12 +197,6 @@ class PteroMods_LiveMapBridge : Managed
             FPrint( fh, snapshot );
             CloseFile( fh );
         }
-
-        GetGame().GetCallQueue( CALL_CATEGORY_GAMEPLAY ).CallLaterByName(
-            this,
-            "WriteSnapshot",
-            PTEROMODS_LIVEMAP_INTERVAL_MS
-        );
     }
 }
 
