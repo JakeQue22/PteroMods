@@ -148,7 +148,9 @@ final class DayZLiveMapService
                 'steam64' => $primaryId,   // used as map marker key (may be DayZ UID)
                 'real_steam64' => $realSteam64,  // actual Steam64 if available, else null
                 'steam64_raw' => $steam64 !== '' ? $steam64 : null,
-                'player_uid' => $primaryId,      // explicit DayZ UID label
+                'player_uid' => $playerUid !== ''
+                    ? $playerUid
+                    : ($realSteam64 === null ? $primaryId : null), // old bridge fallback where steam64 carried UID
                 'name' => $name,
                 'x' => $x,
                 'y' => $y ?? 0.0,
