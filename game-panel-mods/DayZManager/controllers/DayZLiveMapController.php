@@ -11,6 +11,7 @@ use GamePanelMods\DayZManager\Services\DayZMapMarkerService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZPlayerDirectoryService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
+use GamePanelMods\DayZManager\Services\DayZVppAdminService;
 use Throwable;
 
 /**
@@ -24,6 +25,7 @@ final class DayZLiveMapController
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
         private readonly DayZMapMarkerService $mapMarkers = new DayZMapMarkerService(),
         private readonly DayZPlayerDirectoryService $directory = new DayZPlayerDirectoryService(),
+        private readonly DayZVppAdminService $vppAdmin = new DayZVppAdminService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
     ) {
@@ -68,18 +70,23 @@ final class DayZLiveMapController
 
         try {
             $snapshot = $this->service->snapshot($resolved['model']);
+            $superadminIds = $this->vppAdmin->list($resolved['model']);
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'live-map', $resolved['id'], $resolved['name']);
         }
 
         if ($this->context->expectsJson()) {
-            return ['server_id' => $resolved['id']] + $snapshot;
+            return [
+                'server_id' => $resolved['id'],
+                'superadmin_ids' => $superadminIds,
+            ] + $snapshot;
         }
 
         $tileUrl = trim((string) $this->settings->get('live_map_tile_url', ''));
 
         return $this->renderer->render('live-map', $snapshot + [
             'tile_url' => $tileUrl,
+            'superadmin_ids' => $superadminIds,
             'map' => 'ChernarusPlus',
             'map_definition' => [
                 'id' => 'chernarusplus',
@@ -137,7 +144,10 @@ final class DayZLiveMapController
         $resolved = $this->context->resolve($server);
 
         try {
-            return ['server_id' => $resolved['id']] + $this->service->snapshot($resolved['model']);
+            return [
+                'server_id' => $resolved['id'],
+                'superadmin_ids' => $this->vppAdmin->list($resolved['model']),
+            ] + $this->service->snapshot($resolved['model']);
         } catch (Throwable $exception) {
             return [
                 'server_id' => $resolved['id'],
@@ -145,6 +155,7 @@ final class DayZLiveMapController
                 'message'   => $exception->getMessage(),
                 'players'   => [],
                 'online_count' => 0,
+                'superadmin_ids' => [],
             ];
         }
     }

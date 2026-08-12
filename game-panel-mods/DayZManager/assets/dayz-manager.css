@@ -570,9 +570,27 @@ code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05r
   font-size: 0.78rem;
 }
 
+.dz-live-map-list-main,
+.dz-live-map-player-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-width: 0;
+}
+
+.dz-live-map-superadmin-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fbbf24;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
 .dz-live-map-list-item button small {
   color: var(--dz-muted);
   font-size: 0.68rem;
+  text-align: right;
 }
 
 .dz-live-map-list-item.is-active button {

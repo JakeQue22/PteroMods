@@ -67,11 +67,15 @@
     // The public viewer URL (https://dayz.xam.nu/#...) is not a Leaflet tile template.
     // {map} is replaced with the map's tile id; {z}/{x}/{y} are Leaflet placeholders.
     const TILE_URL_TPL = @json($tile_url ?? '');
+    const INITIAL_SUPERADMINS = @json(array_values($superadmin_ids ?? []));
 
     const state = {
         mapDef: @json($map_definition),
         players: new Map(),   // steam64 → player data
         markers: new Map(),   // steam64 → L.Marker
+        superadmins: new Set((Array.isArray(INITIAL_SUPERADMINS) ? INITIAL_SUPERADMINS : []).map(function (id) {
+            return String(id || '').trim();
+        }).filter(Boolean)),
         selected: '',
         search: '',
         list: [],
@@ -122,6 +126,43 @@
 
     function dayzToLatLng(x, z) {
         return L.latLng(z, x);
+    }
+
+    function normaliseId(value) {
+        return String(value || '').trim();
+    }
+
+    function applySuperadmins(ids) {
+        state.superadmins = new Set((Array.isArray(ids) ? ids : []).map(normaliseId).filter(Boolean));
+    }
+
+    function playerIds(player) {
+        const entry = directoryEntry(player) || {};
+        const ids = [
+            player && player.real_steam64,
+            player && player.steam64_raw,
+            player && player.steam64,
+            entry.steam64,
+        ].map(normaliseId).filter(Boolean);
+
+        return ids.filter(function (id, index) {
+            return ids.indexOf(id) === index;
+        });
+    }
+
+    function isSuperadmin(player) {
+        return playerIds(player).some(function (id) {
+            return state.superadmins.has(id);
+        });
+    }
+
+    function superadminIconHtml() {
+        return '<span class="dz-live-map-superadmin-icon" title="SuperAdmin" aria-label="SuperAdmin">🛡️</span>';
+    }
+
+    function playerNameHtml(player) {
+        const name = escapeHtml(player.name || player.steam64 || 'Unknown player');
+        return isSuperadmin(player) ? superadminIconHtml() + '<span>' + name + '</span>' : '<span>' + name + '</span>';
     }
 
     function worldBounds(mapDef) {
@@ -424,6 +465,13 @@
             const payload = await res.json();
             applyMarkerGroups(payload.groups);
             applyDirectory(payload.player_directory);
+            state.players.forEach(function (player, steam64) {
+                const marker = state.markers.get(steam64);
+                if (marker) {
+                    marker.setPopupContent(playerPopupHtml(player));
+                }
+            });
+            renderPlayerList();
             renderSelection();
         } catch (err) {
             applyMarkerGroups([]);
@@ -477,6 +525,8 @@
             default:
                 setStatusText('');
         }
+
+        applySuperadmins(payload.superadmin_ids);
 
         const players = Array.isArray(payload.players) ? payload.players : [];
         const seen    = new Set();
@@ -641,7 +691,7 @@
     }
 
     function playerPopupHtml(player) {
-        return '<div class="dz-map-popup"><strong>' + escapeHtml(player.name || player.steam64) + '</strong>'
+        return '<div class="dz-map-popup"><strong class="dz-live-map-player-heading">' + playerNameHtml(player) + '</strong>'
             + '<dl class="dz-browse-meta">' + playerDetailRows(player) + '</dl>'
             + managementLink(player) + '</div>';
     }
@@ -677,17 +727,30 @@
     // ── Player list ───────────────────────────────────────────────────────
     function renderPlayerList() {
         const needle   = (state.search || '').toLowerCase();
-        const filtered = state.list.filter(function (p) {
+        const filtered = state.list.map(function (player, index) {
+            return { player: player, index: index };
+        }).filter(function (entry) {
+            const p = entry.player;
             const hay = (String(p.name || '') + ' ' + String(p.steam64 || '')).toLowerCase();
             return needle === '' || hay.indexOf(needle) !== -1;
+        }).sort(function (left, right) {
+            const leftAdmin = isSuperadmin(left.player) ? 1 : 0;
+            const rightAdmin = isSuperadmin(right.player) ? 1 : 0;
+
+            if (leftAdmin !== rightAdmin) {
+                return rightAdmin - leftAdmin;
+            }
+
+            return left.index - right.index;
         });
 
         listEl.innerHTML = '';
 
-        filtered.forEach(function (player) {
+        filtered.forEach(function (entry) {
+            const player = entry.player;
             const li  = document.createElement('li');
             li.className = 'dz-live-map-list-item' + (state.selected === player.steam64 ? ' is-active' : '');
-            li.innerHTML = '<button type="button"><span>' + escapeHtml(player.name) + '</span>'
+            li.innerHTML = '<button type="button"><span class="dz-live-map-list-main">' + playerNameHtml(player) + '</span>'
                 + '<small>' + escapeHtml(roughLocationName(player)) + '</small></button>';
             li.querySelector('button').addEventListener('click', function () {
                 selectPlayer(player.steam64);
@@ -707,7 +770,7 @@
         }
 
         detailEl.innerHTML =
-            '<h4>' + escapeHtml(player.name) + '</h4>'
+            '<h4 class="dz-live-map-player-heading">' + playerNameHtml(player) + '</h4>'
             + '<dl class="dz-browse-meta">' + playerDetailRows(player) + '</dl>'
             + managementLink(player);
     }
