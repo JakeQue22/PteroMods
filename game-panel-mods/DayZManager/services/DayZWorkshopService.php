@@ -1504,7 +1504,10 @@ final class DayZWorkshopService
     {
         $publishedId = trim((string) ($meta['publishedid'] ?? ''));
 
-        if ($publishedId !== '') {
+        // Steam uses 0 as the null/unset publishedid (mods installed outside the
+        // Workshop, or before the item was published). Treat any non-positive value
+        // as unset and fall back to the folder name when it is numeric.
+        if ($publishedId !== '' && (int) $publishedId > 0) {
             return $publishedId;
         }
 
