@@ -58,7 +58,7 @@ final class DayZLiveMapService
             $status = 'waiting_for_bridge';
         } elseif (!is_array($data)) {
             $status = 'invalid_bridge_payload';
-        } elseif (trim((string) ($data['map'] ?? '')) === '' && ($data['players'] ?? []) === []) {
+        } elseif (trim((string) ($data['mapName'] ?? $data['map'] ?? '')) === '' && ($data['players'] ?? []) === []) {
             // The snapshot file exists but map is empty and players is empty — this is
             // the initial placeholder written by the panel deploy step.  The game bridge
             // has not written a real snapshot yet (likely because the PteroMods output
@@ -150,7 +150,7 @@ final class DayZLiveMapService
      */
     private function resolveMapName(?array $data, array $query): string
     {
-        $map = trim((string) (($data['map'] ?? '') ?: ($query['map'] ?? '')));
+        $map = trim((string) (($data['mapName'] ?? $data['map'] ?? '') ?: ($query['map'] ?? '')));
 
         if ($map === '') {
             return 'ChernarusPlus';

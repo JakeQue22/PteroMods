@@ -90,13 +90,13 @@ class PteroMods_LiveMapPlayer
 class PteroMods_LiveMapSnapshot
 {
     string updated_at;
-    string map;
+    string mapName;
     ref array<ref PteroMods_LiveMapPlayer> players;
 
     void PteroMods_LiveMapSnapshot()
     {
         updated_at = "";
-        map = "";
+        mapName = "";
         players = new array<ref PteroMods_LiveMapPlayer>;
     }
 }
@@ -165,7 +165,7 @@ class PteroMods_LiveMapBridge
 
         string worldName = "";
         GetGame().GetWorldName(worldName);
-        snapshot.map = worldName;
+        snapshot.mapName = worldName;
 
         array<Man> players = new array<Man>;
         GetGame().GetPlayers(players);

@@ -76,7 +76,7 @@ final class DayZLiveBridgeService
     private const TEMPLATE_C_PATH = __DIR__ . '/../assets/bridge/pteromods_live_map.c';
 
     /** Empty/initial snapshot written when the file does not yet exist. */
-    private const EMPTY_SNAPSHOT = '{"updated_at":"","map":"","players":[]}';
+    private const EMPTY_SNAPSHOT = '{"updated_at":"","mapName":"","players":[]}';
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
