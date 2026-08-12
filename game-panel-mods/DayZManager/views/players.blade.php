@@ -28,10 +28,18 @@
         @forelse ($persisted_players ?? [] as $player)
             @php
                 $steam64 = $player['steam64'] ?? null;
+                $playerUid = $player['player_uid'] ?? null;
                 $playerId = (string) ($player['player_id'] ?? $steam64 ?? '');
-                $uid = $player['player_uid'] ?? null;
+                $uid = $playerUid;
+                // Action target: prefer real Steam64, else the DayZ UID/player_id
+                $actionId = $steam64 ?? $playerId;
                 $hasInventory = !empty($player['inventory']) && (is_array($player['inventory']) || (is_string($player['inventory']) && trim($player['inventory']) !== ''));
                 $inventoryJson = $hasInventory ? json_encode($player['inventory'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) : null;
+                // Normalise timestamps to DD-MM-YYYY
+                $fmtDate = fn($ts) => $ts ? date('d-m-Y', strtotime($ts)) : null;
+                // Normalise health: older bridge wrote 0-10000, current writes 0-100
+                $rawHealth = isset($player['health']) && $player['health'] !== null ? (float) $player['health'] : null;
+                $health = $rawHealth !== null ? ($rawHealth > 100 ? round($rawHealth / 100, 1) : round($rawHealth, 1)) : null;
             @endphp
             <div class="dz-player-card" data-search="{{ strtolower(trim(($player['name'] ?? '') . ' ' . ($steam64 ?? '') . ' ' . $playerId . ' ' . ($uid ?? ''))) }}">
                 <div class="dz-player-card__head">
@@ -41,10 +49,12 @@
                             @if ($steam64)
                                 Steam64:
                                 <a href="https://steamcommunity.com/profiles/{{ $steam64 }}" target="_blank" rel="noopener noreferrer">{{ $steam64 }}</a>
+                            @elseif ($uid)
+                                DayZ UID: <code>{{ $uid }}</code>
                             @else
-                                Steam64: unknown
+                                ID: {{ $playerId }}
                             @endif
-                            @if ($uid)
+                            @if ($uid && $steam64)
                                 · DayZ UID: <code>{{ $uid }}</code>
                             @endif
                         </div>
@@ -64,7 +74,7 @@
                         @endif
                     </dd></div>
                     @if ($uid)
-                        <div><dt>DayZ UID</dt><dd><code>{{ $uid }}</code></dd></div>
+                        <div><dt>DayZ UID</dt><dd><code style="word-break:break-all;">{{ $uid }}</code></dd></div>
                     @endif
                     <div><dt>Coordinates</dt><dd>
                         @if (($player['position_status'] ?? '') === 'valid')
@@ -91,17 +101,17 @@
                         @endif
                     </dd></div>
                     <div><dt>Health</dt><dd>
-                        @if (isset($player['health']) && $player['health'] !== null)
-                            {{ number_format((float) $player['health'], 1) }}%
+                        @if ($health !== null)
+                            {{ $health }}%
                         @else
                             N/A
                         @endif
                     </dd></div>
                     @if (!empty($player['first_seen_at']))
-                        <div><dt>First seen</dt><dd>{{ $player['first_seen_at'] }}</dd></div>
+                        <div><dt>First seen</dt><dd>{{ $fmtDate($player['first_seen_at']) }}</dd></div>
                     @endif
                     @if (!empty($player['last_seen_at']))
-                        <div><dt>Last seen</dt><dd>{{ $player['last_seen_at'] }}</dd></div>
+                        <div><dt>Last seen</dt><dd>{{ $fmtDate($player['last_seen_at']) }}</dd></div>
                     @endif
                     <div><dt>Lists</dt><dd>
                         @php
@@ -114,16 +124,18 @@
 
                 <div class="dz-mod-actions" style="margin-top:0.9rem;">
                     @if (($player['position_status'] ?? '') === 'valid')
-                        <a class="dz-btn dz-btn-ghost" href="{{ $base_url }}/live-map?focus={{ urlencode($steam64 ?: $playerId) }}">Show on live map</a>
+                        <a class="dz-btn dz-btn-ghost" href="{{ $base_url }}/live-map?focus={{ urlencode($actionId) }}">Show on live map</a>
                     @endif
                     @if ($hasInventory)
                         <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroViewInventory({{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($inventoryJson, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">View Inventory</button>
                     @endif
-                    @if (!empty($player['online']) && $steam64)
-                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
+                    @if (!empty($player['online']) && $actionId)
+                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
                     @endif
-                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode($steam64 ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
-                    <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-warn,#f59e0b);" onclick="pteroResetPlayer({{ json_encode($steam64 ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Reset Data</button>
+                    <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('whitelist', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Whitelist</button>
+                    <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('priority', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Priority Queue</button>
+                    <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
+                    <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-warn,#f59e0b);" onclick="pteroResetPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Reset Data</button>
                 </div>
             </div>
         @empty
@@ -145,7 +157,7 @@
     <div style="background:var(--dz-surface,#1a1f2e);border:1px solid var(--dz-border,#2d3348);border-radius:0.5rem;max-width:640px;margin:4rem auto;padding:1.5rem;position:relative;">
         <button type="button" onclick="document.getElementById('dz-inventory-modal').style.display='none'" style="position:absolute;top:0.75rem;right:0.75rem;background:none;border:none;color:inherit;font-size:1.25rem;cursor:pointer;" aria-label="Close">✕</button>
         <h3 id="dz-inventory-modal-title" style="margin:0 0 1rem;"></h3>
-        <pre id="dz-inventory-modal-body" style="white-space:pre-wrap;word-break:break-all;font-size:0.8rem;max-height:60vh;overflow-y:auto;background:var(--dz-surface-alt,#0b0f19);padding:1rem;border-radius:0.25rem;"></pre>
+        <div id="dz-inventory-modal-body"></div>
     </div>
 </div>
 
@@ -198,6 +210,17 @@
         el.className = 'dz-status' + (ok === false ? ' dz-status-error' : '');
     }
 
+    window.pteroAddToList = function (listType, playerId) {
+        var labels = { whitelist: 'Whitelist', priority: 'Priority Queue' };
+        var label = labels[listType] || listType;
+        var note = window.prompt('Optional note for ' + label + ':', '');
+        if (note === null) { return; }
+        setStatus('Adding player to ' + label + '…');
+        req('POST', '/dayz/players/' + encodeURIComponent(listType), { player_id: playerId, note: note })
+            .then(function (d) { setStatus(d.message || (d.status === 'saved' ? 'Player added to ' + label + '.' : 'Failed.'), d.status === 'saved' ? undefined : false); })
+            .catch(function () { setStatus('Request failed.', false); });
+    };
+
     window.pteroKickPlayer = function (playerId) {
         if (!confirm('Kick this player from the server now?')) { return; }
         setStatus('Sending kick command…');
@@ -232,13 +255,55 @@
 
         title.textContent = playerName + ' — Inventory';
 
-        var text = inventoryJson;
+        var parsed = null;
         try {
-            var parsed = typeof inventoryJson === 'string' ? JSON.parse(inventoryJson) : inventoryJson;
-            text = JSON.stringify(parsed, null, 2);
-        } catch (e) { /* keep raw string */ }
+            parsed = typeof inventoryJson === 'string' ? JSON.parse(inventoryJson) : inventoryJson;
+        } catch (e) { /* fall through */ }
 
-        body.textContent = text || '(no inventory data)';
+        if (!parsed) {
+            body.textContent = String(inventoryJson || '(no inventory data)');
+            modal.style.display = 'block';
+            return;
+        }
+
+        // Collect all item class names from the inventory tree.
+        var items = [];
+        function walk(obj) {
+            if (!obj || typeof obj !== 'object') { return; }
+            if (Array.isArray(obj)) { obj.forEach(walk); return; }
+            var cls = obj.className || obj.class || obj.type || obj.item || obj.name;
+            if (cls && typeof cls === 'string') { items.push(cls); }
+            Object.values(obj).forEach(function (v) {
+                if (v && typeof v === 'object') { walk(v); }
+            });
+        }
+        walk(parsed);
+
+        if (items.length === 0) {
+            // No recognised item list structure — fall back to formatted JSON.
+            body.innerHTML = '';
+            var pre = document.createElement('pre');
+            pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:0.8rem;max-height:60vh;overflow-y:auto;background:var(--dz-surface-alt,#0b0f19);padding:1rem;border-radius:0.25rem;margin:0;';
+            pre.textContent = JSON.stringify(parsed, null, 2);
+            body.appendChild(pre);
+            modal.style.display = 'block';
+            return;
+        }
+
+        // Render a grid of items with wiki links.
+        var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.5rem;max-height:65vh;overflow-y:auto;">';
+        items.forEach(function (cls) {
+            var label = cls.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
+            var wikiUrl = 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(cls);
+            html += '<div style="background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.35rem;padding:0.5rem;font-size:0.78rem;overflow:hidden;">'
+                + '<div style="font-size:1.5rem;text-align:center;margin-bottom:0.25rem;">📦</div>'
+                + '<div style="word-break:break-word;text-align:center;">'
+                + '<a href="' + wikiUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--dz-accent);text-decoration:none;" title="' + cls + '">' + label + '</a>'
+                + '</div>'
+                + '</div>';
+        });
+        html += '</div><p style="margin:0.5rem 0 0;font-size:0.72rem;color:var(--dz-muted);">' + items.length + ' item(s) · Links open the DayZ wiki page for each item.</p>';
+        body.innerHTML = html;
         modal.style.display = 'block';
     };
 

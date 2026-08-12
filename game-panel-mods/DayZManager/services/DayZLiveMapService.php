@@ -87,6 +87,8 @@ final class DayZLiveMapService
                     'map' => 'ChernarusPlus',
                     'players' => [[
                         'steam64' => '76561198000000000',
+                        'player_uid' => '76561198000000000',
+                        'real_steam64' => '76561198000000000',
                         'name' => 'PlayerName',
                         'x' => 7500.0,
                         'y' => 50.0,
@@ -118,24 +120,40 @@ final class DayZLiveMapService
             }
 
             $steam64 = trim((string) ($entry['steam64'] ?? $entry['steam_id'] ?? ''));
+            $playerUid = trim((string) ($entry['player_uid'] ?? ''));
             $name = trim((string) ($entry['name'] ?? $entry['player_name'] ?? ''));
             $x = $this->floatValue($entry['x'] ?? ($entry['position']['x'] ?? null));
             $y = $this->floatValue($entry['y'] ?? ($entry['position']['y'] ?? null));
             $z = $this->floatValue($entry['z'] ?? ($entry['position']['z'] ?? null));
 
-            if ($steam64 === '' || $name === '' || $x === null || $z === null) {
+            // Primary stable identifier: prefer player_uid (DayZ UID), fall back to
+            // steam64 (older bridge deployments store the DayZ UID in that field).
+            $primaryId = $playerUid !== '' ? $playerUid : $steam64;
+
+            if ($primaryId === '' || $name === '' || $x === null || $z === null) {
                 continue;
             }
 
+            // Health comes from the bridge on a 0–100 scale. Older bridge
+            // deployments mistakenly multiplied by 100 (yielding 0–10 000);
+            // normalise those values back to 0–100 here.
+            $rawHealth = $this->floatValue($entry['health'] ?? null);
+            $health = $rawHealth === null ? null : ($rawHealth > 100 ? round($rawHealth / 100, 2) : $rawHealth);
+
+            // steam64 is only populated when we have a genuine 17-digit Steam ID.
+            $realSteam64 = preg_match('/^\d{17}$/', $steam64) === 1 ? $steam64 : null;
+
             $players[] = [
-                'steam64' => $steam64,
+                'steam64' => $primaryId,   // used as map marker key (may be DayZ UID)
+                'real_steam64' => $realSteam64,  // actual Steam64 if available, else null
+                'player_uid' => $primaryId,      // explicit DayZ UID label
                 'name' => $name,
                 'x' => $x,
                 'y' => $y ?? 0.0,
                 'z' => $z,
                 'direction' => $this->floatValue($entry['direction'] ?? $entry['yaw'] ?? 0.0) ?? 0.0,
                 'alive' => (bool) ($entry['alive'] ?? true),
-                'health' => $this->floatValue($entry['health'] ?? null),
+                'health' => $health,
                 'inventory' => $this->normalizeOptionalData($entry['inventory'] ?? null),
                 'metadata' => $this->normalizeMetadata($entry),
             ];

@@ -31,11 +31,17 @@ final class DayZObservedPlayerService
         $now = date('Y-m-d H:i:s');
 
         foreach ($players as $player) {
-            $playerId = trim((string) ($player['steam64'] ?? ''));
+            $playerId = trim((string) ($player['steam64'] ?? $player['player_uid'] ?? ''));
 
             if ($playerId === '') {
                 continue;
             }
+
+            // real_steam64 is set by normalizePlayers() when the identifier is
+            // a genuine 17-digit Steam ID, and stored separately from player_id.
+            $realSteam64 = isset($player['real_steam64']) && preg_match('/^\d{17}$/', (string) $player['real_steam64']) === 1
+                ? (string) $player['real_steam64']
+                : null;
 
             try {
                 $query = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
@@ -59,17 +65,31 @@ final class DayZObservedPlayerService
 
                 if ($exists) {
                     $query->update($payload);
-                    continue;
+                } else {
+                    \Illuminate\Support\Facades\DB::table('dayz_observed_players')->insert($payload + [
+                        'server_id'     => $serverId,
+                        'player_id'     => $playerId,
+                        'first_seen_at' => $now,
+                        'created_at'    => $now,
+                    ]);
                 }
-
-                \Illuminate\Support\Facades\DB::table('dayz_observed_players')->insert($payload + [
-                    'server_id'     => $serverId,
-                    'player_id'     => $playerId,
-                    'first_seen_at' => $now,
-                    'created_at'    => $now,
-                ]);
             } catch (Throwable) {
                 // Best-effort tracking only.
+                continue;
+            }
+
+            // Store the real Steam64 in its own column (added by a later migration).
+            // This is a separate best-effort update so a missing column never
+            // blocks the primary player-tracking write above.
+            if ($realSteam64 !== null) {
+                try {
+                    \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                        ->where('server_id', $serverId)
+                        ->where('player_id', $playerId)
+                        ->update(['steam64' => $realSteam64]);
+                } catch (Throwable) {
+                    // Column may not exist on older installs without the migration.
+                }
             }
         }
     }
@@ -129,9 +149,22 @@ final class DayZObservedPlayerService
 
             $live = $liveIndex[$playerId] ?? [];
 
+            // steam64 column was added in a later migration; fall back to null when absent.
+            $dbSteam64 = isset($record['steam64']) && preg_match('/^\d{17}$/', (string) $record['steam64']) === 1
+                ? (string) $record['steam64']
+                : null;
+            // Live snapshot may carry a real_steam64 resolved from persistence.
+            $liveSteam64 = isset($live['real_steam64']) && preg_match('/^\d{17}$/', (string) $live['real_steam64']) === 1
+                ? (string) $live['real_steam64']
+                : null;
+            $steam64 = $liveSteam64 ?? $dbSteam64;
+
+            $rawHealth = $this->coalesceFloat($live['health'] ?? null, $record['last_health'] ?? null);
+            $health = $rawHealth === null ? null : ($rawHealth > 100 ? round($rawHealth / 100, 2) : $rawHealth);
+
             $players[$playerId] = [
                 'player_id'      => $playerId,
-                'steam64'        => $playerId,
+                'steam64'        => $steam64,
                 'name'           => trim((string) (($live['name'] ?? null) ?: ($record['player_name'] ?? $playerId))),
                 'map'            => trim((string) (($record['last_map'] ?? '') ?: ($live['map'] ?? ''))),
                 'x'              => $this->coalesceFloat($live['x'] ?? null, $record['last_x'] ?? null),
@@ -141,7 +174,7 @@ final class DayZObservedPlayerService
                 'alive'          => array_key_exists($playerId, $liveIndex)
                     ? (bool) ($live['alive'] ?? true)
                     : (bool) ($record['last_alive'] ?? false),
-                'health'         => $this->coalesceFloat($live['health'] ?? null, $record['last_health'] ?? null),
+                'health'         => $health,
                 'online'         => array_key_exists($playerId, $liveIndex),
                 'first_seen_at'  => isset($record['first_seen_at']) ? (string) $record['first_seen_at'] : null,
                 'last_seen_at'   => isset($record['last_seen_at']) ? (string) $record['last_seen_at'] : null,
@@ -155,9 +188,15 @@ final class DayZObservedPlayerService
                 continue;
             }
 
+            $liveSteam64 = isset($live['real_steam64']) && preg_match('/^\d{17}$/', (string) $live['real_steam64']) === 1
+                ? (string) $live['real_steam64']
+                : null;
+            $rawHealth = $this->floatValue($live['health'] ?? null);
+            $health = $rawHealth === null ? null : ($rawHealth > 100 ? round($rawHealth / 100, 2) : $rawHealth);
+
             $players[$playerId] = [
                 'player_id'      => $playerId,
-                'steam64'        => $playerId,
+                'steam64'        => $liveSteam64,
                 'name'           => trim((string) (($live['name'] ?? null) ?: $playerId)),
                 'map'            => trim((string) ($live['map'] ?? '')),
                 'x'              => $this->floatValue($live['x'] ?? null),
@@ -165,7 +204,7 @@ final class DayZObservedPlayerService
                 'z'              => $this->floatValue($live['z'] ?? null),
                 'direction'      => $this->floatValue($live['direction'] ?? null),
                 'alive'          => (bool) ($live['alive'] ?? true),
-                'health'         => $this->floatValue($live['health'] ?? null),
+                'health'         => $health,
                 'online'         => true,
                 'first_seen_at'  => null,
                 'last_seen_at'   => null,

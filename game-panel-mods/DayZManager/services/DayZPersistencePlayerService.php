@@ -26,8 +26,12 @@ final class DayZPersistencePlayerService
     ];
 
     private const COLUMN_PATTERNS = [
+        'steam64' => [
+            '/^(steam64|steam_?id64|steamid64)$/i',
+        ],
         'uid' => [
-            '/^(uid|player_?uid|steam64|steam_?id|bohemia_?id|identity_?id|player_?id|owner_?id)$/i',
+            '/^(uid|player_?uid|bohemia_?id|identity_?id|player_?id|owner_?id)$/i',
+            '/^(steam_?id|steamid)$/i',
         ],
         'name' => [
             '/^(name|player_?name|nickname|nick|char(acter)?_?name|survivor_?name|display_?name)$/i',
@@ -281,6 +285,12 @@ final class DayZPersistencePlayerService
             return null;
         }
 
+        // steam64 column (e.g. steamid64) stores the actual 17-digit Steam ID.
+        $steam64Column = $this->scalar($value('steam64'));
+        $steam64 = $steam64Column !== null && preg_match('/^\d{17}$/', (string) $steam64Column) === 1
+            ? (string) $steam64Column
+            : (preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null);
+
         $vector = $this->parseVector($this->scalar($value('vector')));
         $x = $this->floatValue($value('x')) ?? ($vector[0] ?? null);
         $y = $this->floatValue($value('y')) ?? ($vector[1] ?? null);
@@ -290,7 +300,7 @@ final class DayZPersistencePlayerService
 
         return [
             'player_id' => $playerId,
-            'steam64' => preg_match('/^\d{17}$/', $playerId) === 1 ? $playerId : null,
+            'steam64' => $steam64,
             'name' => $name,
             'x' => $x,
             'y' => $y,

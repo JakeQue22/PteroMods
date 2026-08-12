@@ -52,9 +52,15 @@
  * slot and the callback never repeats.
  *
  * PLAYER IDENTITY
- * GetIdentity().GetId() returns the Bohemia Platform ID, not a Steam64 ID.
- * PteroMods stores it in the steam64 field; it is a stable, unique per-player
- * identifier and works for live-map pin display.
+ * GetIdentity().GetId() returns the Bohemia Platform UID (DayZ UID), not a
+ * Steam64 ID.  PteroMods stores it in both steam64 (kept for backward
+ * compatibility) and player_uid.  The panel uses player_uid as the primary
+ * stable identifier; steam64 is populated from the persistence database when
+ * a match is found there.
+ *
+ * HEALTH
+ * GetHealth("", "") returns the character health on a 0 – 100 scale.  The
+ * panel expects the same 0 – 100 scale, so no scaling is applied.
  */
 
 // ---- Configuration ---------------------------------------------------------
@@ -75,14 +81,15 @@ const string PTEROMODS_LIVEMAP_DIR = "$profile:PteroMods";
 // reads in DayZLiveMapService::normalizePlayers().
 class PteroMods_LiveMapPlayer
 {
-    string steam64;
+    string steam64;     // kept for backward compatibility (same value as player_uid)
+    string player_uid;  // Bohemia Platform UID from identity.GetId()
     string name;
     float x;
     float y;
     float z;
     float direction;
     bool alive;
-    float health;
+    float health;       // 0 – 100 scale
 }
 
 // updated_at is intentionally left empty. The panel substitutes the file
@@ -191,7 +198,8 @@ class PteroMods_LiveMapBridge
             vector orientation = man.GetOrientation();
 
             PteroMods_LiveMapPlayer entry = new PteroMods_LiveMapPlayer();
-            entry.steam64 = playerId;
+            entry.steam64 = playerId;    // backward compat: same value as player_uid
+            entry.player_uid = playerId; // Bohemia Platform UID
             entry.name = playerName;
             entry.x = PteroMods_LiveMap_Round2(pos[0]);
             entry.y = PteroMods_LiveMap_Round2(pos[1]);
@@ -199,8 +207,8 @@ class PteroMods_LiveMapBridge
             entry.direction = PteroMods_LiveMap_Round2(orientation[0]);
             entry.alive = man.IsAlive();
 
-            // GetHealth with empty zone and type yields 0.0 to 1.0; scale to 0 to 100.
-            entry.health = PteroMods_LiveMap_Round2(man.GetHealth("", "") * 100.0);
+            // GetHealth("", "") returns current health on a 0 – 100 scale.
+            entry.health = PteroMods_LiveMap_Round2(man.GetHealth("", ""));
 
             snapshot.players.Insert(entry);
         }

@@ -564,8 +564,9 @@
     // player (nickname, Steam64, DayZ UID, ban/whitelist state) so the map
     // shows exactly the same information as the player manager page.
     function directoryEntry(player) {
-        return state.directory.get(String(player.steam64))
-            || state.directory.get(String(player.name))
+        return state.directory.get(String(player.player_uid || ''))
+            || state.directory.get(String(player.steam64 || ''))
+            || state.directory.get(String(player.name || ''))
             || null;
     }
 
@@ -575,25 +576,41 @@
 
     function playerDetailRows(player) {
         const entry   = directoryEntry(player) || {};
-        const steam64 = escapeHtml(player.steam64 || entry.steam64 || '');
+        // real_steam64: a genuine 17-digit Steam ID (may be null for DayZ-UID-only servers).
+        const realSteam64 = player.real_steam64 || entry.steam64 || null;
+        // player_uid: the Bohemia Platform UID used as the stable bridge identifier.
+        const playerUid = player.player_uid || player.steam64 || '';
+        const isRealSteam64 = realSteam64 && /^\d{17}$/.test(realSteam64);
         const lists   = Object.keys(entry.lists || {}).filter(function (key) { return entry.lists[key]; });
 
-        let html = playerRow('Steam64', steam64 !== ''
-            ? '<a href="https://steamcommunity.com/profiles/' + steam64 + '" target="_blank" rel="noopener noreferrer">' + steam64 + '</a>'
-            : 'Unknown');
+        let html = '';
 
-        if (entry.player_uid) {
-            html += playerRow('DayZ UID', '<code>' + escapeHtml(entry.player_uid) + '</code>');
+        if (isRealSteam64) {
+            html += playerRow('Steam64', '<a href="https://steamcommunity.com/profiles/' + escapeHtml(realSteam64) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(realSteam64) + '</a>');
+        } else {
+            html += playerRow('Steam64', 'Unknown');
+        }
+
+        if (playerUid) {
+            html += playerRow('DayZ UID', '<code style="word-break:break-all;">' + escapeHtml(playerUid) + '</code>');
         }
 
         html += playerRow('Position', Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1));
         html += playerRow('Height', Number(player.y || 0).toFixed(1));
         html += playerRow('Direction', Number(player.direction || 0).toFixed(1) + '°');
         html += playerRow('Status', player.alive !== false ? 'Alive' : 'Dead');
-        html += playerRow('Health', player.health == null ? 'N/A' : Number(player.health).toFixed(1));
+
+        if (player.health != null) {
+            var h = Number(player.health);
+            // Older bridge deployments sent health on a 0-10000 scale; normalise.
+            if (h > 100) { h = h / 100; }
+            html += playerRow('Health', h.toFixed(1) + '%');
+        } else {
+            html += playerRow('Health', 'N/A');
+        }
 
         if (entry.last_seen_at) {
-            html += playerRow('Last seen', escapeHtml(entry.last_seen_at));
+            html += playerRow('Last seen', escapeHtml(formatDateDMY(entry.last_seen_at)));
         }
 
         if (lists.length > 0) {
@@ -604,7 +621,7 @@
     }
 
     function managementLink(player) {
-        const needle = String(player.steam64 || player.name || '');
+        const needle = String(player.player_uid || player.steam64 || player.name || '');
 
         return '<a class="dz-map-popup-link" href="'
             + escapeHtml(PLAYERS_URL + '?search=' + encodeURIComponent(needle))
@@ -691,6 +708,17 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    // Format an ISO / MySQL timestamp as DD-MM-YYYY.
+    function formatDateDMY(value) {
+        if (!value) { return ''; }
+        var d = new Date(String(value).replace(' ', 'T'));
+        if (isNaN(d.getTime())) { return String(value); }
+        var dd = String(d.getUTCDate()).padStart(2, '0');
+        var mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        var yyyy = d.getUTCFullYear();
+        return dd + '-' + mm + '-' + yyyy;
     }
 
     // Snapshot status (bridge state) and viewer notices (tiles/library) are
@@ -998,6 +1026,21 @@
 .dz-map-popup-link {
     color: var(--dz-accent);
     font-size: 0.75rem;
+}
+.dz-map-popup {
+    min-width: 200px;
+    max-width: min(280px, 80vw);
+    font-size: 0.8rem;
+}
+.dz-map-popup .dz-browse-meta dd {
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+.leaflet-popup-content {
+    margin: 0.6rem 0.8rem;
+}
+.leaflet-popup-content-wrapper {
+    min-width: 0;
 }
 /* Named location labels */
 .dz-map-loc {

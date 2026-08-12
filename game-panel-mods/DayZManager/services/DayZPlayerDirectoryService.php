@@ -42,18 +42,22 @@ final class DayZPlayerDirectoryService
         $byName = [];
 
         foreach ($observed as $entry) {
-            $steam64 = trim((string) ($entry['steam64'] ?? ''));
+            $playerId = trim((string) ($entry['player_id'] ?? ''));
+            $steam64  = trim((string) ($entry['steam64'] ?? ''));
 
-            if ($steam64 === '') {
+            // Use the real Steam64 when available; otherwise the DayZ UID is the key.
+            $key = $steam64 !== '' ? $steam64 : $playerId;
+
+            if ($key === '') {
                 continue;
             }
 
-            $players[$steam64] = [
-                'id' => $steam64,
-                'steam64' => $steam64,
-                'player_id' => $steam64,
-                'player_uid' => null,
-                'name' => trim((string) ($entry['name'] ?? '')) ?: $steam64,
+            $players[$key] = [
+                'id' => $key,
+                'steam64' => $steam64 !== '' ? $steam64 : null,
+                'player_id' => $playerId !== '' ? $playerId : $key,
+                'player_uid' => $playerId !== '' && $playerId !== $steam64 ? $playerId : null,
+                'name' => trim((string) ($entry['name'] ?? '')) ?: $key,
                 'online' => (bool) ($entry['online'] ?? false),
                 'alive' => $entry['alive'] ?? null,
                 'health' => $entry['health'] ?? null,
@@ -69,29 +73,41 @@ final class DayZPlayerDirectoryService
                 'sources' => ['observed'],
             ];
 
-            $key = $this->nameKey((string) ($entry['name'] ?? ''));
+            $nameKey = $this->nameKey((string) ($entry['name'] ?? ''));
 
-            if ($key !== '') {
-                $byName[$key] ??= $steam64;
+            if ($nameKey !== '') {
+                $byName[$nameKey] ??= $key;
             }
         }
 
         // Online players are always listed, even when the observed-player
         // table is unavailable (fresh install, missing migration).
         foreach ($livePlayers as $live) {
-            $steam64 = trim((string) (is_array($live) ? ($live['steam64'] ?? '') : ''));
-
-            if ($steam64 === '') {
+            if (!is_array($live)) {
                 continue;
             }
 
-            $existing = $players[$steam64] ?? null;
-            $players[$steam64] = [
-                'id' => $steam64,
-                'steam64' => $steam64,
-                'player_id' => $steam64,
-                'player_uid' => $existing['player_uid'] ?? null,
-                'name' => trim((string) ($live['name'] ?? '')) ?: (string) ($existing['name'] ?? $steam64),
+            // steam64 in the live snapshot is the primary bridge identifier (may be
+            // the Bohemia UID for older bridge deployments, not a real Steam64).
+            $bridgeId = trim((string) ($live['steam64'] ?? $live['player_uid'] ?? ''));
+            $realSteam64 = isset($live['real_steam64']) && preg_match('/^\d{17}$/', (string) $live['real_steam64']) === 1
+                ? (string) $live['real_steam64']
+                : null;
+
+            // Prefer real Steam64 as dict key when available; fall back to bridge ID.
+            $key = $realSteam64 ?? $bridgeId;
+
+            if ($key === '') {
+                continue;
+            }
+
+            $existing = $players[$key] ?? null;
+            $players[$key] = [
+                'id' => $key,
+                'steam64' => $realSteam64,
+                'player_id' => $existing['player_id'] ?? $bridgeId,
+                'player_uid' => $existing['player_uid'] ?? ($bridgeId !== $realSteam64 ? $bridgeId : null),
+                'name' => trim((string) ($live['name'] ?? '')) ?: (string) ($existing['name'] ?? $key),
                 'online' => true,
                 'alive' => $live['alive'] ?? ($existing['alive'] ?? null),
                 'health' => $live['health'] ?? ($existing['health'] ?? null),
@@ -110,10 +126,10 @@ final class DayZPlayerDirectoryService
                 ))),
             ];
 
-            $key = $this->nameKey((string) ($live['name'] ?? ''));
+            $nameKey = $this->nameKey((string) ($live['name'] ?? ''));
 
-            if ($key !== '') {
-                $byName[$key] ??= $steam64;
+            if ($nameKey !== '') {
+                $byName[$nameKey] ??= $key;
             }
         }
 
@@ -133,11 +149,17 @@ final class DayZPlayerDirectoryService
             }
 
             $existing = $players[$key] ?? null;
+
+            // Prefer existing steam64 from observed/live (may be more trustworthy)
+            // but fill in from persistence if we don't have one yet.
+            $resolvedSteam64 = ($existing['steam64'] ?? null) ?? ($steam64 !== '' ? $steam64 : null);
+            $resolvedUid = $uid !== '' ? $uid : ($existing['player_uid'] ?? null);
+
             $players[$key] = [
                 'id' => $key,
-                'steam64' => $steam64 !== '' ? $steam64 : null,
+                'steam64' => $resolvedSteam64,
                 'player_id' => $uid !== '' ? $uid : ($existing['player_id'] ?? $key),
-                'player_uid' => $uid !== '' && $uid !== $steam64 ? $uid : ($existing['player_uid'] ?? null),
+                'player_uid' => $resolvedUid !== $resolvedSteam64 ? $resolvedUid : ($existing['player_uid'] ?? null),
                 'name' => !empty($record['has_name'])
                     ? (string) $record['name']
                     : (string) ($existing['name'] ?? $record['name'] ?? $key),
