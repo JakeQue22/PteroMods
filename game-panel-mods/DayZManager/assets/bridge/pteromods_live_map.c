@@ -1,26 +1,20 @@
 /*
  * PteroMods - DayZ Standalone Live Map Bridge (Enforce Script)
  *
- * This script is deployed automatically to your DayZ server's mission directory
- * by the PteroMods panel (DayZ Manager -> Live Map -> "Deploy Bridge" button),
- * or by running the panel's install.sh.
+ * This script is deployed automatically to your DayZ server mission directory
+ * by the PteroMods panel (DayZ Manager -> Live Map -> Deploy Bridge button),
+ * or by running the panel install.sh.
  *
  * HOW TO ACTIVATE
- * The PteroMods panel edits your mission's init.c
- * (mpmissions/dayzOffline.<map>/init.c) in two places.
+ * The PteroMods panel edits your mission init.c
+ * (mpmissions/dayzOffline.MAP/init.c) in two places.
  *
- * 1. At the very top of the file:
+ * 1. An include directive at the very top of the file, pointing at
+ *    $CurrentDir:mpmissions/dayzOffline.MAP/pteromods_live_map.c
  *
- *        #include "$CurrentDir:mpmissions/dayzOffline.<map>/pteromods_live_map.c";
- *
- * 2. Inside the existing main() function (Enforce Script does not allow a bare
- *    call at file scope - that makes the mission fail to compile):
- *
- *        void main()
- *        {
- *            PteroMods_LiveMap_Init();
- *            ...
- *        }
+ * 2. A PteroMods_LiveMap_Init(); call inside the existing main() function.
+ *    Enforce Script does not allow a bare call at file scope - that makes the
+ *    mission fail to compile.
  *
  * The bridge registers a repeating call-queue callback that writes a JSON
  * snapshot of all online players to:
@@ -31,28 +25,40 @@
  *     /profiles/PteroMods/live_map_players.json
  *
  * STYLE RULES FOR THIS FILE - DO NOT BREAK THEM
- * The mission script module parses this included file line by line: every
- * statement must be written on a SINGLE line.  A statement that is wrapped
- * over several lines produces
- *     "Missing ';' at the end of line" / "Invalid statement '<token>'"
- * even though the same code is valid inside a PBO-compiled mod.  Keep every
- * call, assignment and string concatenation on one line.
+ *
+ * a) Every statement must be written on a SINGLE line.  The mission script
+ *    module parses an included file line by line; a statement wrapped over
+ *    several lines produces Missing semicolon / Invalid statement errors even
+ *    though the same code is valid inside a PBO-compiled mod.
+ *
+ * b) Every line must contain an EVEN number of raw double-quote characters.
+ *    The CParser preprocessor counts quotes per line and does NOT honour a
+ *    backslash-escaped quote, so a lone escaped quote desynchronises it and
+ *    yields: CParser: quoted string not closed on line N.  Escaped quotes are
+ *    therefore always used in pairs (see the JSON builder below), and the
+ *    single quote character needed by the sanitiser is cut out of a two-quote
+ *    literal with Substring().
+ *
+ * c) No preprocessor directive text and no double quotes inside comments.
+ *    The preprocessor scans for directives before comments are stripped, so an
+ *    include directive shown as documentation is actually executed and fails
+ *    with: Can't find file.
  *
  * SCHEDULING
  * The repeating callback uses the engine call queue:
- *     GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(func fn, int delay_ms, bool repeat)
+ *     GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(fn, delay_ms, repeat)
  * Timer.Run() is deliberately NOT used: its signature is
  *     Run(float duration, Class obj, string fn_name, Param params, bool loop)
  * so the loop flag is the FIFTH argument, not the fourth.
  *
  * FILE I/O
- * The bridge uses DayZ Standalone's native file I/O API (OpenFile / FPrint /
+ * The bridge uses DayZ Standalone native file I/O (OpenFile / FPrint /
  * CloseFile with the $profile: prefix) - no external extensions or mods are
  * required for the file writing itself.
  *
  * PLAYER IDENTITY
  * GetIdentity().GetId() returns the Bohemia Platform ID (not a Steam64 ID).
- * PteroMods normalises this in the "steam64" field; it is still a stable,
+ * PteroMods normalises this into the steam64 field; it is still a stable,
  * unique per-player identifier and works for live-map pin display.
  */
 
@@ -71,12 +77,18 @@ const string PTEROMODS_LIVEMAP_DIR = "$profile:PteroMods";
 // ---- Helpers ---------------------------------------------------------------
 
 // Makes a player name safe to embed inside a double-quoted JSON string.
+// The double-quote character is cut out of a two-quote literal so that this
+// line still contains an even number of raw quote characters (see rule b).
 string PteroMods_LiveMap_SanitizePlayerName(string value)
 {
+    string doubleQuote = "\"\"";
+    doubleQuote = doubleQuote.Substring(0, 1);
+
     string safe = value;
     safe.Replace("\\", "/");
-    safe.Replace("\"", "'");
+    safe.Replace(doubleQuote, "'");
     safe.Replace("\n", " ");
+    safe.Replace("\t", " ");
     return safe;
 }
 
@@ -172,7 +184,7 @@ class PteroMods_LiveMapBridge extends Managed
             float z = PteroMods_LiveMap_Round2(pos[2]);
             float direction = PteroMods_LiveMap_Round2(orientation[0]);
 
-            // GetHealth("", "") returns 0.0 - 1.0; convert to 0 - 100.
+            // GetHealth with empty zone/type returns 0.0 - 1.0; scale to 0 - 100.
             float health = PteroMods_LiveMap_Round2(man.GetHealth("", "") * 100.0);
 
             string aliveValue = "false";
