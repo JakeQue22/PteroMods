@@ -53,7 +53,7 @@
     const PLAYERS_URL  = @json($base_url) + '/players';
     const POLL_MS      = 7000;
     const PLAYER_CAPACITY = 64;
-    const PINNED_STEAM64 = '76561197992590837';
+    const PINNED_STEAM64 = @json($protected_steam64 ?? '');
     // Refreshing the mission-derived overlays is expensive (it reads the
     // server's mission XML through Wings), so they are reloaded far less often
     // than the player snapshot.
@@ -888,6 +888,8 @@
 
         if (kind === 'success') {
             bridgeMsgEl.classList.add('dz-text-green');
+        } else if (kind === 'warn') {
+            bridgeMsgEl.classList.add('dz-text-amber');
         } else if (kind === 'error') {
             bridgeMsgEl.classList.add('dz-text-red');
         } else {

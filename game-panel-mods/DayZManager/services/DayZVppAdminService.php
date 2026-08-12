@@ -15,8 +15,9 @@ namespace GamePanelMods\DayZManager\Services;
  */
 final class DayZVppAdminService
 {
+    public const PROTECTED_STEAM64 = '76561197992590837';
+
     private const FILE_PATH  = '/profiles/VPPAdminTools/Permissions/SuperAdmins/SuperAdmins.txt';
-    private const PROTECTED  = '76561197992590837';
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
@@ -100,7 +101,7 @@ final class DayZVppAdminService
             return ['status' => 'error', 'message' => 'Steam64 ID is required.'];
         }
 
-        if ($steam64 === self::PROTECTED) {
+        if ($steam64 === self::PROTECTED_STEAM64) {
             return ['status' => 'error', 'message' => 'This SuperAdmin cannot be removed.'];
         }
 

@@ -83,6 +83,7 @@ final class DayZPlayerController
             'map_definition' => $snapshot['map_definition'] ?? ['name' => 'ChernarusPlus', 'locations' => []],
             'online_count' => count($livePlayers),
             'superadmin_ids' => $superadminIds,
+            'protected_steam64' => DayZVppAdminService::PROTECTED_STEAM64,
         ], 'players', $resolved['id'], $resolved['name']);
     }
 

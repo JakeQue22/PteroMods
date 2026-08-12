@@ -87,6 +87,7 @@ final class DayZLiveMapController
         return $this->renderer->render('live-map', $snapshot + [
             'tile_url' => $tileUrl,
             'superadmin_ids' => $superadminIds,
+            'protected_steam64' => DayZVppAdminService::PROTECTED_STEAM64,
             'map' => 'ChernarusPlus',
             'map_definition' => [
                 'id' => 'chernarusplus',

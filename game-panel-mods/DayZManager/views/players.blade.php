@@ -42,7 +42,7 @@
                 // Normalise health: older bridge wrote 0-10000, current writes 0-100
                 $rawHealth = isset($player['health']) && $player['health'] !== null ? (float) $player['health'] : null;
                 $health = $rawHealth !== null ? ($rawHealth > 100 ? round($rawHealth / 100, 1) : round($rawHealth, 1)) : null;
-                $pinnedSteam64 = '76561197992590837';
+                $pinnedSteam64 = (string) ($protected_steam64 ?? '');
                 $isProtectedPlayer = $steam64 === $pinnedSteam64;
                 $listFlags = is_array($player['lists'] ?? null) ? $player['lists'] : [];
                 $listEntryIds = is_array($player['list_entry_ids'] ?? null) ? $player['list_entry_ids'] : [];
