@@ -52,11 +52,9 @@
  * slot and the callback never repeats.
  *
  * PLAYER IDENTITY
- * GetIdentity().GetId() returns the Bohemia Platform UID (DayZ UID), not a
- * Steam64 ID.  PteroMods stores it in both steam64 (kept for backward
- * compatibility) and player_uid.  The panel uses player_uid as the primary
- * stable identifier; steam64 is populated from the persistence database when
- * a match is found there.
+ * identity.GetPlainId() returns the Steam64 ID, while identity.GetId() returns
+ * the Bohemia Platform UID (DayZ UID).  PteroMods stores Steam64 in steam64
+ * and stores the DayZ UID in player_uid.
  *
  * HEALTH
  * GetHealth("", "") returns the character health on a 0 – 100 scale.  The
@@ -186,20 +184,21 @@ class PteroMods_LiveMapBridge
             if (!identity)
                 continue;
 
-            string playerId = identity.GetId();
-            if (playerId == "")
+            string playerUid = identity.GetId();
+            if (playerUid == "")
                 continue;
 
+            string playerSteam64 = identity.GetPlainId();
             string playerName = identity.GetName();
             if (playerName == "")
-                playerName = playerId;
+                playerName = playerUid;
 
             vector pos = man.GetPosition();
             vector orientation = man.GetOrientation();
 
             PteroMods_LiveMapPlayer entry = new PteroMods_LiveMapPlayer();
-            entry.steam64 = playerId;    // backward compat: same value as player_uid
-            entry.player_uid = playerId; // Bohemia Platform UID
+            entry.steam64 = playerSteam64; // Steam64 ID (may be empty on some setups)
+            entry.player_uid = playerUid;  // Bohemia Platform UID
             entry.name = playerName;
             entry.x = PteroMods_LiveMap_Round2(pos[0]);
             entry.y = PteroMods_LiveMap_Round2(pos[1]);

@@ -634,6 +634,34 @@
             + managementLink(player) + '</div>';
     }
 
+    function roughLocationName(player) {
+        const locations = Array.isArray(state.mapDef && state.mapDef.locations) ? state.mapDef.locations : [];
+
+        if (locations.length === 0) {
+            return 'Unknown location';
+        }
+
+        const x = Number(player.x || 0);
+        const z = Number(player.z || 0);
+        let nearest = null;
+        let nearestDist = Number.POSITIVE_INFINITY;
+
+        locations.forEach(function (loc) {
+            const lx = Number(loc.x || 0);
+            const lz = Number(loc.z || 0);
+            const dx = x - lx;
+            const dz = z - lz;
+            const distSq = (dx * dx) + (dz * dz);
+
+            if (distSq < nearestDist) {
+                nearestDist = distSq;
+                nearest = loc;
+            }
+        });
+
+        return nearest && nearest.name ? String(nearest.name) : 'Unknown location';
+    }
+
     // ── Player list ───────────────────────────────────────────────────────
     function renderPlayerList() {
         const needle   = (state.search || '').toLowerCase();
@@ -648,10 +676,11 @@
             const li  = document.createElement('li');
             li.className = 'dz-live-map-list-item' + (state.selected === player.steam64 ? ' is-active' : '');
             li.innerHTML = '<button type="button"><span>' + escapeHtml(player.name) + '</span>'
-                + '<small>' + escapeHtml(player.steam64) + '</small></button>';
+                + '<small>' + escapeHtml(roughLocationName(player)) + '</small></button>';
             li.querySelector('button').addEventListener('click', function () {
                 selectPlayer(player.steam64);
                 focusPlayer(player.steam64);
+                openPlayerPopup(player.steam64);
             });
             listEl.appendChild(li);
         });
@@ -700,6 +729,13 @@
         }
     }
 
+    function openPlayerPopup(steam64) {
+        const marker = state.markers.get(steam64);
+        if (marker) {
+            marker.openPopup();
+        }
+    }
+
     // ── Utilities ─────────────────────────────────────────────────────────
     function escapeHtml(value) {
         return String(value || '')
@@ -710,7 +746,7 @@
             .replace(/'/g, '&#39;');
     }
 
-    // Format an ISO / MySQL timestamp as DD-MM-YYYY.
+    // Format an ISO / MySQL timestamp as DD-MM-YYYY HH:MM.
     function formatDateDMY(value) {
         if (!value) { return ''; }
         var d = new Date(String(value).replace(' ', 'T'));
@@ -718,7 +754,9 @@
         var dd = String(d.getUTCDate()).padStart(2, '0');
         var mm = String(d.getUTCMonth() + 1).padStart(2, '0');
         var yyyy = d.getUTCFullYear();
-        return dd + '-' + mm + '-' + yyyy;
+        var hh = String(d.getUTCHours()).padStart(2, '0');
+        var min = String(d.getUTCMinutes()).padStart(2, '0');
+        return dd + '-' + mm + '-' + yyyy + ' ' + hh + ':' + min;
     }
 
     // Snapshot status (bridge state) and viewer notices (tiles/library) are
