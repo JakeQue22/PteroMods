@@ -46,7 +46,7 @@
  *                             static void JsonSaveFile(string filename, T data)
  *   4_world/entities/entityai.c
  *                             EntityAI FindAttachmentBySlotName(string slot_name)
- *   3_game/entities/man.c     EntityAI GetHeldEntity()
+ *                             EntityAI GetHeldEntity()
  *   3_game/global/object.c    string GetType()
  *
  * Timer.Run is deliberately not used. Its signature is
@@ -257,7 +257,7 @@ class PteroMods_LiveMapBridge
                     entry.inventory.Insert(slotItem);
                 }
             }
-            EntityAI heldEnt = man.GetHeldEntity();
+            EntityAI heldEnt = EntityAI.Cast(man).GetHeldEntity();
             if (heldEnt)
             {
                 PteroMods_LiveMapItem handItem = new PteroMods_LiveMapItem();
