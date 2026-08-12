@@ -1213,6 +1213,11 @@ final class DayZWorkshopService
             } else {
                 $order[] = $folder;
             }
+        } elseif ($workshopId !== '') {
+            // A disabled installed mod must not survive in modlist.html via a
+            // stale install-queue entry, because the DayZ egg can re-append
+            // that queued Workshop ID to the generated `-mod=` startup value.
+            $this->deleteQueueEntries($server, [$workshopId]);
         }
 
         $result = $this->persistOrder($server, $order, $enabled ? 'enable' : 'disable');
@@ -1587,6 +1592,7 @@ final class DayZWorkshopService
     private function modlistWorkshopIds(mixed $server, array $extra = []): array
     {
         $ids = $extra;
+        $disabledInstalledIds = [];
 
         foreach ($this->installedMods($server) as $mod) {
             $id = trim((string) ($mod['workshop_id'] ?? ''));
@@ -1607,6 +1613,9 @@ final class DayZWorkshopService
             }
 
             if (!($mod['enabled'] ?? false)) {
+                if ($mod['installed'] ?? false) {
+                    $disabledInstalledIds[] = $id;
+                }
                 continue;
             }
 
@@ -1616,7 +1625,7 @@ final class DayZWorkshopService
         foreach ($this->persistedQueue($server) as $entry) {
             $id = trim((string) ($entry['workshop_id'] ?? ''));
 
-            if ($id !== '') {
+            if ($id !== '' && !in_array($id, $disabledInstalledIds, true)) {
                 $ids[] = $id;
             }
         }
