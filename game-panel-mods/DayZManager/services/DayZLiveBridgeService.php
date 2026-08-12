@@ -63,11 +63,11 @@ final class DayZLiveBridgeService
      * call at file scope, which makes the mission fail to compile. Detecting it
      * lets the panel repair such servers automatically.
      */
-    private const INIT_C_INCLUDE_PATTERN = '/^\s*#include\s+"(?:(?:\$CurrentDir:)?(?:mpmissions\/)?[^"\/]+\/)?pteromods_live_map\.c"\s*;?\s*$/mi';
+    private const INIT_C_INCLUDE_PATTERN = '/^\s*#include\s+"(?:\$CurrentDir:)?[^"]*pteromods_live_map\.c"\s*;?\s*$/mi';
 
     private const INIT_C_CALL_PATTERN = '/^\s*PteroMods_LiveMap_Init\s*\(\s*\)\s*;\s*$/mi';
 
-    private const INIT_C_LEGACY_PATTERN = '/#include\s+"(?:(?:\$CurrentDir:)?(?:mpmissions\/)?[^"\/]+\/)?pteromods_live_map\.c"\s*;?\s*\n\s*PteroMods_LiveMap_Init\(\);/';
+    private const INIT_C_LEGACY_PATTERN = '/#include\s+"(?:\$CurrentDir:)?[^"]*pteromods_live_map\.c"\s*;?\s*\n\s*PteroMods_LiveMap_Init\(\);/';
 
     /** Path inside the container where the JSON snapshot lives. */
     private const SNAPSHOT_PATH = '/profiles/PteroMods/live_map_players.json';
@@ -303,7 +303,7 @@ final class DayZLiveBridgeService
         $existing = $this->gateway->readFile($server, $initCPath);
         $content  = is_string($existing) ? $existing : '';
 
-        $content = preg_replace('/^\s*#include\s+"(?:(?:\$CurrentDir:)?(?:mpmissions\/)?[^"\/]+\/)?pteromods_live_map\.c"\s*;?\s*\R?/mi', '', $content) ?? $content;
+        $content = preg_replace('/^\s*#include\s+"(?:\$CurrentDir:)?[^"]*pteromods_live_map\.c"\s*;?\s*\R?/mi', '', $content) ?? $content;
         $content = preg_replace('/^\s*\/\/\s*PteroMods Live Map Bridge.*\R?/mi', '', $content) ?? $content;
         $content = preg_replace('/^\s*\/\/\s*Remove this line, the.*\R?/mi', '', $content) ?? $content;
         $content = preg_replace(self::INIT_C_CALL_PATTERN, '', $content) ?? $content;
