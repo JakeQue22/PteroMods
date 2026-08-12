@@ -137,6 +137,15 @@
                     <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
                     <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('whitelist', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Whitelist</button>
                     <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('priority', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Priority Queue</button>
+                    @if ($steam64)
+                        @if (in_array($steam64, $superadmin_ids ?? [], true))
+                            @if ($steam64 !== '76561197992590837')
+                                <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveSuperadmin({{ json_encode($steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove SuperAdmin</button>
+                            @endif
+                        @else
+                            <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroMakeSuperadmin({{ json_encode($steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Make SuperAdmin</button>
+                        @endif
+                    @endif
                     <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-warn,#f59e0b);" onclick="pteroResetPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Reset Data</button>
                 </div>
             </div>
@@ -247,6 +256,28 @@
         req('POST', '/dayz/players/ban', { player_id: playerId, note: note })
             .then(function (d) { setStatus(d.message || (d.status === 'saved' ? 'Player added to ban list.' : 'Ban failed.'), d.status === 'saved' ? undefined : false); })
             .catch(function () { setStatus('Ban request failed.', false); });
+    };
+
+    window.pteroMakeSuperadmin = function (steam64, playerName) {
+        if (!confirm('Add "' + playerName + '" as VPP SuperAdmin?\n\nThey will be added to SuperAdmins.txt. Changes take effect after the next server restart.')) { return; }
+        setStatus('Adding SuperAdmin…');
+        req('POST', '/dayz/players/superadmin', { steam64: steam64, nickname: playerName })
+            .then(function (d) {
+                setStatus(d.message || (d.status === 'added' ? 'Player added as SuperAdmin.' : 'Failed.'), d.status === 'added' ? undefined : false);
+                if (d.status === 'added') { setTimeout(function () { window.location.reload(); }, 1500); }
+            })
+            .catch(function () { setStatus('Request failed.', false); });
+    };
+
+    window.pteroRemoveSuperadmin = function (steam64, playerName) {
+        if (!confirm('Remove "' + playerName + '" from VPP SuperAdmins?\n\nThey will be removed from SuperAdmins.txt. Changes take effect after the next server restart.')) { return; }
+        setStatus('Removing SuperAdmin…');
+        req('DELETE', '/dayz/players/superadmin/' + encodeURIComponent(steam64), null)
+            .then(function (d) {
+                setStatus(d.message || (d.status === 'removed' ? 'Player removed from SuperAdmins.' : 'Failed.'), d.status === 'removed' ? undefined : false);
+                if (d.status === 'removed') { setTimeout(function () { window.location.reload(); }, 1500); }
+            })
+            .catch(function () { setStatus('Request failed.', false); });
     };
 
     window.pteroResetPlayer = function (playerId, playerName) {

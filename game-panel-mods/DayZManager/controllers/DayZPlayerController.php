@@ -11,6 +11,7 @@ use GamePanelMods\DayZManager\Services\DayZObservedPlayerService;
 use GamePanelMods\DayZManager\Services\DayZPlayerDirectoryService;
 use GamePanelMods\DayZManager\Services\DayZPlayerService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
+use GamePanelMods\DayZManager\Services\DayZVppAdminService;
 use Throwable;
 
 /**
@@ -26,6 +27,7 @@ final class DayZPlayerController
         private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZVppAdminService $vppAdmin = new DayZVppAdminService(),
     ) {
     }
 
@@ -52,6 +54,7 @@ final class DayZPlayerController
             $mapName = (string) ($snapshot['map'] ?? 'ChernarusPlus');
             $persisted = $this->directory->directory($resolved['model'], $mapName, $livePlayers);
             $playerLists = $this->service->allLists();
+            $superadminIds = $this->vppAdmin->list($resolved['model']);
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'players', $resolved['id'], $resolved['name']);
         }
@@ -66,6 +69,7 @@ final class DayZPlayerController
                 'persistence_source_path' => $persisted['source_path'] ?? null,
                 'persistence_source_paths' => $persisted['source_paths'] ?? [],
                 'map_definition' => $snapshot['map_definition'] ?? null,
+                'superadmin_ids' => $superadminIds,
             ];
         }
 
@@ -78,6 +82,7 @@ final class DayZPlayerController
             'persistence_source_paths' => $persisted['source_paths'] ?? [],
             'map_definition' => $snapshot['map_definition'] ?? ['name' => 'ChernarusPlus', 'locations' => []],
             'online_count' => count($livePlayers),
+            'superadmin_ids' => $superadminIds,
         ], 'players', $resolved['id'], $resolved['name']);
     }
 
@@ -130,6 +135,41 @@ final class DayZPlayerController
             $playerId = $this->context->stringInput('player_id');
 
             return $this->observedPlayers->kick($model, $playerId);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Adds a player as a VPP SuperAdmin.
+     *
+     * @return array<string, mixed>
+     */
+    public function addSuperadmin(mixed $server = null): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $steam64  = $this->context->stringInput('steam64');
+            $nickname = $this->context->stringInput('nickname');
+
+            return $this->vppAdmin->add($model, $steam64, $nickname);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Removes a player from the VPP SuperAdmins list.
+     *
+     * @return array<string, mixed>
+     */
+    public function removeSuperadmin(mixed $server = null, string $steam64 = ''): array
+    {
+        try {
+            $model   = $this->authoriseManage($server);
+            $steam64 = $steam64 !== '' ? $steam64 : $this->context->stringInput('steam64');
+
+            return $this->vppAdmin->remove($model, $steam64);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }

@@ -1749,6 +1749,7 @@ final class DayZWorkshopService
             );
 
             $this->configuration->syncTypesExtraForMod($server, $newFolderName, $title);
+            $this->configuration->syncModKeysForMod($server, $newFolderName);
         }
 
         if ($renamed) {
@@ -1796,6 +1797,7 @@ final class DayZWorkshopService
             }
 
             $this->configuration->syncTypesExtraForMod($server, $folderName, $title);
+            $this->configuration->syncModKeysForMod($server, $folderName);
         }
     }
 
