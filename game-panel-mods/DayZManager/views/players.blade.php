@@ -54,19 +54,6 @@
                 <div class="dz-player-card__head">
                     <div>
                         <strong>{{ $player['name'] ?: $playerId }}</strong>
-                        <div class="dz-sub">
-                            @if ($steam64)
-                                Steam64:
-                                <a href="https://steamcommunity.com/profiles/{{ $steam64 }}" target="_blank" rel="noopener noreferrer">{{ $steam64 }}</a>
-                            @elseif ($uid)
-                                DayZ UID: <code>{{ $uid }}</code>
-                            @else
-                                ID: {{ $playerId }}
-                            @endif
-                            @if ($uid && $steam64)
-                                · DayZ UID: <code>{{ $uid }}</code>
-                            @endif
-                        </div>
                     </div>
                     <span class="dz-badge {{ !empty($player['online']) ? 'dz-badge-on' : 'dz-badge-off' }}">
                         {{ !empty($player['online']) ? 'Online' : 'Offline' }}
