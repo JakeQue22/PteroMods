@@ -88,8 +88,9 @@ class PteroMods_LiveMapBridge : Managed
     {
         if ( GetGame() && GetGame().IsServer() )
         {
-            GetGame().GetCallQueue( CALL_CATEGORY_GAMEPLAY ).CallLater(
-                WriteSnapshot,
+            GetGame().GetCallQueue( CALL_CATEGORY_GAMEPLAY ).CallLaterByName(
+                this,
+                "WriteSnapshot",
                 PTEROMODS_LIVEMAP_INTERVAL_MS,
                 true    // repeat: run every PTEROMODS_LIVEMAP_INTERVAL_MS ms
             );
@@ -136,6 +137,9 @@ class PteroMods_LiveMapBridge : Managed
 
             // GetHealth( "", "" ) returns 0.0 – 1.0; convert to 0 – 100.
             float health = Math.Round( man.GetHealth( "", "" ) * 10000.0 ) / 100.0;
+            string aliveValue = "false";
+            if ( alive )
+                aliveValue = "true";
 
             string entry = string.Format(
                 "{\"steam64\":\"%1\",\"name\":\"%2\",\"x\":%3,\"y\":%4,\"z\":%5,\"direction\":%6,\"alive\":%7,\"health\":%8}",
@@ -145,7 +149,7 @@ class PteroMods_LiveMapBridge : Managed
                 Math.Round( pos[1] * 100.0 ) / 100.0,
                 Math.Round( pos[2] * 100.0 ) / 100.0,
                 Math.Round( yaw   * 100.0 ) / 100.0,
-                alive ? "true" : "false",
+                aliveValue,
                 health
             );
 
