@@ -212,6 +212,15 @@
         el.className = 'dz-status' + (ok === false ? ' dz-status-error' : '');
     }
 
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     window.pteroAddToList = function (listType, playerId) {
         var labels = { whitelist: 'Whitelist', priority: 'Priority Queue' };
         var label = labels[listType] || listType;
@@ -297,10 +306,12 @@
         items.forEach(function (cls) {
             var label = cls.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
             var wikiUrl = 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(cls);
+            var safeClass = escapeHtml(cls);
+            var safeLabel = escapeHtml(label);
             html += '<div style="background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.35rem;padding:0.5rem;font-size:0.78rem;overflow:hidden;">'
                 + '<div style="font-size:1.5rem;text-align:center;margin-bottom:0.25rem;">📦</div>'
                 + '<div style="word-break:break-word;text-align:center;">'
-                + '<a href="' + wikiUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--dz-accent);text-decoration:none;" title="' + cls + '">' + label + '</a>'
+                + '<a href="' + wikiUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--dz-accent);text-decoration:none;" title="' + safeClass + '">' + safeLabel + '</a>'
                 + '</div>'
                 + '</div>';
         });

@@ -1426,7 +1426,7 @@ final class DayZWorkshopService
             // Wings directory listings report the folder inode size (commonly 4 KB),
             // not the recursive total. Fall back to Steam Workshop's file size.
             'file_size'       => $installed
-                ? $this->formatBytes($size > 4096 ? $size : $workshopBytes)
+                ? $this->formatBytes($size > 4096 ? $size : ($workshopBytes > 0 ? $workshopBytes : $size))
                 : '',
             'enabled'         => $enabled,
             'installed'       => $installed,
