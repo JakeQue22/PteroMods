@@ -79,7 +79,7 @@ const string PTEROMODS_LIVEMAP_DIR = "$profile:PteroMods";
 // reads in DayZLiveMapService::normalizePlayers().
 class PteroMods_LiveMapPlayer
 {
-    string steam64;     // kept for backward compatibility (same value as player_uid)
+    string steam64;     // Steam64 ID from identity.GetPlainId()
     string player_uid;  // Bohemia Platform UID from identity.GetId()
     string name;
     float x;
