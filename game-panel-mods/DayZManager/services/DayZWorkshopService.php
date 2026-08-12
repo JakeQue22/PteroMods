@@ -1408,6 +1408,7 @@ final class DayZWorkshopService
         $meta = $installed ? $this->modMetadata($server, $folder) : [];
         $workshopId = $this->resolveWorkshopId($folder, $meta);
         $info = $workshopId !== '' ? $this->workshopInfo($workshopId) : [];
+        $workshopBytes = isset($info['file_size']) ? (int) $info['file_size'] : 0;
         $author = trim((string) ($meta['author'] ?? ''));
 
         if ($author === '' && isset($info['author']) && is_string($info['author'])) {
@@ -1422,7 +1423,11 @@ final class DayZWorkshopService
             'thumbnail'       => (string) ($info['thumbnail'] ?? ''),
             'current_version' => $meta['version'] ?? '',
             'latest_version'  => '',
-            'file_size'       => $installed ? $this->formatBytes($size) : '',
+            // Wings directory listings report the folder inode size (commonly 4 KB),
+            // not the recursive total. Fall back to Steam Workshop's file size.
+            'file_size'       => $installed
+                ? $this->formatBytes($size > 4096 ? $size : $workshopBytes)
+                : '',
             'enabled'         => $enabled,
             'installed'       => $installed,
             'server_only'     => $serverOnly,

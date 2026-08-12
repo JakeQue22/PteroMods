@@ -283,7 +283,7 @@ final class DayZObservedPlayerService
             return ['status' => 'error', 'message' => 'Player ID is required.'];
         }
 
-        $dispatched = $this->gateway->sendCommand($server, '#kick ' . $playerId);
+        $dispatched = $this->gateway->sendCommand($server, 'kick ' . $playerId);
 
         return [
             'status'    => $dispatched ? 'dispatched' : 'failed',
