@@ -1,111 +1,121 @@
 /*
  * PteroMods - DayZ Standalone Live Map Bridge (Enforce Script)
  *
- * This script is deployed automatically to your DayZ server mission directory
- * by the PteroMods panel (DayZ Manager -> Live Map -> Deploy Bridge button),
- * or by running the panel install.sh.
+ * Deployed automatically to the mission directory by the PteroMods panel
+ * (DayZ Manager -> Live Map -> Deploy Bridge), or by the panel install.sh.
  *
- * HOW TO ACTIVATE
- * The PteroMods panel edits your mission init.c
- * (mpmissions/dayzOffline.MAP/init.c) in two places.
+ * ACTIVATION
+ * The panel wires this file into the mission init.c in two places: an include
+ * directive at the top of init.c, and a PteroMods_LiveMap_Init(); call placed
+ * inside the existing main() function. Enforce Script does not allow a bare
+ * call at file scope, so the call must live inside main().
  *
- * 1. An include directive at the very top of the file, pointing at
- *    $CurrentDir:mpmissions/dayzOffline.MAP/pteromods_live_map.c
- *
- * 2. A PteroMods_LiveMap_Init(); call inside the existing main() function.
- *    Enforce Script does not allow a bare call at file scope - that makes the
- *    mission fail to compile.
- *
- * The bridge registers a repeating call-queue callback that writes a JSON
- * snapshot of all online players to:
- *
+ * OUTPUT
+ * A JSON snapshot of all online players is written every 5 seconds to
  *     $profile:PteroMods/live_map_players.json
- *
- * which the PteroMods panel reads through the Wings file API as:
+ * which the PteroMods panel reads through the Wings file API as
  *     /profiles/PteroMods/live_map_players.json
  *
- * STYLE RULES FOR THIS FILE - DO NOT BREAK THEM
+ * WHY THE JSON IS NOT BUILT BY HAND
+ * Mission-folder scripts pulled in by init.c are read by the engine CParser,
+ * not by the mod/PBO Enforce compiler. The CParser does not accept a
+ * backslash-escaped quote inside a string literal: it ends the literal at that
+ * quote and then reports
+ *     CParser: quoted string not closed
+ * followed by cascading errors, including a bogus Can-not-find-file report for
+ * this module. There is also no stdlib function that turns a character code
+ * back into a character, so a quote character cannot be synthesised either.
+ * Therefore this file contains NO backslash escape sequences at all, and the
+ * JSON is produced by the engine serialiser through JsonFileLoader, which does
+ * all quoting and escaping natively. As a side effect player names with quotes,
+ * backslashes or newlines are escaped correctly by the engine.
  *
- * a) Every statement must be written on a SINGLE line.  The mission script
- *    module parses an included file line by line; a statement wrapped over
- *    several lines produces Missing semicolon / Invalid statement errors even
- *    though the same code is valid inside a PBO-compiled mod.
+ * The same CParser is line oriented: an expression wrapped across several
+ * source lines produced Missing-semicolon and Invalid-statement errors here, so
+ * every statement below is written on a single line.
  *
- * b) Every line must contain an EVEN number of raw double-quote characters.
- *    The CParser preprocessor counts quotes per line and does NOT honour a
- *    backslash-escaped quote, so a lone escaped quote desynchronises it and
- *    yields: CParser: quoted string not closed on line N.  Escaped quotes are
- *    therefore always used in pairs (see the JSON builder below), and the
- *    single quote character needed by the sanitiser is cut out of a two-quote
- *    literal with Substring().
+ * VERIFIED API USED BY THIS FILE (DayZ script sources)
+ *   3_game/global/game.c      ScriptCallQueue GetCallQueue(int call_category)
+ *   3_game/global/game.c      proto void GetWorldName(out string world_name)
+ *   3_game/tools/tools.c      const int CALL_CATEGORY_SYSTEM = 0
+ *   2_gamelib/tools.c         proto void CallLater(func fn, int delay = 0,
+ *                                                  bool repeat = false, ...)
+ *   2_gamelib/tools.c         proto void Remove(func fn)
+ *   1_core/proto/ensystem.c   proto native bool MakeDirectory(string name)
+ *   3_game/tools/jsonfileloader.c
+ *                             static void JsonSaveFile(string filename, T data)
  *
- * c) No preprocessor directive text and no double quotes inside comments.
- *    The preprocessor scans for directives before comments are stripped, so an
- *    include directive shown as documentation is actually executed and fails
- *    with: Can't find file.
- *
- * SCHEDULING
- * The repeating callback uses the engine call queue:
- *     GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(fn, delay_ms, repeat)
- * Timer.Run() is deliberately NOT used: its signature is
- *     Run(float duration, Class obj, string fn_name, Param params, bool loop)
- * so the loop flag is the FIFTH argument, not the fourth.
- *
- * FILE I/O
- * The bridge uses DayZ Standalone native file I/O (OpenFile / FPrint /
- * CloseFile with the $profile: prefix) - no external extensions or mods are
- * required for the file writing itself.
+ * Timer.Run is deliberately not used. Its signature is
+ *     Run(float duration, Managed obj, string fn_name, Param params = NULL,
+ *         bool loop = false)
+ * so the loop flag is the fifth argument; passing it fourth lands in the Param
+ * slot and the callback never repeats.
  *
  * PLAYER IDENTITY
- * GetIdentity().GetId() returns the Bohemia Platform ID (not a Steam64 ID).
- * PteroMods normalises this into the steam64 field; it is still a stable,
- * unique per-player identifier and works for live-map pin display.
+ * GetIdentity().GetId() returns the Bohemia Platform ID, not a Steam64 ID.
+ * PteroMods stores it in the steam64 field; it is a stable, unique per-player
+ * identifier and works for live-map pin display.
  */
 
 // ---- Configuration ---------------------------------------------------------
 
-// How often (in milliseconds) the player snapshot is written.  5000 = 5 s.
+// How often, in milliseconds, the player snapshot is written. 5000 = 5 s.
 const int PTEROMODS_LIVEMAP_INTERVAL_MS = 5000;
 
-// Output path.  The $profile: prefix resolves to the directory passed to the
-// server's -profiles command-line argument.
+// Output path. The $profile: prefix resolves to the directory passed to the
+// server -profiles command line argument.
 const string PTEROMODS_LIVEMAP_PATH = "$profile:PteroMods/live_map_players.json";
 
 // Directory that must exist before the output file can be written.
 const string PTEROMODS_LIVEMAP_DIR = "$profile:PteroMods";
 
-// ---- Helpers ---------------------------------------------------------------
+// ---- Serialisable snapshot model -------------------------------------------
 
-// Makes a player name safe to embed inside a double-quoted JSON string.
-// The double-quote character is cut out of a two-quote literal so that this
-// line still contains an even number of raw quote characters (see rule b).
-string PteroMods_LiveMap_SanitizePlayerName(string value)
+// Member names become the JSON keys, so they match what the PteroMods panel
+// reads in DayZLiveMapService::normalizePlayers().
+class PteroMods_LiveMapPlayer
 {
-    string doubleQuote = "\"\"";
-    doubleQuote = doubleQuote.Substring(0, 1);
-
-    string safe = value;
-    safe.Replace("\\", "/");
-    safe.Replace(doubleQuote, "'");
-    safe.Replace("\n", " ");
-    safe.Replace("\t", " ");
-    return safe;
+    string steam64;
+    string name;
+    float x;
+    float y;
+    float z;
+    float direction;
+    bool alive;
+    float health;
 }
 
-// Rounds to two decimals without relying on any formatting helper.
+// updated_at is intentionally left empty. The panel substitutes the file
+// modification time when it reads the snapshot, in normalizeUpdatedAt().
+class PteroMods_LiveMapSnapshot
+{
+    string updated_at;
+    string map;
+    ref array<ref PteroMods_LiveMapPlayer> players;
+
+    void PteroMods_LiveMapSnapshot()
+    {
+        updated_at = "";
+        map = "";
+        players = new array<ref PteroMods_LiveMapPlayer>;
+    }
+}
+
+// ---- Helpers ---------------------------------------------------------------
+
+// Rounds to two decimals to keep the snapshot small.
 float PteroMods_LiveMap_Round2(float value)
 {
     float scaled = Math.Round(value * 100.0);
     return scaled / 100.0;
 }
 
-// ---- Bridge class ----------------------------------------------------------
+// ---- Bridge ----------------------------------------------------------------
 
-// Server-side periodic bridge.  One instance is created on server startup by
-// PteroMods_LiveMap_Init() and kept alive through the static s_instance ref.
-class PteroMods_LiveMapBridge extends Managed
+// Server side periodic bridge. A single instance is created on server startup
+// by PteroMods_LiveMap_Init() and kept alive through the static s_instance ref.
+class PteroMods_LiveMapBridge
 {
-    // Static ref prevents the garbage collector from collecting the instance.
     static ref PteroMods_LiveMapBridge s_instance;
 
     // Guards against registering the repeating callback more than once.
@@ -116,9 +126,9 @@ class PteroMods_LiveMapBridge extends Managed
         m_Scheduled = false;
     }
 
-    // Registers the repeating snapshot callback.  Safe to call twice: the
-    // previous registration is removed first and the guard flag stops a second
-    // CallLater() from ever queueing a duplicate.
+    // Registers the repeating snapshot callback. Safe to call repeatedly: any
+    // previous registration for this exact function reference is removed first,
+    // and the guard flag stops a second CallLater from queueing a duplicate.
     void Start()
     {
         if (!GetGame())
@@ -135,7 +145,7 @@ class PteroMods_LiveMapBridge extends Managed
         m_Scheduled = true;
     }
 
-    // Cancels the repeating callback (used when the bridge is shut down).
+    // Cancels the repeating callback.
     void Stop()
     {
         if (!GetGame())
@@ -145,19 +155,20 @@ class PteroMods_LiveMapBridge extends Managed
         m_Scheduled = false;
     }
 
-    // Called by the call queue every PTEROMODS_LIVEMAP_INTERVAL_MS ms.
-    // Collects positions of all connected players and writes the JSON snapshot
-    // to PTEROMODS_LIVEMAP_PATH.
+    // Invoked by the call queue every PTEROMODS_LIVEMAP_INTERVAL_MS ms.
     void WriteSnapshot()
     {
         if (!GetGame())
             return;
 
+        PteroMods_LiveMapSnapshot snapshot = new PteroMods_LiveMapSnapshot();
+
+        string worldName = "";
+        GetGame().GetWorldName(worldName);
+        snapshot.map = worldName;
+
         array<Man> players = new array<Man>;
         GetGame().GetPlayers(players);
-
-        string entries = "";
-        bool first = true;
 
         foreach (Man man : players)
         {
@@ -172,71 +183,39 @@ class PteroMods_LiveMapBridge extends Managed
             if (playerId == "")
                 continue;
 
-            string playerName = PteroMods_LiveMap_SanitizePlayerName(identity.GetName());
+            string playerName = identity.GetName();
             if (playerName == "")
                 playerName = playerId;
 
             vector pos = man.GetPosition();
             vector orientation = man.GetOrientation();
 
-            float x = PteroMods_LiveMap_Round2(pos[0]);
-            float y = PteroMods_LiveMap_Round2(pos[1]);
-            float z = PteroMods_LiveMap_Round2(pos[2]);
-            float direction = PteroMods_LiveMap_Round2(orientation[0]);
+            PteroMods_LiveMapPlayer entry = new PteroMods_LiveMapPlayer();
+            entry.steam64 = playerId;
+            entry.name = playerName;
+            entry.x = PteroMods_LiveMap_Round2(pos[0]);
+            entry.y = PteroMods_LiveMap_Round2(pos[1]);
+            entry.z = PteroMods_LiveMap_Round2(pos[2]);
+            entry.direction = PteroMods_LiveMap_Round2(orientation[0]);
+            entry.alive = man.IsAlive();
 
-            // GetHealth with empty zone/type returns 0.0 - 1.0; scale to 0 - 100.
-            float health = PteroMods_LiveMap_Round2(man.GetHealth("", "") * 100.0);
+            // GetHealth with empty zone and type yields 0.0 to 1.0; scale to 0 to 100.
+            entry.health = PteroMods_LiveMap_Round2(man.GetHealth("", "") * 100.0);
 
-            string aliveValue = "false";
-            if (man.IsAlive())
-                aliveValue = "true";
-
-            string entry = "{";
-            entry = entry + "\"steam64\":\"" + playerId + "\",";
-            entry = entry + "\"name\":\"" + playerName + "\",";
-            entry = entry + "\"x\":" + x.ToString() + ",";
-            entry = entry + "\"y\":" + y.ToString() + ",";
-            entry = entry + "\"z\":" + z.ToString() + ",";
-            entry = entry + "\"direction\":" + direction.ToString() + ",";
-            entry = entry + "\"alive\":" + aliveValue + ",";
-            entry = entry + "\"health\":" + health.ToString();
-            entry = entry + "}";
-
-            if (!first)
-                entries = entries + ",";
-
-            entries = entries + entry;
-            first = false;
+            snapshot.players.Insert(entry);
         }
 
-        string worldName = "";
-        GetGame().GetWorldName(worldName);
-
-        // updated_at is left empty; the PteroMods panel fills it with the
-        // current server time when it reads the snapshot (normalizeUpdatedAt()).
-        string snapshot = "{\"updated_at\":\"\",";
-        snapshot = snapshot + "\"map\":\"" + worldName + "\",";
-        snapshot = snapshot + "\"players\":[" + entries + "]}";
-
-        // Ensure the output directory exists.  OpenFile does not create parent
-        // directories, so a missing $profile:PteroMods/ folder would silently
-        // discard every snapshot write.
+        // OpenFile does not create parent directories, so a missing
+        // $profile:PteroMods folder would silently discard every write.
         MakeDirectory(PTEROMODS_LIVEMAP_DIR);
 
-        FileHandle fh = OpenFile(PTEROMODS_LIVEMAP_PATH, FileMode.WRITE);
-        if (fh != 0)
-        {
-            FPrint(fh, snapshot);
-            CloseFile(fh);
-        }
+        JsonFileLoader<PteroMods_LiveMapSnapshot>.JsonSaveFile(PTEROMODS_LIVEMAP_PATH, snapshot);
     }
 }
 
 // ---- Activation ------------------------------------------------------------
 
-// Entry point called from init.c.  The PteroMods panel injects
-// PteroMods_LiveMap_Init(); into the mission's main() function so that this
-// runs once when the mission loads on the server.
+// Entry point called from the mission main() function.
 void PteroMods_LiveMap_Init()
 {
     if (!GetGame())
