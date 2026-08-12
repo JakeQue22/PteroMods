@@ -413,62 +413,62 @@ final class DayZObservedPlayerService
             return false;
         }
 
-        private function backupTableExists(): bool
-        {
-            if (!class_exists('Illuminate\\Support\\Facades\\Schema')) {
-                return false;
-            }
-
-            try {
-                return \Illuminate\Support\Facades\Schema::hasTable('dayz_observed_player_backups');
-            } catch (Throwable) {
-                return false;
-            }
-        }
-
-        /**
-         * @return array<string, array{id:int, created_at:string}>
-         */
-        private function latestBackups(string $serverId): array
-        {
-            if ($serverId === '' || !$this->backupTableExists()) {
-                return [];
-            }
-
-            try {
-                $rows = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
-                    ->where('server_id', $serverId)
-                    ->orderByDesc('id')
-                    ->get()
-                    ->all();
-            } catch (Throwable) {
-                return [];
-            }
-
-            $latest = [];
-
-            foreach ($rows as $row) {
-                $record = (array) $row;
-                $playerId = trim((string) ($record['player_id'] ?? ''));
-
-                if ($playerId === '' || isset($latest[$playerId])) {
-                    continue;
-                }
-
-                $latest[$playerId] = [
-                    'id' => (int) ($record['id'] ?? 0),
-                    'created_at' => (string) ($record['created_at'] ?? ''),
-                ];
-            }
-
-            return $latest;
-        }
-
         try {
             return \Illuminate\Support\Facades\Schema::hasTable('dayz_observed_players');
         } catch (Throwable) {
             return false;
         }
+    }
+
+    private function backupTableExists(): bool
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Schema')) {
+            return false;
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Schema::hasTable('dayz_observed_player_backups');
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array<string, array{id:int, created_at:string}>
+     */
+    private function latestBackups(string $serverId): array
+    {
+        if ($serverId === '' || !$this->backupTableExists()) {
+            return [];
+        }
+
+        try {
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
+                ->where('server_id', $serverId)
+                ->orderByDesc('id')
+                ->get()
+                ->all();
+        } catch (Throwable) {
+            return [];
+        }
+
+        $latest = [];
+
+        foreach ($rows as $row) {
+            $record = (array) $row;
+            $playerId = trim((string) ($record['player_id'] ?? ''));
+
+            if ($playerId === '' || isset($latest[$playerId])) {
+                continue;
+            }
+
+            $latest[$playerId] = [
+                'id' => (int) ($record['id'] ?? 0),
+                'created_at' => (string) ($record['created_at'] ?? ''),
+            ];
+        }
+
+        return $latest;
     }
 
     private function floatValue(mixed $value): ?float
