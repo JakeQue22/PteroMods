@@ -33,7 +33,7 @@
 <section class="dz-card dz-live-map-layout">
     <div id="dz-live-map-canvas" class="dz-live-map-canvas" aria-label="DayZ live map viewer"></div>
     <aside class="dz-live-map-sidebar">
-        <h3>Players</h3>
+        <h3 id="dz-live-map-players-heading">Players (0/64)</h3>
         <div id="dz-live-map-status" class="dz-sub"></div>
         <ul id="dz-live-map-list" class="dz-live-map-list"></ul>
         <div id="dz-live-map-player" class="dz-live-map-player">
@@ -92,6 +92,7 @@
     const statusEl  = document.getElementById('dz-live-map-status');
     const listEl    = document.getElementById('dz-live-map-list');
     const detailEl  = document.getElementById('dz-live-map-player');
+    const playersHeadingEl = document.getElementById('dz-live-map-players-heading');
     const countEl   = document.getElementById('dz-live-map-count');
     const updatedEl = document.getElementById('dz-live-map-updated');
     const mapNameEl = document.getElementById('dz-live-map-name');
@@ -524,6 +525,9 @@
 
         state.list = players.slice();
         countEl.textContent = String(players.length);
+        if (playersHeadingEl) {
+            playersHeadingEl.textContent = 'Players (' + String(players.length) + '/64)';
+        }
         renderPlayerList();
         renderSelection();
 
@@ -578,6 +582,7 @@
         const entry   = directoryEntry(player) || {};
         // real_steam64: a genuine 17-digit Steam ID (may be null for DayZ-UID-only servers).
         const realSteam64 = player.real_steam64 || entry.steam64 || null;
+        const rawSteam64 = player.steam64_raw || null;
         // player_uid: the Bohemia Platform UID used as the stable bridge identifier.
         const playerUid = player.player_uid || player.steam64 || '';
         const isRealSteam64 = realSteam64 && /^\d{17}$/.test(realSteam64);
@@ -587,6 +592,8 @@
 
         if (isRealSteam64) {
             html += playerRow('Steam64', '<a href="https://steamcommunity.com/profiles/' + escapeHtml(realSteam64) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(realSteam64) + '</a>');
+        } else if (realSteam64 || rawSteam64) {
+            html += playerRow('Steam64', '<code style="word-break:break-all;">' + escapeHtml(realSteam64 || rawSteam64) + '</code>');
         } else {
             html += playerRow('Steam64', 'Unknown');
         }

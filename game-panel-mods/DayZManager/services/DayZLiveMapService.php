@@ -140,12 +140,14 @@ final class DayZLiveMapService
             $rawHealth = $this->floatValue($entry['health'] ?? null);
             $health = $rawHealth === null ? null : ($rawHealth > 100 ? round($rawHealth / 100, 2) : $rawHealth);
 
-            // steam64 is only populated when we have a genuine 17-digit Steam ID.
-            $realSteam64 = preg_match('/^\d{17}$/', $steam64) === 1 ? $steam64 : null;
+            // Accept both raw 17-digit Steam64 values and wrappers such as
+            // "steam:7656119..." by extracting the 17-digit token.
+            $realSteam64 = $this->extractSteam64($steam64);
 
             $players[] = [
                 'steam64' => $primaryId,   // used as map marker key (may be DayZ UID)
                 'real_steam64' => $realSteam64,  // actual Steam64 if available, else null
+                'steam64_raw' => $steam64 !== '' ? $steam64 : null,
                 'player_uid' => $primaryId,      // explicit DayZ UID label
                 'name' => $name,
                 'x' => $x,
@@ -160,6 +162,23 @@ final class DayZLiveMapService
         }
 
         return $players;
+    }
+
+    private function extractSteam64(string $value): ?string
+    {
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{17}$/', $value) === 1) {
+            return $value;
+        }
+
+        if (preg_match('/(\d{17})/', $value, $matches) === 1) {
+            return (string) ($matches[1] ?? '');
+        }
+
+        return null;
     }
 
     /**
