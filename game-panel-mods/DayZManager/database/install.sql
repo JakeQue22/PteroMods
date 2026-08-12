@@ -147,3 +147,19 @@ CREATE TABLE IF NOT EXISTS `dayz_observed_players` (
     UNIQUE KEY `uq_dayz_observed_players_server_player` (`server_id`, `player_id`),
     KEY `idx_dayz_observed_players_server_seen` (`server_id`, `last_seen_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `dayz_observed_players`
+    ADD COLUMN IF NOT EXISTS `steam64` VARCHAR(64) NULL DEFAULT NULL AFTER `player_id`,
+    ADD KEY IF NOT EXISTS `idx_dayz_observed_players_steam64` (`steam64`);
+
+CREATE TABLE IF NOT EXISTS `dayz_observed_player_backups` (
+    `id`            INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`     VARCHAR(64)   NOT NULL,
+    `player_id`     VARCHAR(64)   NOT NULL,
+    `snapshot_json` LONGTEXT      NOT NULL,
+    `created_at`    TIMESTAMP     NULL DEFAULT NULL,
+    `updated_at`    TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_dayz_observed_player_backups_server_player` (`server_id`, `player_id`),
+    KEY `idx_dayz_observed_player_backups_server_created` (`server_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

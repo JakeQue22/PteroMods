@@ -113,15 +113,31 @@ final class DayZPlayerController
     /**
      * @return array<string, mixed>
      */
-    public function resetObserved(mixed $server = null, string $playerId = ''): array
+    public function resetObserved(mixed $server = null, string $id = ''): array
     {
         try {
             $model = $this->authoriseManage($server);
-            $playerId = $playerId !== '' ? $playerId : $this->context->stringInput('player_id');
+            $playerId = $id !== '' ? $id : $this->context->stringInput('player_id');
 
             return $this->observedPlayers->reset($model, $playerId);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+
+        /**
+         * @return array<string, mixed>
+         */
+        public function restoreObserved(mixed $server = null, string $id = ''): array
+        {
+            try {
+                $model = $this->authoriseManage($server);
+                $playerId = $id !== '' ? $id : $this->context->stringInput('player_id');
+                $backupId = $this->context->stringInput('backup_id');
+
+                return $this->observedPlayers->restore($model, $playerId, $backupId);
+            } catch (Throwable $exception) {
+                return ['status' => 'error', 'message' => $exception->getMessage()];
+            }
         }
     }
 

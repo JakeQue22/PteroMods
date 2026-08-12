@@ -138,6 +138,7 @@ final class DayZObservedPlayerService
         }
 
         $players = [];
+        $latestBackups = $this->latestBackups($serverId);
 
         foreach ($rows as $row) {
             $record = (array) $row;
@@ -180,6 +181,8 @@ final class DayZObservedPlayerService
                 'last_seen_at'   => isset($record['last_seen_at']) ? (string) $record['last_seen_at'] : null,
                 'inventory'      => $this->decodeJson(($live['inventory'] ?? null) !== null ? $live['inventory'] : ($record['inventory_json'] ?? null)),
                 'metadata'       => $this->decodeJson(($live['metadata'] ?? null) !== null ? $live['metadata'] : ($record['metadata_json'] ?? null)),
+                'reset_backup_id' => $latestBackups[$playerId]['id'] ?? null,
+                'reset_backup_at' => $latestBackups[$playerId]['created_at'] ?? null,
             ];
         }
 
@@ -210,6 +213,8 @@ final class DayZObservedPlayerService
                 'last_seen_at'   => null,
                 'inventory'      => $this->decodeJson($live['inventory'] ?? null),
                 'metadata'       => $this->decodeJson($live['metadata'] ?? null),
+                'reset_backup_id' => $latestBackups[$playerId]['id'] ?? null,
+                'reset_backup_at' => $latestBackups[$playerId]['created_at'] ?? null,
             ];
         }
 
@@ -255,6 +260,31 @@ final class DayZObservedPlayerService
         }
 
         try {
+            $query = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                ->where('server_id', $serverId)
+                ->where('player_id', $playerId);
+            $record = $query->first();
+            $backup = null;
+
+            if ($record !== null && $this->backupTableExists()) {
+                $now = date('Y-m-d H:i:s');
+                $snapshot = (array) $record;
+                unset($snapshot['id']);
+                $backupPayload = [
+                    'server_id' => $serverId,
+                    'player_id' => $playerId,
+                    'snapshot_json' => json_encode($snapshot, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+                $backupId = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
+                    ->insertGetId($backupPayload);
+                $backup = [
+                    'id' => $backupId,
+                    'created_at' => $now,
+                ];
+            }
+
             $deleted = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
                 ->where('server_id', $serverId)
                 ->where('player_id', $playerId)
@@ -263,9 +293,87 @@ final class DayZObservedPlayerService
             return [
                 'status'    => 'reset',
                 'player_id' => $playerId,
+                'backup'    => $backup,
                 'message'   => $deleted > 0
-                    ? 'Player data has been reset. They will reappear once they next connect.'
+                    ? ($backup !== null
+                        ? 'Player data has been reset. A backup was saved and can be restored.'
+                        : 'Player data has been reset. They will reappear once they next connect.')
                     : 'No tracked record found for that player.',
+            ];
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function restore(mixed $server, string $playerId, string $backupId = ''): array
+    {
+        $playerId = trim($playerId);
+
+        if ($playerId === '') {
+            return ['status' => 'error', 'message' => 'Player ID is required.'];
+        }
+
+        $serverId = $this->serverId($server);
+
+        if ($serverId === '' || !$this->tableExists() || !$this->backupTableExists()) {
+            return ['status' => 'error', 'message' => 'Player backup tables are unavailable.'];
+        }
+
+        try {
+            $query = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
+                ->where('server_id', $serverId)
+                ->where('player_id', $playerId);
+
+            if (trim($backupId) !== '') {
+                $query->where('id', (int) $backupId);
+            } else {
+                $query->orderByDesc('id');
+            }
+
+            $row = $query->first();
+
+            if ($row === null) {
+                return ['status' => 'failed', 'message' => 'No backup found for this player.'];
+            }
+
+            $backup = (array) $row;
+            $snapshot = json_decode((string) ($backup['snapshot_json'] ?? ''), true);
+
+            if (!is_array($snapshot)) {
+                return ['status' => 'failed', 'message' => 'Backup data is invalid and cannot be restored.'];
+            }
+
+            $now = date('Y-m-d H:i:s');
+            $payload = [
+                'player_name'    => trim((string) ($snapshot['player_name'] ?? $playerId)),
+                'last_map'       => trim((string) ($snapshot['last_map'] ?? '')),
+                'last_x'         => $this->floatValue($snapshot['last_x'] ?? null),
+                'last_y'         => $this->floatValue($snapshot['last_y'] ?? null),
+                'last_z'         => $this->floatValue($snapshot['last_z'] ?? null),
+                'last_direction' => $this->floatValue($snapshot['last_direction'] ?? null),
+                'last_alive'     => (bool) ($snapshot['last_alive'] ?? false),
+                'last_health'    => $this->floatValue($snapshot['last_health'] ?? null),
+                'inventory_json' => $this->encodeJson($snapshot['inventory_json'] ?? null),
+                'metadata_json'  => $this->encodeJson($snapshot['metadata_json'] ?? null),
+                'first_seen_at'  => $snapshot['first_seen_at'] ?? null,
+                'last_seen_at'   => $snapshot['last_seen_at'] ?? null,
+                'steam64'        => isset($snapshot['steam64']) ? trim((string) $snapshot['steam64']) : null,
+                'updated_at'     => $now,
+            ];
+
+            \Illuminate\Support\Facades\DB::table('dayz_observed_players')->updateOrInsert(
+                ['server_id' => $serverId, 'player_id' => $playerId],
+                $payload + ['created_at' => $snapshot['created_at'] ?? $now],
+            );
+
+            return [
+                'status'    => 'restored',
+                'player_id' => $playerId,
+                'backup_id' => (int) ($backup['id'] ?? 0),
+                'message'   => 'Player data has been restored from backup.',
             ];
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
@@ -303,6 +411,57 @@ final class DayZObservedPlayerService
     {
         if (!class_exists('Illuminate\\Support\\Facades\\Schema')) {
             return false;
+        }
+
+        private function backupTableExists(): bool
+        {
+            if (!class_exists('Illuminate\\Support\\Facades\\Schema')) {
+                return false;
+            }
+
+            try {
+                return \Illuminate\Support\Facades\Schema::hasTable('dayz_observed_player_backups');
+            } catch (Throwable) {
+                return false;
+            }
+        }
+
+        /**
+         * @return array<string, array{id:int, created_at:string}>
+         */
+        private function latestBackups(string $serverId): array
+        {
+            if ($serverId === '' || !$this->backupTableExists()) {
+                return [];
+            }
+
+            try {
+                $rows = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
+                    ->where('server_id', $serverId)
+                    ->orderByDesc('id')
+                    ->get()
+                    ->all();
+            } catch (Throwable) {
+                return [];
+            }
+
+            $latest = [];
+
+            foreach ($rows as $row) {
+                $record = (array) $row;
+                $playerId = trim((string) ($record['player_id'] ?? ''));
+
+                if ($playerId === '' || isset($latest[$playerId])) {
+                    continue;
+                }
+
+                $latest[$playerId] = [
+                    'id' => (int) ($record['id'] ?? 0),
+                    'created_at' => (string) ($record['created_at'] ?? ''),
+                ];
+            }
+
+            return $latest;
         }
 
         try {

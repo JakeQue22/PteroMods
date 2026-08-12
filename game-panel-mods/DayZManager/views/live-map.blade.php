@@ -53,6 +53,7 @@
     const PLAYERS_URL  = @json($base_url) + '/players';
     const POLL_MS      = 7000;
     const PLAYER_CAPACITY = 64;
+    const PINNED_STEAM64 = '76561197992590837';
     // Refreshing the mission-derived overlays is expensive (it reads the
     // server's mission XML through Wings), so they are reloaded far less often
     // than the player snapshot.
@@ -153,6 +154,12 @@
     function isSuperadmin(player) {
         return playerIds(player).some(function (id) {
             return state.superadmins.has(id);
+        });
+    }
+
+    function isPinnedPlayer(player) {
+        return playerIds(player).some(function (id) {
+            return id === PINNED_STEAM64;
         });
     }
 
@@ -635,27 +642,9 @@
 
     function playerDetailRows(player) {
         const entry   = directoryEntry(player) || {};
-        // real_steam64: a genuine 17-digit Steam ID (may be null for DayZ-UID-only servers).
-        const realSteam64 = player.real_steam64 || entry.steam64 || null;
-        const rawSteam64 = player.steam64_raw || null;
-        // player_uid: the Bohemia Platform UID used as the stable bridge identifier.
-        const playerUid = player.player_uid || player.steam64 || '';
-        const isRealSteam64 = realSteam64 && /^\d{17}$/.test(realSteam64);
         const lists   = Object.keys(entry.lists || {}).filter(function (key) { return entry.lists[key]; });
 
         let html = '';
-
-        if (isRealSteam64) {
-            html += playerRow('Steam64', '<a href="https://steamcommunity.com/profiles/' + escapeHtml(realSteam64) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(realSteam64) + '</a>');
-        } else if (realSteam64 || rawSteam64) {
-            html += playerRow('Steam64', '<code style="word-break:break-all;">' + escapeHtml(realSteam64 || rawSteam64) + '</code>');
-        } else {
-            html += playerRow('Steam64', 'Unknown');
-        }
-
-        if (playerUid) {
-            html += playerRow('DayZ UID', '<code style="word-break:break-all;">' + escapeHtml(playerUid) + '</code>');
-        }
 
         html += playerRow('Position', Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1));
         html += playerRow('Height', Number(player.y || 0).toFixed(1));
@@ -734,6 +723,13 @@
             const hay = (String(p.name || '') + ' ' + String(p.steam64 || '')).toLowerCase();
             return needle === '' || hay.indexOf(needle) !== -1;
         }).sort(function (left, right) {
+            const leftPinned = isPinnedPlayer(left.player) ? 1 : 0;
+            const rightPinned = isPinnedPlayer(right.player) ? 1 : 0;
+
+            if (leftPinned !== rightPinned) {
+                return rightPinned - leftPinned;
+            }
+
             const leftAdmin = isSuperadmin(left.player) ? 1 : 0;
             const rightAdmin = isSuperadmin(right.player) ? 1 : 0;
 

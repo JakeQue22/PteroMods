@@ -7,6 +7,8 @@ $routes = [
     ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/player-actions/kick',        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@kick'],
     ['method' => 'DELETE', 'uri' => '/api/servers/{server}/dayz/player-actions/observed/{id}', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@resetObserved'],
     ['method' => 'DELETE', 'uri' => '/api/server/{server}/dayz/player-actions/observed/{id}',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@resetObserved'],
+    ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/player-actions/observed/{id}/restore', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@restoreObserved'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/player-actions/observed/{id}/restore',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@restoreObserved'],
     ['method' => 'GET',    'uri' => '/api/servers/{server}/dayz/mods',                     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@index'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/install',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@install'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/remove',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@remove'],

@@ -89,6 +89,50 @@
         return String(value || '').trim();
     }
 
+    function updateTileButton(button, action, workshopRef) {
+        if (!button) {
+            return;
+        }
+
+        if (action === 'disable') {
+            button.className = 'dz-btn dz-btn-sm dz-btn-green';
+            button.textContent = 'Enable';
+            button.onclick = function () { window.pteroModAction(workshopRef, 'enable'); };
+            return;
+        }
+
+        if (action === 'enable') {
+            button.className = 'dz-btn dz-btn-sm dz-btn-amber';
+            button.textContent = 'Disable';
+            button.onclick = function () { window.pteroModAction(workshopRef, 'disable'); };
+        }
+    }
+
+    function applyWorkshopActionToTiles(workshopId, action) {
+        const grid = document.getElementById('dz-mod-grid');
+        if (!grid) {
+            return;
+        }
+
+        const ref = normalizeWorkshopId(workshopId);
+
+        Array.from(grid.querySelectorAll('.dz-mod-wrap')).forEach(function (wrap) {
+            const modRef = normalizeWorkshopId(wrap.getAttribute('data-mod-ref'));
+
+            if (modRef !== ref) {
+                return;
+            }
+
+            if (action === 'remove') {
+                wrap.remove();
+                return;
+            }
+
+            const toggleButton = wrap.querySelector('.dz-mod-actions .dz-btn-amber, .dz-mod-actions .dz-btn-green');
+            updateTileButton(toggleButton, action, modRef);
+        });
+    }
+
     function isBrowseModalOpen() {
         const modal = document.getElementById('ptero-browse-modal');
         return !!modal && !modal.classList.contains('dz-hidden');
@@ -879,11 +923,12 @@
                 data = await res.json().catch(() => ({}));
             }
             if (res.ok && data.status !== 'failed') {
-                if (data.message) {
-                    alert(data.message);
+                applyWorkshopActionToTiles(workshopId, action);
+                if (action === 'remove' || action === 'disable' || action === 'enable') {
+                    installPollToken += 1;
                 }
-                if (data.status !== 'manual') {
-                    location.reload();
+                if (isBrowseModalOpen()) {
+                    loadBrowseResults(browseState.term, browseState.page);
                 }
             } else {
                 alert('Action failed: ' + (data.message || res.status));

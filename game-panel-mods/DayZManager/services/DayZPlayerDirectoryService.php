@@ -21,6 +21,8 @@ namespace GamePanelMods\DayZManager\Services;
  */
 final class DayZPlayerDirectoryService
 {
+    private const PINNED_STEAM64 = '76561197992590837';
+
     public function __construct(
         private readonly DayZPersistencePlayerService $persistence = new DayZPersistencePlayerService(),
         private readonly DayZObservedPlayerService $observed = new DayZObservedPlayerService(),
@@ -70,6 +72,8 @@ final class DayZPlayerDirectoryService
                 'last_seen_at' => $entry['last_seen_at'] ?? null,
                 'map' => $entry['map'] ?? $mapName,
                 'inventory' => $entry['inventory'] ?? null,
+                'reset_backup_id' => $entry['reset_backup_id'] ?? null,
+                'reset_backup_at' => $entry['reset_backup_at'] ?? null,
                 'sources' => ['observed'],
             ];
 
@@ -120,6 +124,8 @@ final class DayZPlayerDirectoryService
                 'last_seen_at' => $existing['last_seen_at'] ?? null,
                 'map' => $existing['map'] ?? $mapName,
                 'inventory' => $live['inventory'] ?? ($existing['inventory'] ?? null),
+                'reset_backup_id' => $existing['reset_backup_id'] ?? null,
+                'reset_backup_at' => $existing['reset_backup_at'] ?? null,
                 'sources' => array_values(array_unique(array_merge(
                     is_array($existing['sources'] ?? null) ? $existing['sources'] : [],
                     ['live'],
@@ -177,6 +183,8 @@ final class DayZPlayerDirectoryService
                 'last_seen_at' => $this->latest($existing['last_seen_at'] ?? null, $record['last_seen_at'] ?? null),
                 'map' => $existing['map'] ?? $mapName,
                 'inventory' => $existing['inventory'] ?? $record['inventory'] ?? null,
+                'reset_backup_id' => $existing['reset_backup_id'] ?? null,
+                'reset_backup_at' => $existing['reset_backup_at'] ?? null,
                 'sources' => array_values(array_unique(array_merge(
                     is_array($existing['sources'] ?? null) ? $existing['sources'] : [],
                     is_array($record['source_paths'] ?? null) ? $record['source_paths'] : [],
@@ -199,6 +207,13 @@ final class DayZPlayerDirectoryService
         $players = array_values($players);
 
         usort($players, static function (array $left, array $right): int {
+            $leftPinned = self::isPinnedPlayer($left) ? 1 : 0;
+            $rightPinned = self::isPinnedPlayer($right) ? 1 : 0;
+
+            if ($leftPinned !== $rightPinned) {
+                return $rightPinned <=> $leftPinned;
+            }
+
             $online = ((int) ($right['online'] ?? false)) <=> ((int) ($left['online'] ?? false));
 
             if ($online !== 0) {
@@ -221,6 +236,20 @@ final class DayZPlayerDirectoryService
             'source_paths' => is_array($persisted['source_paths'] ?? null) ? $persisted['source_paths'] : [],
             'players' => $players,
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $player
+     */
+    private static function isPinnedPlayer(array $player): bool
+    {
+        foreach (['steam64', 'player_id', 'player_uid', 'id'] as $field) {
+            if (trim((string) ($player[$field] ?? '')) === self::PINNED_STEAM64) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
