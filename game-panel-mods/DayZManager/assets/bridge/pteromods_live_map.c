@@ -44,6 +44,10 @@
  *   1_core/proto/ensystem.c   proto native bool MakeDirectory(string name)
  *   3_game/tools/jsonfileloader.c
  *                             static void JsonSaveFile(string filename, T data)
+ *   4_world/entities/entityai.c
+ *                             EntityAI FindAttachmentBySlotName(string slot_name)
+ *   3_game/entities/man.c     EntityAI GetHeldEntity()
+ *   3_game/global/object.c    string GetType()
  *
  * Timer.Run is deliberately not used. Its signature is
  *     Run(float duration, Managed obj, string fn_name, Param params = NULL,
@@ -59,6 +63,13 @@
  * HEALTH
  * GetHealth("", "") returns the character health on a 0 – 100 scale.  The
  * panel expects the same 0 – 100 scale, so no scaling is applied.
+ *
+ * INVENTORY
+ * Top-level equipped items are collected from common attachment slots plus the
+ * item held in the player's hands.  Only the slot name and item class name are
+ * written; container contents (e.g. backpack contents) are not enumerated to
+ * keep the snapshot small.  FindAttachmentBySlotName returns null for empty
+ * slots and is safe to call on every tick.
  */
 
 // ---- Configuration ---------------------------------------------------------
@@ -77,6 +88,14 @@ const string PTEROMODS_LIVEMAP_DIR = "$profile:PteroMods";
 
 // Member names become the JSON keys, so they match what the PteroMods panel
 // reads in DayZLiveMapService::normalizePlayers().
+
+// One entry per top-level equipped attachment slot.
+class PteroMods_LiveMapItem
+{
+    string slot;       // Slot name (e.g. "Body", "Back", "Hands")
+    string className;  // Item class name (e.g. "CivilianCoat_Black")
+}
+
 class PteroMods_LiveMapPlayer
 {
     string steam64;     // Steam64 ID from identity.GetPlainId()
@@ -88,6 +107,12 @@ class PteroMods_LiveMapPlayer
     float direction;
     bool alive;
     float health;       // 0 – 100 scale
+    ref array<ref PteroMods_LiveMapItem> inventory;  // top-level equipped items
+
+    void PteroMods_LiveMapPlayer()
+    {
+        inventory = new array<ref PteroMods_LiveMapItem>;
+    }
 }
 
 // updated_at is intentionally left empty. The panel substitutes the file
@@ -208,6 +233,38 @@ class PteroMods_LiveMapBridge
 
             // GetHealth("", "") returns current health on a 0 – 100 scale.
             entry.health = PteroMods_LiveMap_Round2(man.GetHealth("", ""));
+
+            // Collect top-level equipped items from common attachment slots.
+            array<string> slotNames = new array<string>;
+            slotNames.Insert("Headgear");
+            slotNames.Insert("Mask");
+            slotNames.Insert("Eyewear");
+            slotNames.Insert("Gloves");
+            slotNames.Insert("Armband");
+            slotNames.Insert("Body");
+            slotNames.Insert("Back");
+            slotNames.Insert("Hips");
+            slotNames.Insert("Feet");
+            slotNames.Insert("Legs");
+            foreach (string slotName : slotNames)
+            {
+                EntityAI attachment = man.FindAttachmentBySlotName(slotName);
+                if (attachment)
+                {
+                    PteroMods_LiveMapItem slotItem = new PteroMods_LiveMapItem();
+                    slotItem.slot = slotName;
+                    slotItem.className = attachment.GetType();
+                    entry.inventory.Insert(slotItem);
+                }
+            }
+            EntityAI heldEnt = man.GetHeldEntity();
+            if (heldEnt)
+            {
+                PteroMods_LiveMapItem handItem = new PteroMods_LiveMapItem();
+                handItem.slot = "Hands";
+                handItem.className = heldEnt.GetType();
+                entry.inventory.Insert(handItem);
+            }
 
             snapshot.players.Insert(entry);
         }
