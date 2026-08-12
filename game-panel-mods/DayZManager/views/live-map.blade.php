@@ -52,6 +52,7 @@
     const BRIDGE_REMOVE_URL = '/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/live-map/remove-bridge';
     const PLAYERS_URL  = @json($base_url) + '/players';
     const POLL_MS      = 7000;
+    const PLAYER_CAPACITY = 64;
     // Refreshing the mission-derived overlays is expensive (it reads the
     // server's mission XML through Wings), so they are reloaded far less often
     // than the player snapshot.
@@ -526,7 +527,7 @@
         state.list = players.slice();
         countEl.textContent = String(players.length);
         if (playersHeadingEl) {
-            playersHeadingEl.textContent = 'Players (' + String(players.length) + '/64)';
+            playersHeadingEl.textContent = 'Players (' + String(players.length) + '/' + String(PLAYER_CAPACITY) + ')';
         }
         renderPlayerList();
         renderSelection();
