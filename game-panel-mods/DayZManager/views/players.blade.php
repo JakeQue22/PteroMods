@@ -160,7 +160,7 @@
                     @endif
                     @if ($steam64)
                         @if (in_array($steam64, $superadmin_ids ?? [], true))
-                            @if ($steam64 !== '76561197992590837')
+                            @if (!$isProtectedPlayer)
                                 <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveSuperadmin({{ json_encode($steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove SuperAdmin</button>
                             @endif
                         @else

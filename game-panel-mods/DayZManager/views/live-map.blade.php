@@ -884,7 +884,6 @@
             return;
         }
 
-        bridgeMsgEl.classList.remove('dz-hidden');
         bridgeMsgEl.className = 'dz-status';
 
         if (kind === 'success') {
