@@ -7,7 +7,7 @@ namespace GamePanelMods\DayZManager\Services;
 /**
  * Deploys the PteroMods server-side live-map bridge to a DayZ Standalone server
  * container and activates it by appending the required lines to the mission's
- * init.c (mpmissions/dayzOffline.<map>/init.c).
+ * init.c (mpmissions/dayzOffline.chernarusplus/init.c).
  *
  * The bridge is a DayZ Standalone EnfScript (.c) that runs inside the game server
  * process and writes a JSON player snapshot to
@@ -15,12 +15,12 @@ namespace GamePanelMods\DayZManager\Services;
  * then reads via the Wings file API.
  *
  * Deployment writes or updates the following files in the server container:
- *   mpmissions/dayzOffline.<map>/pteromods_live_map.c   ← bridge script
- *   mpmissions/dayzOffline.<map>/init.c                 ← activation appended
+ *   mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c   ← bridge script
+ *   mpmissions/dayzOffline.chernarusplus/init.c                 ← activation appended
  *   /profiles/PteroMods/live_map_players.json                   ← initialised empty snapshot
  *
  * The activation block appended to init.c (only when not already present):
- *   #include "$CurrentDir:mpmissions/dayzOffline.<map>/pteromods_live_map.c";
+ *   #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c";
  *   PteroMods_LiveMap_Init();
  *
  * No database tables are used; everything is file-based.
@@ -50,7 +50,7 @@ final class DayZLiveBridgeService
      * statement next to the include — a bare call at file scope makes the
      * mission fail to compile and the server refuses to load it.
      */
-    private const INIT_C_INCLUDE_TEMPLATE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"\$CurrentDir:%s\";\n";
+    private const INIT_C_INCLUDE_TEMPLATE = "// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n// Remove this line, the PteroMods_LiveMap_Init() call in main() and\n// pteromods_live_map.c to disable the live map.\n#include \"\$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c\";\n";
 
     /** Activation call injected at the start of the mission's main() function. */
     private const INIT_C_CALL = "\n\t// PteroMods Live Map Bridge – added automatically by the PteroMods panel.\n\tPteroMods_LiveMap_Init();\n";
@@ -269,31 +269,7 @@ final class DayZLiveBridgeService
 
     private function missionPath(mixed $server): string
     {
-        $missions = [];
-
-        try {
-            foreach ($this->gateway->listDirectory($server, '/mpmissions') as $entry) {
-                if (!is_array($entry) || empty($entry['directory'])) {
-                    continue;
-                }
-
-                $name = trim((string) ($entry['name'] ?? ''));
-
-                if ($name !== '') {
-                    $missions[] = $name;
-                }
-            }
-        } catch (\Throwable) {
-            return self::DEFAULT_MISSION_PATH;
-        }
-
-        foreach ($missions as $mission) {
-            if (str_starts_with(strtolower($mission), 'dayzoffline.')) {
-                return '/mpmissions/' . $mission;
-            }
-        }
-
-        return $missions === [] ? self::DEFAULT_MISSION_PATH : '/mpmissions/' . $missions[0];
+        return self::DEFAULT_MISSION_PATH;
     }
 
     private function missionScriptPath(mixed $server): string
@@ -308,9 +284,7 @@ final class DayZLiveBridgeService
 
     private function initCInclude(mixed $server): string
     {
-        $scriptPath = ltrim($this->missionScriptPath($server), '/');
-
-        return sprintf(self::INIT_C_INCLUDE_TEMPLATE, $scriptPath);
+        return self::INIT_C_INCLUDE_TEMPLATE;
     }
 
     /**

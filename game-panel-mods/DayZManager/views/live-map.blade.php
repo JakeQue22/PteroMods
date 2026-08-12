@@ -181,6 +181,10 @@
         applyTileLayer(state.mapDef);
         applyGridLayer(state.mapDef);
 
+        // Keep player icons above all other marker overlays.
+        state.leafletMap.createPane('pteromodsPlayers');
+        state.leafletMap.getPane('pteromodsPlayers').style.zIndex = '650';
+
         // The player overlay is a layer of its own so it can be toggled from
         // the layer control like every other marker category.
         state.playerLayer = L.layerGroup().addTo(state.leafletMap);
@@ -491,7 +495,7 @@
             const tooltip = escapeHtml(player.name || player.steam64);
 
             if (!state.markers.has(player.steam64)) {
-                const marker = L.marker(pos, { icon: icon, zIndexOffset: sel ? 1000 : 0 })
+                const marker = L.marker(pos, { icon: icon, pane: 'pteromodsPlayers', zIndexOffset: sel ? 1000 : 0 })
                     .addTo(state.playerLayer)
                     .bindTooltip(tooltip, { direction: 'top', permanent: false })
                     .bindPopup(playerPopupHtml(player));
