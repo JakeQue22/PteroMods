@@ -44,7 +44,7 @@ final class DayZGiveMoneyService
      *
      * @return array<string, mixed>
      */
-    public function give(mixed $server, string $playerId, int $denomination, string $playerName = '', int $quantity = 1): array
+    public function give(mixed $server, string $playerId, int $denomination, string $playerName = '', int $quantity = 1, string $playerUid = ''): array
     {
         $playerId = trim($playerId);
 
@@ -59,6 +59,7 @@ final class DayZGiveMoneyService
         $quantity = max(1, min(99, $quantity));
         $itemClass = self::CLASS_MAP[$denomination];
         $serverId = $this->serverId($server);
+        $playerUid = trim($playerUid);
 
         if ($serverId === '') {
             return ['status' => 'error', 'message' => 'Could not resolve server.'];
@@ -70,25 +71,45 @@ final class DayZGiveMoneyService
 
         $now = date('Y-m-d H:i:s');
 
+        // Ensure the player_uid column exists (added in a later revision).
         try {
-            \Illuminate\Support\Facades\DB::table(self::TABLE)->insert([
-                'server_id'   => $serverId,
-                'player_id'   => $playerId,
-                'player_name' => $playerName !== '' ? $playerName : $playerId,
-                'item_class'  => $itemClass,
-                'quantity'    => $quantity,
-                'status'      => 'pending',
-                'note'        => $denomination . ' coin(s) × ' . $quantity,
-                'created_at'  => $now,
-                'updated_at'  => $now,
-            ]);
+            if (class_exists('Illuminate\\Support\\Facades\\Schema')
+                && !\Illuminate\Support\Facades\Schema::hasColumn(self::TABLE, 'player_uid')
+            ) {
+                \Illuminate\Support\Facades\DB::statement(
+                    "ALTER TABLE `dayz_give_money_queue` ADD COLUMN `player_uid` VARCHAR(128) NOT NULL DEFAULT '' AFTER `player_id`"
+                );
+            }
+        } catch (Throwable) {
+            // Best-effort column migration; non-fatal.
+        }
+
+        $row = [
+            'server_id'   => $serverId,
+            'player_id'   => $playerId,
+            'player_name' => $playerName !== '' ? $playerName : $playerId,
+            'item_class'  => $itemClass,
+            'quantity'    => $quantity,
+            'status'      => 'pending',
+            'note'        => $denomination . ' coin(s) × ' . $quantity,
+            'created_at'  => $now,
+            'updated_at'  => $now,
+        ];
+
+        // Include player_uid when the column is present.
+        if ($playerUid !== '') {
+            $row['player_uid'] = $playerUid;
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table(self::TABLE)->insert($row);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
 
         // Best-effort: write a JSON queue file to the server so a server-side
         // mod can fulfil the action when the player next connects.
-        $this->writeQueueFile($server, $serverId, $playerId, $itemClass, $quantity);
+        $this->writeQueueFile($server, $serverId, $playerId, $playerUid, $itemClass, $quantity);
 
         return [
             'status'     => 'queued',
@@ -125,35 +146,46 @@ final class DayZGiveMoneyService
         }
     }
 
-    private function writeQueueFile(mixed $server, string $serverId, string $playerId, string $itemClass, int $quantity): void
+    private function writeQueueFile(mixed $server, string $serverId, string $playerId, string $playerUid, string $itemClass, int $quantity): void
     {
         try {
-            // Read the existing queue file (if any) and merge.
-            $path = self::QUEUE_FILE_DIR . '/give_money_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $playerId) . '.json';
-            $existing = $this->gateway->readFile($server, $path);
-            $queue = [];
+            // Use the DayZ UID as the primary filename key when available, since
+            // server-side mods identify players by UID.  Retain the steam64-named
+            // file as a secondary fallback so older mod versions still work.
+            $uidKey   = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
+            $fileKeys = array_values(array_unique([$uidKey, $playerId]));
 
-            if (is_string($existing) && $existing !== '') {
-                $decoded = json_decode($existing, true);
-
-                if (is_array($decoded)) {
-                    $queue = $decoded;
-                }
-            }
-
-            $queue[] = [
+            $entry = [
                 'server_id'  => $serverId,
                 'player_id'  => $playerId,
+                'player_uid' => $playerUid !== '' ? $playerUid : $playerId,
                 'item_class' => $itemClass,
                 'quantity'   => $quantity,
                 'queued_at'  => date('Y-m-d H:i:s'),
             ];
 
-            $this->gateway->writeFile(
-                $server,
-                $path,
-                json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            );
+            foreach ($fileKeys as $key) {
+                $safeName = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key);
+                $path     = self::QUEUE_FILE_DIR . '/give_money_' . $safeName . '.json';
+                $existing = $this->gateway->readFile($server, $path);
+                $queue    = [];
+
+                if (is_string($existing) && $existing !== '') {
+                    $decoded = json_decode($existing, true);
+
+                    if (is_array($decoded)) {
+                        $queue = $decoded;
+                    }
+                }
+
+                $queue[] = $entry;
+
+                $this->gateway->writeFile(
+                    $server,
+                    $path,
+                    json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                );
+            }
         } catch (Throwable) {
             // Best-effort only; the DB record is the source of truth.
         }
@@ -203,6 +235,7 @@ final class DayZGiveMoneyService
             `id`          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
             `server_id`   VARCHAR(64)   NOT NULL,
             `player_id`   VARCHAR(64)   NOT NULL,
+            `player_uid`  VARCHAR(128)  NOT NULL DEFAULT '',
             `player_name` VARCHAR(255)  NOT NULL DEFAULT '',
             `item_class`  VARCHAR(64)   NOT NULL,
             `quantity`    SMALLINT UNSIGNED NOT NULL DEFAULT 1,

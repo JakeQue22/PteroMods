@@ -521,6 +521,9 @@ final class DayZObservedPlayerService
                             $canonicalPlayerId = $selectedPlayerId;
                         } elseif (count($matchedPlayerIds) === 1) {
                             $canonicalPlayerId = $matchedPlayerIds[0];
+                        } elseif (count($matchedPlayerIds) === 0 && $selectedPlayerId !== '' && $selectedPlayerId !== $playerId) {
+                            // No steam64 match found — use the passed DayZ UID directly.
+                            $canonicalPlayerId = $selectedPlayerId;
                         } elseif (count($matchedPlayerIds) > 1) {
                             return [
                                 'status' => 'error',
@@ -536,6 +539,10 @@ final class DayZObservedPlayerService
                         }
                     } catch (Throwable) {
                         // Older installs may not yet have the steam64 column.
+                        // Fall back to selectedPlayerId (DayZ UID) as canonical.
+                        if ($selectedPlayerId !== '' && $selectedPlayerId !== $playerId) {
+                            $canonicalPlayerId = $selectedPlayerId;
+                        }
                     }
                 }
 
@@ -781,15 +788,51 @@ final class DayZObservedPlayerService
 
     private function removedTableExists(): bool
     {
-        if (!class_exists('Illuminate\\Support\\Facades\\Schema')) {
+        if (class_exists('Illuminate\\Support\\Facades\\Schema')) {
+            try {
+                if (\Illuminate\Support\Facades\Schema::hasTable('dayz_removed_players')) {
+                    return true;
+                }
+            } catch (Throwable) {
+                // fall through
+            }
+        }
+
+        if (!class_exists('Illuminate\\Support\\Facades\\DB')) {
             return false;
         }
 
         try {
-            return \Illuminate\Support\Facades\Schema::hasTable('dayz_removed_players');
+            \Illuminate\Support\Facades\DB::statement($this->createRemovedTableSql());
+
+            return true;
+        } catch (Throwable) {
+            // fall through
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table('dayz_removed_players')->limit(1)->get();
+
+            return true;
         } catch (Throwable) {
             return false;
         }
+    }
+
+    private function createRemovedTableSql(): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `dayz_removed_players` (
+            `id`          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+            `server_id`   VARCHAR(64)   NOT NULL,
+            `player_id`   VARCHAR(128)  NOT NULL,
+            `player_name` VARCHAR(255)  NOT NULL DEFAULT '',
+            `removed_by`  VARCHAR(255)  NOT NULL DEFAULT '',
+            `created_at`  TIMESTAMP     NULL DEFAULT NULL,
+            `updated_at`  TIMESTAMP     NULL DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uq_dayz_removed_players` (`server_id`, `player_id`(64)),
+            KEY `idx_dayz_removed_players_server` (`server_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     }
 
     /**

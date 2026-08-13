@@ -211,8 +211,9 @@ final class DayZPlayerController
             $denomination = (int) $this->context->stringInput('denomination');
             $quantity     = max(1, (int) $this->context->stringInput('quantity') ?: 1);
             $playerName   = $this->context->stringInput('player_name');
+            $playerUid    = $this->context->stringInput('player_uid');
 
-            return $this->giveMoneySvc->give($model, $playerId, $denomination, $playerName, $quantity);
+            return $this->giveMoneySvc->give($model, $playerId, $denomination, $playerName, $quantity, $playerUid);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }

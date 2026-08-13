@@ -180,7 +180,7 @@
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
                     @endif
                     @if (!$isOnline || in_array($steam64, $superadmin_ids ?? [], true))
-                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
                     @endif
                 </div>
                 <p class="dz-status dz-hidden dz-player-action-status" style="margin-top:0.75rem;"></p>
@@ -201,7 +201,7 @@
 
 {{-- Inventory viewer modal --}}
 <div id="dz-inventory-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);overflow-y:auto;">
-    <div style="background:var(--dz-surface,#1a1f2e);border:1px solid var(--dz-border,#2d3348);border-radius:0.5rem;max-width:640px;margin:4rem auto;padding:1.5rem;position:relative;">
+    <div style="background:var(--dz-surface,#1a1f2e);border:1px solid var(--dz-border,#2d3348);border-radius:0.5rem;max-width:900px;margin:4rem auto;padding:1.5rem;position:relative;">
         <button type="button" onclick="document.getElementById('dz-inventory-modal').style.display='none'" style="position:absolute;top:0.75rem;right:0.75rem;background:none;border:none;color:inherit;font-size:1.25rem;cursor:pointer;" aria-label="Close">✕</button>
         <h3 id="dz-inventory-modal-title" style="margin:0 0 1rem;"></h3>
         <div id="dz-inventory-modal-body"></div>
@@ -405,7 +405,7 @@
             .catch(function () { setStatus('Restore request failed.', false, playerActionId); });
     };
 
-    window.pteroGiveMoney = function (playerId, playerName, isOnline, playerActionId) {
+    window.pteroGiveMoney = function (playerId, playerName, isOnline, playerActionId, playerUid) {
         var msg = (isOnline ? '⚠️  This player appears online. The queued reward may be delivered after they reconnect.\n\n' : '⚠️  Recommended: give money while the player is OFFLINE so it can be delivered reliably.\n\n')
             + 'Give money to "' + playerName + '"?\n\n'
             + 'Select denomination:\n'
@@ -423,7 +423,7 @@
         if (qty === null) { return; }
         qty = Math.max(1, Math.min(99, parseInt(qty, 10) || 1));
         setStatus('Queueing give money…', undefined, playerActionId);
-        req('POST', '/dayz/player-actions/give-money', { player_id: playerId, player_name: playerName, denomination: denom, quantity: qty })
+        req('POST', '/dayz/player-actions/give-money', { player_id: playerId, player_uid: playerUid || playerId, player_name: playerName, denomination: denom, quantity: qty })
             .then(function (d) {
                 var ok = d.status === 'queued';
                 setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false, playerActionId);
@@ -451,6 +451,21 @@
             .catch(function () { setStatus('Remove request failed.', false, playerActionId || actionId); });
     };
 
+    // Converts a DayZ class name to the wiki filename convention.
+    // e.g. "TacticalShirt_Black" → "Tactical_Shirt_Black"
+    function classToWikiName(cls) {
+        return cls.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/_+/g, '_');
+    }
+
+    function wikiImageUrl(wikiName) {
+        var enc = encodeURIComponent(wikiName);
+        return 'https://dayz.wiki.gg/images/thumb/' + enc + '.png/245px-' + enc + '.png';
+    }
+
+    function wikiPageUrl(wikiName) {
+        return 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(wikiName);
+    }
+
     window.pteroViewInventory = function (playerName, inventoryJson) {
         var modal = document.getElementById('dz-inventory-modal');
         var title = document.getElementById('dz-inventory-modal-title');
@@ -458,6 +473,7 @@
         if (!modal || !title || !body) { return; }
 
         title.textContent = playerName + ' — Inventory';
+        body.innerHTML = '';
 
         var parsed = null;
         try {
@@ -470,22 +486,32 @@
             return;
         }
 
-        // Collect all item class names from the inventory tree.
-        var items = [];
-        function walk(obj) {
-            if (!obj || typeof obj !== 'object') { return; }
-            if (Array.isArray(obj)) { obj.forEach(walk); return; }
-            var cls = obj.className || obj.class || obj.type || obj.item || obj.name;
-            if (cls && typeof cls === 'string') { items.push(cls); }
-            Object.values(obj).forEach(function (v) {
-                if (v && typeof v === 'object') { walk(v); }
+        // Collect items. The bridge format is [{slot, className}, …] but older
+        // snapshots may use other shapes — we handle both.
+        var items = []; // [{slot, className}]
+        if (Array.isArray(parsed)) {
+            parsed.forEach(function (entry) {
+                if (entry && typeof entry === 'object' && typeof entry.className === 'string' && entry.className !== '') {
+                    items.push({ slot: (entry.slot || ''), className: entry.className });
+                } else if (typeof entry === 'string' && entry !== '') {
+                    items.push({ slot: '', className: entry });
+                }
             });
         }
-        walk(parsed);
 
         if (items.length === 0) {
-            // No recognised item list structure — fall back to formatted JSON.
-            body.innerHTML = '';
+            // Deep-walk fallback for any other inventory structure.
+            (function walk(obj) {
+                if (!obj || typeof obj !== 'object') { return; }
+                if (Array.isArray(obj)) { obj.forEach(walk); return; }
+                var cls = obj.className || obj.class || obj.type || obj.item;
+                if (cls && typeof cls === 'string') { items.push({ slot: obj.slot || '', className: cls }); }
+                Object.values(obj).forEach(function (v) { if (v && typeof v === 'object') { walk(v); } });
+            }(parsed));
+        }
+
+        if (items.length === 0) {
+            // Last resort: formatted JSON dump.
             var pre = document.createElement('pre');
             pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:0.8rem;max-height:60vh;overflow-y:auto;background:var(--dz-surface-alt,#0b0f19);padding:1rem;border-radius:0.25rem;margin:0;';
             pre.textContent = JSON.stringify(parsed, null, 2);
@@ -494,22 +520,89 @@
             return;
         }
 
-        // Render a grid of items with wiki links.
-        var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.5rem;max-height:65vh;overflow-y:auto;">';
-        items.forEach(function (cls) {
-            var label = cls.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
-            var wikiUrl = 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(cls);
-            var safeClass = escapeHtml(cls);
-            var safeLabel = escapeHtml(label);
-            html += '<div style="background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.35rem;padding:0.5rem;font-size:0.78rem;overflow:hidden;">'
-                + '<div style="font-size:1.5rem;text-align:center;margin-bottom:0.25rem;">📦</div>'
-                + '<div style="word-break:break-word;text-align:center;">'
-                + '<a href="' + wikiUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--dz-accent);text-decoration:none;" title="' + safeClass + '">' + safeLabel + '</a>'
-                + '</div>'
-                + '</div>';
+        // Group items by slot for readability.
+        var slotOrder = ['Hands', 'Body', 'Legs', 'Feet', 'Head', 'Back', 'Vest', 'Hips', 'Shoulder', 'Mask', 'Gloves', 'Eyewear', 'Armband', ''];
+        var bySlot = {};
+        items.forEach(function (item) {
+            var s = item.slot || '';
+            if (!bySlot[s]) { bySlot[s] = []; }
+            bySlot[s].push(item);
         });
-        html += '</div><p style="margin:0.5rem 0 0;font-size:0.72rem;color:var(--dz-muted);">' + items.length + ' item(s) · Links open the DayZ wiki page for each item.</p>';
-        body.innerHTML = html;
+
+        var orderedSlots = slotOrder.filter(function (s) { return bySlot[s] && bySlot[s].length; });
+        Object.keys(bySlot).forEach(function (s) {
+            if (orderedSlots.indexOf(s) === -1) { orderedSlots.push(s); }
+        });
+
+        var cardStyle = 'background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.35rem;padding:0.6rem 0.5rem 0.5rem;font-size:0.78rem;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:0.35rem;';
+        var imgStyle  = 'width:80px;height:80px;object-fit:contain;display:block;';
+        var emojiStyle = 'font-size:2.5rem;text-align:center;line-height:1;';
+
+        var frag = document.createDocumentFragment();
+
+        orderedSlots.forEach(function (slot) {
+            var section = document.createElement('div');
+            section.style.cssText = 'margin-bottom:1rem;';
+
+            if (slot !== '') {
+                var heading = document.createElement('p');
+                heading.textContent = slot;
+                heading.style.cssText = 'font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--dz-muted);margin:0 0 0.4rem;';
+                section.appendChild(heading);
+            }
+
+            var grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
+
+            bySlot[slot].forEach(function (item) {
+                var cls      = item.className;
+                var wikiName = classToWikiName(cls);
+                var label    = wikiName.replace(/_/g, ' ');
+                var imgUrl   = wikiImageUrl(wikiName);
+                var pageUrl  = wikiPageUrl(wikiName);
+
+                var card = document.createElement('div');
+                card.style.cssText = cardStyle;
+
+                // Image wrapper with fallback emoji.
+                var imgWrap = document.createElement('div');
+                imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;';
+
+                var img = document.createElement('img');
+                img.src = imgUrl;
+                img.alt = label;
+                img.style.cssText = imgStyle;
+                img.onerror = function () {
+                    imgWrap.innerHTML = '<span style="' + emojiStyle + '">📦</span>';
+                };
+                imgWrap.appendChild(img);
+                card.appendChild(imgWrap);
+
+                var nameEl = document.createElement('div');
+                nameEl.style.cssText = 'word-break:break-word;text-align:center;line-height:1.2;';
+                var link = document.createElement('a');
+                link.href = pageUrl;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = label;
+                link.title = cls;
+                link.style.cssText = 'color:var(--dz-accent);text-decoration:none;';
+                nameEl.appendChild(link);
+                card.appendChild(nameEl);
+
+                grid.appendChild(card);
+            });
+
+            section.appendChild(grid);
+            frag.appendChild(section);
+        });
+
+        var footer = document.createElement('p');
+        footer.style.cssText = 'margin:0.25rem 0 0;font-size:0.72rem;color:var(--dz-muted);';
+        footer.textContent = items.length + ' item(s) equipped · Images and links from the DayZ wiki (dayz.wiki.gg)';
+        frag.appendChild(footer);
+
+        body.appendChild(frag);
         modal.style.display = 'block';
     };
 
