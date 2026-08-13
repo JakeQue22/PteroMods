@@ -1409,10 +1409,10 @@ final class DayZWorkshopService
         $workshopId = $this->resolveWorkshopId($folder, $meta);
         $info = $workshopId !== '' ? $this->workshopInfo($workshopId) : [];
         $workshopBytes = isset($info['file_size']) ? (int) $info['file_size'] : 0;
-        $author = trim((string) ($meta['author'] ?? ''));
+        $author = $this->normalizeAuthor((string) ($meta['author'] ?? ''));
 
         if ($author === '' && isset($info['author']) && is_string($info['author'])) {
-            $author = trim((string) $info['author']);
+            $author = $this->normalizeAuthor((string) $info['author']);
         }
 
         return [
@@ -1463,6 +1463,17 @@ final class DayZWorkshopService
         }
 
         return $metadata;
+    }
+
+    private function normalizeAuthor(string $author): string
+    {
+        $author = trim($author);
+
+        if ($author === '' || preg_match('/^\$STR_[A-Z0-9_]+$/i', $author) === 1) {
+            return '';
+        }
+
+        return $author;
     }
 
     /**

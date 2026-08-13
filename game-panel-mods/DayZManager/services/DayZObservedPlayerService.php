@@ -483,25 +483,66 @@ final class DayZObservedPlayerService
 
         try {
             $now = date('Y-m-d H:i:s');
+            $canonicalPlayerId = $playerId;
+            $canonicalSteam64 = '';
+
+            if ($this->tableExists()) {
+                $row = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                    ->where('server_id', $serverId)
+                    ->where('player_id', $playerId)
+                    ->first();
+
+                if ($row === null && preg_match('/^\d{17}$/', $playerId) === 1) {
+                    try {
+                        $matchedPlayerId = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                            ->where('server_id', $serverId)
+                            ->where('steam64', $playerId)
+                            ->value('player_id');
+
+                        if ($matchedPlayerId !== null && trim((string) $matchedPlayerId) !== '') {
+                            $canonicalPlayerId = trim((string) $matchedPlayerId);
+                            $row = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                                ->where('server_id', $serverId)
+                                ->where('player_id', $canonicalPlayerId)
+                                ->first();
+                        }
+                    } catch (Throwable) {
+                        // Older installs may not yet have the steam64 column.
+                    }
+                }
+
+                if ($row !== null) {
+                    $rowData = (array) $row;
+                    $canonicalSteam64 = isset($rowData['steam64']) ? trim((string) $rowData['steam64']) : '';
+                }
+            }
+
+            $removedIds = array_values(array_filter(array_unique([
+                $playerId,
+                $canonicalPlayerId,
+                $canonicalSteam64,
+            ]), static fn (string $id): bool => $id !== ''));
 
             // Add to the removed-players blocklist (best-effort if table absent).
             if ($this->removedTableExists()) {
-                \Illuminate\Support\Facades\DB::table('dayz_removed_players')->updateOrInsert(
-                    ['server_id' => $serverId, 'player_id' => $playerId],
-                    [
-                        'player_name' => $playerName !== '' ? $playerName : $playerId,
-                        'removed_by'  => $removedBy,
-                        'created_at'  => $now,
-                        'updated_at'  => $now,
-                    ],
-                );
+                foreach ($removedIds as $removedId) {
+                    \Illuminate\Support\Facades\DB::table('dayz_removed_players')->updateOrInsert(
+                        ['server_id' => $serverId, 'player_id' => $removedId],
+                        [
+                            'player_name' => $playerName !== '' ? $playerName : $canonicalPlayerId,
+                            'removed_by'  => $removedBy,
+                            'created_at'  => $now,
+                            'updated_at'  => $now,
+                        ],
+                    );
+                }
             }
 
             // Delete from observed players.
             if ($this->tableExists()) {
                 \Illuminate\Support\Facades\DB::table('dayz_observed_players')
                     ->where('server_id', $serverId)
-                    ->where('player_id', $playerId)
+                    ->where('player_id', $canonicalPlayerId)
                     ->delete();
             }
 
@@ -509,13 +550,13 @@ final class DayZObservedPlayerService
             if ($this->nicknamesTableExists()) {
                 \Illuminate\Support\Facades\DB::table('dayz_player_nicknames')
                     ->where('server_id', $serverId)
-                    ->where('player_id', $playerId)
+                    ->where('player_id', $canonicalPlayerId)
                     ->delete();
             }
 
             return [
                 'status'    => 'removed',
-                'player_id' => $playerId,
+                'player_id' => $canonicalPlayerId,
                 'message'   => 'Player has been permanently removed from the players list.',
             ];
         } catch (Throwable $exception) {

@@ -80,14 +80,19 @@ final class DayZPlayerService
         }
 
         try {
+            $values = [
+                'note' => trim($note),
+                'added_by' => trim($addedBy),
+                'created_at' => date('Y-m-d H:i:s'),
+            ];
+
+            if ($this->nicknameColumnAvailable()) {
+                $values['nickname'] = $nickname;
+            }
+
             \Illuminate\Support\Facades\DB::table('dayz_player_lists')->updateOrInsert(
                 ['list_type' => $listType, 'player_id' => $playerId],
-                [
-                    'nickname' => $nickname,
-                    'note' => trim($note),
-                    'added_by' => trim($addedBy),
-                    'created_at' => date('Y-m-d H:i:s'),
-                ],
+                $values,
             );
         } catch (\Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
@@ -194,6 +199,19 @@ final class DayZPlayerService
         return class_exists('Illuminate\\Support\\Facades\\Schema')
             && class_exists('Illuminate\\Support\\Facades\\DB')
             && \Illuminate\Support\Facades\Schema::hasTable('dayz_player_lists');
+    }
+
+    private function nicknameColumnAvailable(): bool
+    {
+        if (!$this->tableAvailable()) {
+            return false;
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Schema::hasColumn('dayz_player_lists', 'nickname');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function forgetListCache(string $listType): void
