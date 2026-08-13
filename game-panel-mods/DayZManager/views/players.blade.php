@@ -545,7 +545,7 @@
         'CowboyBoots':     'Cowboy_Boots',
         'OfficerBoots':    'Officer_Boots',
         'AsicsShoes':      'Running_Shoes',
-        'TrekingBoots':    'Trekking_Boots',
+        'TrekingBoots':    'Trekking_Boots',  // in-game class name has single 'k'
         // ── Headgear ───────────────────────────────────────────────────────
         'ColombianHat':    'Colombian_Hat',
         'CowboyHat':       'Cowboy_Hat',

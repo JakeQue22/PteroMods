@@ -190,6 +190,9 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
     }
 
     // Cargo items (the most important case: food/ammo/clothes in a backpack).
+    // DayZ's CargoBase.GetItemCount() returns the number of distinct item entries;
+    // each is accessed via GetItem(rowIndex, 0) — the column parameter addresses
+    // quantity-stacked items, not a 2-D grid, so col=0 always retrieves the item.
     CargoBase cargo = inv.GetCargo();
     if (!cargo)
         return;
