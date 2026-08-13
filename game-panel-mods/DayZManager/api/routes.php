@@ -5,6 +5,10 @@ declare(strict_types=1);
 $routes = [
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/player-actions/kick',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@kick'],
     ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/player-actions/kick',        'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@kick'],
+    ['method' => 'DELETE', 'uri' => '/api/servers/{server}/dayz/player-actions/observed/{id}', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@resetObserved'],
+    ['method' => 'DELETE', 'uri' => '/api/server/{server}/dayz/player-actions/observed/{id}',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@resetObserved'],
+    ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/player-actions/observed/{id}/restore', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@restoreObserved'],
+    ['method' => 'POST',   'uri' => '/api/server/{server}/dayz/player-actions/observed/{id}/restore',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@restoreObserved'],
     ['method' => 'GET',    'uri' => '/api/servers/{server}/dayz/mods',                     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@index'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/install',              'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@install'],
     ['method' => 'POST',   'uri' => '/api/servers/{server}/dayz/mods/remove',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@remove'],
@@ -36,6 +40,10 @@ $routes = [
 ];
 
 foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix) {
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/players/superadmin',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@addSuperadmin'];
+    $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/players/superadmin/{id}',   'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removeSuperadmin'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@giveMoney'];
+    $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/player-actions/players/{id}', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removePlayer'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/tab', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZTabController@status'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dashboard', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/power', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@power'];
@@ -49,8 +57,10 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dzsa',               'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@dzsa'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/live-map',                  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@index'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/live-map/snapshot',          'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@snapshot'];
+    $routes[] = ['method' => 'GET', 'uri' => $prefix . '/live-map/markers',           'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@markers'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/live-map/ingest',           'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@ingest'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/live-map/setup-bridge',     'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@setupBridge'];
+    $routes[] = ['method' => 'POST', 'uri' => $prefix . '/live-map/remove-bridge',    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@removeBridge'];
     $routes[] = ['method' => 'GET',  'uri' => $prefix . '/live-map/bridge-status',    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLiveMapController@bridgeStatus'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/install/status', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@installStatus'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/install/queue', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@queue'];

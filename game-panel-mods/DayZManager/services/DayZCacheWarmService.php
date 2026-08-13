@@ -21,6 +21,7 @@ final class DayZCacheWarmService
         private readonly DayZServerService $server = new DayZServerService(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
         private readonly DayZPlayerService $players = new DayZPlayerService(),
+        private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
 
@@ -54,6 +55,7 @@ final class DayZCacheWarmService
                 $this->workshop->settings($server);
                 $this->server->launchParameters($server);
                 $this->query->query($server);
+                $this->logScrub->tick($server);
             }
 
             $this->players->allLists();

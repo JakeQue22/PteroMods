@@ -385,6 +385,51 @@ final class DayZConfigurationService
         return sprintf('%.1f %s', $bytes / (1024 ** $power), $units[$power]);
     }
 
+    /**
+     * Copies every .bikey file from a mod's `keys/` sub-folder into the
+     * server root `/keys/` directory so DayZ accepts signed clients.
+     *
+     * @return int Number of key files successfully copied.
+     */
+    public function syncModKeysForMod(mixed $server, string $folderName): int
+    {
+        $folderName = trim($folderName);
+
+        if ($folderName === '') {
+            return 0;
+        }
+
+        $keysDir = '/' . ltrim($folderName, '/') . '/keys';
+        $copied  = 0;
+
+        foreach ($this->gateway->listDirectory($server, $keysDir) as $entry) {
+            if (!($entry['file'] ?? false)) {
+                continue;
+            }
+
+            $name = (string) ($entry['name'] ?? '');
+
+            if ($name === '' || !str_ends_with(strtolower($name), '.bikey')) {
+                continue;
+            }
+
+            $source = $keysDir . '/' . $name;
+            $dest   = '/keys/' . $name;
+
+            $contents = $this->gateway->readFile($server, $source);
+
+            if ($contents === null || $contents === '') {
+                continue;
+            }
+
+            if ($this->gateway->writeFile($server, $dest, $contents)) {
+                ++$copied;
+            }
+        }
+
+        return $copied;
+    }
+
     private function sanitizeModName(string $value): string
     {
         $value = $this->sanitizeModNameOrEmpty($value);
@@ -422,6 +467,8 @@ final class DayZConfigurationService
 
         // Fall back to a BFS of the mod folder looking for any subdirectory
         // that contains a types.xml file (covers non-standard mod layouts).
+        // The BFS also inspects files directly, matching any file whose name
+        // contains "type" and ends with ".xml" (e.g. SomeModTypes.xml).
         $queue = [[$root, 0]];
         $visited = [];
 
@@ -440,25 +487,40 @@ final class DayZConfigurationService
             }
 
             foreach ($this->gateway->listDirectory($server, $path) as $entry) {
-                if (!($entry['directory'] ?? false) || ($entry['name'] ?? '') === '') {
+                $name = (string) ($entry['name'] ?? '');
+
+                if ($name === '') {
                     continue;
                 }
 
-                $child = rtrim($path, '/') . '/' . (string) $entry['name'];
+                $child = rtrim($path, '/') . '/' . $name;
 
-                // Check for types.xml in every discovered subdirectory so that
-                // mods which deviate from the Extras/ convention are handled.
-                foreach (['types.xml', 'Types.xml'] as $typesFile) {
-                    $candidate = $child . '/' . $typesFile;
-                    $contents = $this->gateway->readFile($server, $candidate);
+                if ($entry['directory'] ?? false) {
+                    // Check for types.xml in every discovered subdirectory so that
+                    // mods which deviate from the Extras/ convention are handled.
+                    foreach (['types.xml', 'Types.xml'] as $typesFile) {
+                        $candidate = $child . '/' . $typesFile;
+                        $contents = $this->gateway->readFile($server, $candidate);
+
+                        if ($contents !== null && trim($contents) !== '') {
+                            return $candidate;
+                        }
+                    }
+
+                    if ($depth < 2) {
+                        $queue[] = [$child, $depth + 1];
+                    }
+                } elseif (($entry['file'] ?? false)
+                    && stripos($name, 'type') !== false
+                    && str_ends_with(strtolower($name), '.xml')
+                ) {
+                    // File in the current directory whose name contains "type"
+                    // and has an .xml extension (e.g. Extras/SomeModTypes.xml).
+                    $contents = $this->gateway->readFile($server, $child);
 
                     if ($contents !== null && trim($contents) !== '') {
-                        return $candidate;
+                        return $child;
                     }
-                }
-
-                if ($depth < 2) {
-                    $queue[] = [$child, $depth + 1];
                 }
             }
         }

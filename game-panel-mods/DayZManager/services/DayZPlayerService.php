@@ -25,7 +25,7 @@ final class DayZPlayerService
     }
 
     /**
-     * @return list<array{player_id: string, note: string, added_by: string, created_at: string|null}>
+     * @return list<array{player_id: string, nickname: string, note: string, added_by: string, created_at: string|null}>
      */
     public function list(string $listType): array
     {
@@ -45,7 +45,7 @@ final class DayZPlayerService
     /**
      * Returns every supported list keyed by list type.
      *
-     * @return array<string, list<array{player_id: string, note: string, added_by: string, created_at: string|null}>>
+     * @return array<string, list<array{player_id: string, nickname: string, note: string, added_by: string, created_at: string|null}>>
      */
     public function allLists(): array
     {
@@ -69,23 +69,30 @@ final class DayZPlayerService
     /**
      * @return array<string, mixed>
      */
-    public function add(string $listType, string $playerId, string $note = '', string $addedBy = '', mixed $server = null): array
+    public function add(string $listType, string $playerId, string $note = '', string $addedBy = '', string $nickname = '', mixed $server = null): array
     {
         $this->assertValidListType($listType);
         $this->assertValidPlayerId($playerId);
+        $nickname = $this->normalizeNickname($nickname);
 
         if (!$this->tableAvailable()) {
             return ['status' => 'error', 'message' => 'Player-list storage is not available.'];
         }
 
         try {
+            $values = [
+                'note' => trim($note),
+                'added_by' => trim($addedBy),
+                'created_at' => date('Y-m-d H:i:s'),
+            ];
+
+            if ($this->nicknameColumnAvailable()) {
+                $values['nickname'] = $nickname;
+            }
+
             \Illuminate\Support\Facades\DB::table('dayz_player_lists')->updateOrInsert(
                 ['list_type' => $listType, 'player_id' => $playerId],
-                [
-                    'note' => trim($note),
-                    'added_by' => trim($addedBy),
-                    'created_at' => date('Y-m-d H:i:s'),
-                ],
+                $values,
             );
         } catch (\Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
@@ -99,6 +106,7 @@ final class DayZPlayerService
             'action'    => 'add',
             'list_type' => $listType,
             'player_id' => $playerId,
+            'nickname'  => $nickname,
             'note'      => $note,
             'added_by'  => $addedBy,
             'file_synced' => $synced,
@@ -155,7 +163,7 @@ final class DayZPlayerService
     }
 
     /**
-     * @return list<array{player_id: string, note: string, added_by: string, created_at: string|null}>
+     * @return list<array{player_id: string, nickname: string, note: string, added_by: string, created_at: string|null}>
      */
     private function fetchList(string $listType): array
     {
@@ -172,6 +180,7 @@ final class DayZPlayerService
 
                     return [
                         'player_id'  => (string) ($row['player_id'] ?? ''),
+                        'nickname'   => (string) ($row['nickname'] ?? ''),
                         'note'       => (string) ($row['note'] ?? ''),
                         'added_by'   => (string) ($row['added_by'] ?? ''),
                         'created_at' => isset($row['created_at']) ? (string) $row['created_at'] : null,
@@ -190,6 +199,19 @@ final class DayZPlayerService
         return class_exists('Illuminate\\Support\\Facades\\Schema')
             && class_exists('Illuminate\\Support\\Facades\\DB')
             && \Illuminate\Support\Facades\Schema::hasTable('dayz_player_lists');
+    }
+
+    private function nicknameColumnAvailable(): bool
+    {
+        if (!$this->tableAvailable()) {
+            return false;
+        }
+
+        try {
+            return \Illuminate\Support\Facades\Schema::hasColumn('dayz_player_lists', 'nickname');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function forgetListCache(string $listType): void
@@ -214,13 +236,28 @@ final class DayZPlayerService
             return false;
         }
 
-        $entries = array_map(
-            static fn (array $entry): string => trim((string) ($entry['player_id'] ?? '')),
-            $this->fetchList($listType),
-        );
-        $entries = array_values(array_filter(array_unique($entries), static fn (string $entry): bool => $entry !== ''));
-        $content = $entries === [] ? '' : implode("\n", $entries) . "\n";
+        $entries = [];
+
+        foreach ($this->fetchList($listType) as $entry) {
+            $playerId = trim((string) ($entry['player_id'] ?? ''));
+
+            if ($playerId === '') {
+                continue;
+            }
+
+            $nickname = $this->normalizeNickname((string) ($entry['nickname'] ?? ''));
+            $entries[$playerId] = $playerId . ($nickname !== '' ? '        // ' . $nickname : '');
+        }
+
+        $content = $entries === [] ? '' : implode("\n", array_values($entries)) . "\n";
 
         return $this->gateway->writeFile($server, $path, $content);
+    }
+
+    private function normalizeNickname(string $nickname): string
+    {
+        $nickname = preg_replace('/\s+/', ' ', trim(str_replace(["\r", "\n"], ' ', $nickname)));
+
+        return trim((string) str_replace('//', '/', $nickname));
     }
 }

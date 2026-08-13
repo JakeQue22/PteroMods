@@ -72,6 +72,12 @@ final class DayZServerService
 
         $dispatched = $this->gateway->power($server, $signal);
 
+        // Manual restarts count towards "Last restart" so the server page always
+        // reflects when the server was actually last cycled by the panel.
+        if ($dispatched && in_array($signal, ['restart', 'start'], true)) {
+            $this->storeLastRestart($this->serverIdentifier($server), time());
+        }
+
         return [
             'status'    => $dispatched ? 'dispatched' : 'failed',
             'action'    => $signal,
@@ -103,25 +109,109 @@ final class DayZServerService
             return [
                 'enabled' => false,
                 'interval_minutes' => 0,
+                'start_time' => '',
                 'next_restart_at' => null,
+                'next_restart_at_display' => null,
+                'last_restart_at' => null,
+                'last_restart_at_display' => null,
                 'timed_restart_at' => null,
+                'timed_restart_at_display' => null,
                 'warnings_sent' => [],
                 'warning_minutes_enabled' => self::RESTART_WARNINGS_MINUTES,
                 'warning_messages' => [],
             ];
         }
 
+        $nextRestartAt = (string) ($schedule['next_restart_at'] ?? '');
+        $lastRestartAt = $this->hasScheduleColumn('last_restart_at')
+            ? (string) ($schedule['last_restart_at'] ?? '')
+            : '';
+        $timedRestartAt = $this->hasScheduleColumn('timed_restart_at')
+            ? ($schedule['timed_restart_at'] ?? null)
+            : null;
+
         return [
             'enabled' => (bool) ($schedule['enabled'] ?? false),
             'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
-            'next_restart_at' => (string) ($schedule['next_restart_at'] ?? ''),
-            'timed_restart_at' => $this->hasScheduleColumn('timed_restart_at')
-                ? ($schedule['timed_restart_at'] ?? null)
-                : null,
+            'start_time' => $this->normalizeStartTime((string) ($schedule['start_time'] ?? '')),
+            'next_restart_at' => $nextRestartAt,
+            'next_restart_at_display' => $this->displayTime($nextRestartAt),
+            'last_restart_at' => $lastRestartAt === '' ? null : $lastRestartAt,
+            'last_restart_at_display' => $this->displayTime($lastRestartAt),
+            'timed_restart_at' => $timedRestartAt,
+            'timed_restart_at_display' => $this->displayTime((string) ($timedRestartAt ?? '')),
             'warnings_sent' => $this->parseWarnings((string) ($schedule['warnings_sent'] ?? '')),
             'warning_minutes_enabled' => $this->enabledWarningMinutes($schedule),
             'warning_messages' => $this->warningMessages($schedule),
         ];
+    }
+
+    /**
+     * Formats a stored timestamp for display as `DD-MM-YYYY HH:MM`.
+     */
+    private function displayTime(string $timestamp): ?string
+    {
+        $time = trim($timestamp) === '' ? false : strtotime($timestamp);
+
+        return $time === false ? null : date('d-m-Y H:i', $time);
+    }
+
+    /**
+     * Normalises a `HH:MM` restart start time; an empty string means the
+     * schedule is not anchored to a clock time.
+     */
+    private function normalizeStartTime(string $startTime): string
+    {
+        $startTime = trim($startTime);
+
+        if (preg_match('/^(\d{1,2}):(\d{2})$/', $startTime, $match) !== 1) {
+            return '';
+        }
+
+        $hours = (int) $match[1];
+        $minutes = (int) $match[2];
+
+        if ($hours > 23 || $minutes > 59) {
+            return '';
+        }
+
+        return sprintf('%02d:%02d', $hours, $minutes);
+    }
+
+    /**
+     * The first restart moment strictly after `$after` for a schedule that
+     * starts at `$startTime` and repeats every `$intervalMinutes`.
+     *
+     * Anchoring to the configured clock time is what keeps restarts on the
+     * exact times the operator asked for (for example 04:00, 10:00, 16:00,
+     * 22:00 for a six-hour schedule starting at 04:00) instead of drifting
+     * away from them by however long each restart or tick took.
+     */
+    private function nextRestartTimestamp(string $startTime, int $intervalMinutes, int $after): int
+    {
+        $intervalSeconds = max(60, $intervalMinutes * 60);
+        $startTime = $this->normalizeStartTime($startTime);
+
+        if ($startTime === '') {
+            return $after + $intervalSeconds;
+        }
+
+        [$hours, $minutes] = array_map('intval', explode(':', $startTime));
+        $anchor = mktime($hours, $minutes, 0, (int) date('n', $after), (int) date('j', $after), (int) date('Y', $after));
+
+        if ($anchor === false) {
+            return $after + $intervalSeconds;
+        }
+
+        // Step back a whole day first so an anchor later today is not skipped,
+        // then forward in whole intervals until the slot is in the future.
+        $anchor -= 86400;
+
+        while ($anchor <= $after) {
+            $anchor += $intervalSeconds;
+        }
+
+        return $anchor;
     }
 
     /**
@@ -133,6 +223,7 @@ final class DayZServerService
         bool $enabled,
         array $warningMinutesEnabled = [],
         array $warningMessages = [],
+        string $startTime = '',
     ): array
     {
         $serverId = $this->serverIdentifier($server);
@@ -149,17 +240,20 @@ final class DayZServerService
             return ['status' => 'failed', 'message' => 'Restart schedule storage is not available.'];
         }
 
-        $nextRestart = $enabled ? date('Y-m-d H:i:s', time() + ($intervalMinutes * 60)) : null;
+        $startTime = $this->normalizeStartTime($startTime);
+        $now = time();
+        $nextTimestamp = $enabled ? $this->nextRestartTimestamp($startTime, $intervalMinutes, $now) : null;
+        $nextRestart = $nextTimestamp === null ? null : date('Y-m-d H:i:s', $nextTimestamp);
         $warningMinutesEnabled = $this->normalizeWarningMinutes($warningMinutesEnabled);
         $warningMessages = $this->normalizeWarningMessages($warningMessages);
 
-        // Pre-mark intervals >= intervalMinutes as already sent so the first tick
-        // does not fire them all at once. The intervals that are shorter than the
-        // restart delay will still fire at the appropriate times.
-        $preFilledWarnings = $enabled ? array_values(array_filter(
+        // Pre-mark warnings whose window has already opened for the first cycle
+        // so the next tick does not fire them all at once. Warnings that are due
+        // later in the cycle will still fire at the appropriate times.
+        $preFilledWarnings = $nextTimestamp === null ? [] : array_values(array_filter(
             $warningMinutesEnabled,
-            static fn (int $m): bool => $m >= $intervalMinutes,
-        )) : [];
+            static fn (int $m): bool => $now >= ($nextTimestamp - ($m * 60)),
+        ));
 
         $update = [
             'enabled' => $enabled ? 1 : 0,
@@ -169,6 +263,10 @@ final class DayZServerService
             'updated_at' => date('Y-m-d H:i:s'),
             'created_at' => date('Y-m-d H:i:s'),
         ];
+
+        if ($this->hasScheduleColumn('start_time')) {
+            $update['start_time'] = $startTime;
+        }
 
         if ($this->hasScheduleColumn('warning_minutes_enabled')) {
             $update['warning_minutes_enabled'] = implode(',', $warningMinutesEnabled);
@@ -224,30 +322,36 @@ final class DayZServerService
                     $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
                     $this->gateway->power($server, 'restart');
                     $this->clearTimedRestart($serverId);
+                    $this->storeLastRestart($serverId, $now);
 
                     return [
                         'status'          => 'restarted',
                         'messages_sent'   => $results,
                         'next_restart_at' => null,
                         'timed_restart_at' => null,
+                        'last_restart_at' => date('Y-m-d H:i:s', $now),
+                        'last_restart_at_display' => date('d-m-Y H:i', $now),
                         'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
                         'restarted'       => true,
                     ];
                 }
 
                 $timedWarningsSent = $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''));
-                $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
-                $warningMessages = $this->warningMessages($schedule);
+                $warning = $this->dueWarning(
+                    $timedNext,
+                    $now,
+                    $this->enabledWarningMinutes($schedule),
+                    $timedWarningsSent,
+                );
 
-                foreach ($enabledWarningMinutes as $minutes) {
-                    if ($now >= ($timedNext - ($minutes * 60)) && !in_array($minutes, $timedWarningsSent, true)) {
-                        $message = $this->warningMessage($minutes, $warningMessages);
+                if ($warning !== null) {
+                    $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule));
 
-                        if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
-                            $timedWarningsSent[] = $minutes;
-                            $results[] = $message;
-                        }
+                    if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
+                        $results[] = $message;
                     }
+
+                    $timedWarningsSent = $warning['sent'];
                 }
 
                 if ($timedWarningsSent !== $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''))) {
@@ -268,46 +372,92 @@ final class DayZServerService
         }
 
         $interval = max(60, (int) ($schedule['interval_minutes'] ?? 0));
+        $startTime = $this->hasScheduleColumn('start_time')
+            ? $this->normalizeStartTime((string) ($schedule['start_time'] ?? ''))
+            : '';
         $next = strtotime((string) ($schedule['next_restart_at'] ?? ''));
 
         if ($next === false) {
-            $next = time() + ($interval * 60);
+            $next = $this->nextRestartTimestamp($startTime, $interval, $now);
         }
 
         $restarted = false;
+        $lastRestart = null;
 
         if ($now >= $next) {
             // Restart time has passed; restart immediately without sending
             // any retrospective warning messages.
             $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
             $restarted = $this->gateway->power($server, 'restart');
-            $next = $next + ($interval * 60);
+            $lastRestart = $now;
+
+            // Advance in whole intervals (anchored to the configured start time
+            // when one is set) until the next slot is in the future, so a late
+            // tick cannot leave a due timestamp behind and restart in a loop.
+            $next = $this->nextRestartTimestamp($startTime, $interval, max($now, $next));
             $warningsSent = [];
         } else {
             $warningsSent = $this->parseWarnings((string) ($schedule['warnings_sent'] ?? ''));
-            $enabledWarningMinutes = $this->enabledWarningMinutes($schedule);
-            $warningMessages = $this->warningMessages($schedule);
+            $warning = $this->dueWarning($next, $now, $this->enabledWarningMinutes($schedule), $warningsSent);
 
-            foreach ($enabledWarningMinutes as $minutes) {
-                if ($now >= ($next - ($minutes * 60)) && !in_array($minutes, $warningsSent, true)) {
-                    $message = $this->warningMessage($minutes, $warningMessages);
+            if ($warning !== null) {
+                $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule));
 
-                    if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
-                        $warningsSent[] = $minutes;
-                        $results[] = $message;
-                    }
+                if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
+                    $results[] = $message;
                 }
+
+                $warningsSent = $warning['sent'];
             }
         }
 
-        $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true);
+        $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true, $lastRestart);
+
+        $storedLastRestart = $lastRestart !== null
+            ? date('Y-m-d H:i:s', $lastRestart)
+            : ($this->hasScheduleColumn('last_restart_at') ? (string) ($schedule['last_restart_at'] ?? '') : '');
 
         return [
             'status'          => $restarted ? 'restarted' : ($results === [] ? 'waiting' : 'warning_sent'),
             'messages_sent'   => $results,
             'next_restart_at' => date('c', $next),
+            'next_restart_at_display' => date('d-m-Y H:i', $next),
+            'last_restart_at' => $storedLastRestart === '' ? null : $storedLastRestart,
+            'last_restart_at_display' => $this->displayTime($storedLastRestart),
             'interval_minutes' => $interval,
             'restarted'       => $restarted,
+        ];
+    }
+
+    /**
+     * Picks the single warning that is due right now.
+     *
+     * Every warning whose window has already opened is marked as sent, but only
+     * the most relevant (smallest remaining time) one is announced. That keeps
+     * the countdown accurate and avoids a burst of stale "restart in 3 hours"
+     * style messages when ticks resume after a gap.
+     *
+     * @param list<int> $enabledMinutes
+     * @param list<int> $alreadySent
+     * @return array{minutes: int, sent: list<int>}|null
+     */
+    private function dueWarning(int $next, int $now, array $enabledMinutes, array $alreadySent): ?array
+    {
+        $due = array_values(array_filter(
+            $enabledMinutes,
+            static fn (int $minutes): bool => $now >= ($next - ($minutes * 60))
+                && !in_array($minutes, $alreadySent, true),
+        ));
+
+        if ($due === []) {
+            return null;
+        }
+
+        sort($due);
+
+        return [
+            'minutes' => $due[0],
+            'sent' => array_values(array_unique(array_merge($alreadySent, $due))),
         ];
     }
 
@@ -618,6 +768,7 @@ final class DayZServerService
         return [
             'status'           => 'scheduled',
             'timed_restart_at' => $timedAt,
+            'timed_restart_at_display' => $this->displayTime($timedAt),
             'minutes'          => $minutes,
             'message'          => sprintf('Server will restart in %s.', $this->formatMinutes($minutes)),
         ];
@@ -675,8 +826,13 @@ final class DayZServerService
             'restart_schedule' => [
                 'enabled' => false,
                 'interval_minutes' => 0,
+                'start_time' => '',
                 'next_restart_at' => null,
+                'next_restart_at_display' => null,
+                'last_restart_at' => null,
+                'last_restart_at_display' => null,
                 'timed_restart_at' => null,
+                'timed_restart_at_display' => null,
                 'warnings_sent' => [],
                 'warning_minutes_enabled' => self::RESTART_WARNINGS_MINUTES,
                 'warning_messages' => [],
@@ -708,7 +864,13 @@ final class DayZServerService
             $fallback,
         );
 
-        return is_array($payload) ? $payload : $fallback;
+        $payload = is_array($payload) ? $payload : $fallback;
+
+        // The restart schedule is a single cheap row read and must never be
+        // served stale, otherwise the page shows an outdated next/last restart.
+        $payload['restart_schedule'] = $this->restartSchedule($server);
+
+        return $payload;
     }
 
     private function serverIdentifier(mixed $server): string
@@ -753,7 +915,7 @@ final class DayZServerService
     /**
      * @param list<int> $warningsSent
      */
-    private function storeScheduleTick(string $serverId, array $schedule, int $interval, int $next, array $warningsSent, bool $enabled): void
+    private function storeScheduleTick(string $serverId, array $schedule, int $interval, int $next, array $warningsSent, bool $enabled, ?int $lastRestart = null): void
     {
         if ($serverId === '' || !$this->hasScheduleTable()) {
             return;
@@ -777,11 +939,54 @@ final class DayZServerService
             $update['warning_messages'] = is_string($encoded) ? $encoded : null;
         }
 
+        if ($this->hasScheduleColumn('start_time')) {
+            $update['start_time'] = $this->normalizeStartTime((string) ($schedule['start_time'] ?? ''));
+        }
+
+        if ($lastRestart !== null && $this->hasScheduleColumn('last_restart_at')) {
+            $update['last_restart_at'] = date('Y-m-d H:i:s', $lastRestart);
+        }
+
         try {
             \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')->updateOrInsert(
                 ['server_id' => $serverId],
                 $update,
             );
+        } catch (Throwable) {
+            // Best effort.
+        }
+    }
+
+    /**
+     * Records the moment the server was last restarted by the panel.
+     */
+    private function storeLastRestart(string $serverId, int $timestamp): void
+    {
+        if ($serverId === '' || !$this->hasScheduleTable() || !$this->hasScheduleColumn('last_restart_at')) {
+            return;
+        }
+
+        $now = date('Y-m-d H:i:s');
+
+        try {
+            $updated = \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')
+                ->where('server_id', $serverId)
+                ->update(['last_restart_at' => date('Y-m-d H:i:s', $timestamp), 'updated_at' => $now]);
+
+            if ($updated === 0) {
+                // No schedule row yet: insert a complete disabled row so every
+                // NOT NULL column gets a sane value under strict SQL modes.
+                \Illuminate\Support\Facades\DB::table('dayz_restart_schedules')->insert([
+                    'server_id' => $serverId,
+                    'enabled' => 0,
+                    'interval_minutes' => 360,
+                    'next_restart_at' => null,
+                    'last_restart_at' => date('Y-m-d H:i:s', $timestamp),
+                    'warnings_sent' => '',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+            }
         } catch (Throwable) {
             // Best effort.
         }

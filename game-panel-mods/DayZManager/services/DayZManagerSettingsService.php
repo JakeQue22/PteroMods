@@ -105,9 +105,32 @@ final class DayZManagerSettingsService
         'tm_general_log_retention_days' => 14,
 
         /**
+         * Number of days `DayZServer_*.ADM` files are kept before auto-scrub deletes them.
+         */
+        'dzserver_adm_log_retention_days' => 14,
+
+        /**
+         * Number of days `DayZServer_*.RPT` files are kept before auto-scrub deletes them.
+         */
+        'dzserver_rpt_log_retention_days' => 14,
+
+        /**
          * Shared secret used by the optional server-side DayZ live-map bridge.
          */
         'live_map_bridge_secret' => '',
+
+        /**
+         * Tile server URL template for the Live Map.  Placeholders:
+         *   {map}  – map id (chernarusplus, livonia, sakhal)
+         *   {z}    – zoom level
+         *   {x}    – tile column
+         *   {y}    – tile row
+         *
+         * The default points to the xam.nu community DayZ tile CDN.
+         * Set to an empty string to disable tile loading (shows a plain dark
+         * background with named locations only).
+         */
+        'live_map_tile_url' => 'https://static.xam.nu/dayz/maps/{map}/1.27/satellite/{z}/{x}/{y}.webp',
 
         /**
          * When true, DayZ Manager automatically takes a database backup at the
@@ -151,7 +174,10 @@ final class DayZManagerSettingsService
         'script_log_retention_days' => 'script_*.log retention (days)',
         'crash_log_retention_days' => 'crash_*.log retention (days)',
         'tm_general_log_retention_days' => 'TM_GeneralLogs_*.log retention (days)',
+        'dzserver_adm_log_retention_days' => 'DayZServer_*.ADM retention (days)',
+        'dzserver_rpt_log_retention_days' => 'DayZServer_*.RPT retention (days)',
         'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
+        'live_map_tile_url' => 'Live Map tile URL template',
     ];
 
     /**
@@ -197,19 +223,29 @@ final class DayZManagerSettingsService
             . 'restart for you (connected players will be disconnected). Leave disabled if '
             . 'you would rather restart manually when convenient.',
         'auto_scrub_profile_logs' =>
-            'Disabled by default. When enabled, DayZ Manager periodically scans `/profiles` and '
-            . 'deletes old `script_*.log`, `crash_*.log`, and `TM_GeneralLogs_*.log` files older '
-            . 'than each type\'s configured retention window.',
+            'Disabled by default. When enabled, DayZ Manager checks `/profiles` every day and '
+            . 'deletes old `script_*.log`, `crash_*.log`, `TM_GeneralLogs_*.log`, `DayZServer_*.ADM`, '
+            . 'and `DayZServer_*.RPT` files older than each type\'s configured retention window.',
         'script_log_retention_days' =>
             'How many days to keep `script_*.log` files before automatic cleanup removes them.',
         'crash_log_retention_days' =>
             'How many days to keep `crash_*.log` files before automatic cleanup removes them.',
         'tm_general_log_retention_days' =>
             'How many days to keep `TM_GeneralLogs_*.log` files before automatic cleanup removes them.',
+        'dzserver_adm_log_retention_days' =>
+            'How many days to keep `DayZServer_*.ADM` files before automatic cleanup removes them.',
+        'dzserver_rpt_log_retention_days' =>
+            'How many days to keep `DayZServer_*.RPT` files before automatic cleanup removes them.',
         'live_map_bridge_secret' =>
             'Optional shared secret for a server-side DayZ script to write player snapshots to '
             . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '
             . '`/profiles/PteroMods/live_map_players.json` without secret signing.',
+        'live_map_tile_url' =>
+            'Leaflet tile URL template for the Live Map. '
+            . 'Placeholders: {map} (map id, e.g. chernarusplus), {z} (zoom), {x} (column), {y} (row). '
+            . 'Use the raw tile template URL here, not the public viewer URL (`https://dayz.xam.nu/#...`). '
+            . 'Default uses the current xam.nu official-map satellite template (`.../1.27/satellite/{z}/{x}/{y}.webp`). '
+            . 'Leave empty to disable tile loading (shows a plain dark background).',
     ];
 
     /**

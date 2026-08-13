@@ -1213,6 +1213,11 @@ final class DayZWorkshopService
             } else {
                 $order[] = $folder;
             }
+        } elseif ($workshopId !== '') {
+            // A disabled installed mod must not survive in modlist.html via a
+            // stale install-queue entry, because the DayZ egg can re-append
+            // that queued Workshop ID to the generated `-mod=` startup value.
+            $this->deleteQueueEntries($server, [$workshopId]);
         }
 
         $result = $this->persistOrder($server, $order, $enabled ? 'enable' : 'disable');
@@ -1403,10 +1408,11 @@ final class DayZWorkshopService
         $meta = $installed ? $this->modMetadata($server, $folder) : [];
         $workshopId = $this->resolveWorkshopId($folder, $meta);
         $info = $workshopId !== '' ? $this->workshopInfo($workshopId) : [];
-        $author = trim((string) ($meta['author'] ?? ''));
+        $workshopBytes = isset($info['file_size']) ? (int) $info['file_size'] : 0;
+        $author = $this->normalizeAuthor((string) ($meta['author'] ?? ''));
 
         if ($author === '' && isset($info['author']) && is_string($info['author'])) {
-            $author = trim((string) $info['author']);
+            $author = $this->normalizeAuthor((string) $info['author']);
         }
 
         return [
@@ -1417,7 +1423,11 @@ final class DayZWorkshopService
             'thumbnail'       => (string) ($info['thumbnail'] ?? ''),
             'current_version' => $meta['version'] ?? '',
             'latest_version'  => '',
-            'file_size'       => $installed ? $this->formatBytes($size) : '',
+            // Wings directory listings often report only the folder inode size.
+            // Prefer Workshop size whenever it is larger than the folder entry.
+            'file_size'       => $installed
+                ? $this->formatBytes($workshopBytes > $size ? $workshopBytes : $size)
+                : '',
             'enabled'         => $enabled,
             'installed'       => $installed,
             'server_only'     => $serverOnly,
@@ -1453,6 +1463,17 @@ final class DayZWorkshopService
         }
 
         return $metadata;
+    }
+
+    private function normalizeAuthor(string $author): string
+    {
+        $author = trim($author);
+
+        if ($author === '' || preg_match('/^\$STR_[A-Z0-9_]+$/i', $author) === 1) {
+            return '';
+        }
+
+        return $author;
     }
 
     /**
@@ -1504,7 +1525,10 @@ final class DayZWorkshopService
     {
         $publishedId = trim((string) ($meta['publishedid'] ?? ''));
 
-        if ($publishedId !== '') {
+        // Steam uses 0 as the null/unset publishedid (mods installed outside the
+        // Workshop, or before the item was published). Treat any non-positive value
+        // as unset and fall back to the folder name when it is numeric.
+        if ($publishedId !== '' && (int) $publishedId > 0) {
             return $publishedId;
         }
 
@@ -1584,6 +1608,7 @@ final class DayZWorkshopService
     private function modlistWorkshopIds(mixed $server, array $extra = []): array
     {
         $ids = $extra;
+        $disabledInstalledIds = [];
 
         foreach ($this->installedMods($server) as $mod) {
             $id = trim((string) ($mod['workshop_id'] ?? ''));
@@ -1604,6 +1629,9 @@ final class DayZWorkshopService
             }
 
             if (!($mod['enabled'] ?? false)) {
+                if ($mod['installed'] ?? false) {
+                    $disabledInstalledIds[] = $id;
+                }
                 continue;
             }
 
@@ -1613,7 +1641,7 @@ final class DayZWorkshopService
         foreach ($this->persistedQueue($server) as $entry) {
             $id = trim((string) ($entry['workshop_id'] ?? ''));
 
-            if ($id !== '') {
+            if ($id !== '' && !in_array($id, $disabledInstalledIds, true)) {
                 $ids[] = $id;
             }
         }
@@ -1732,6 +1760,7 @@ final class DayZWorkshopService
             );
 
             $this->configuration->syncTypesExtraForMod($server, $newFolderName, $title);
+            $this->configuration->syncModKeysForMod($server, $newFolderName);
         }
 
         if ($renamed) {
@@ -1779,6 +1808,7 @@ final class DayZWorkshopService
             }
 
             $this->configuration->syncTypesExtraForMod($server, $folderName, $title);
+            $this->configuration->syncModKeysForMod($server, $folderName);
         }
     }
 

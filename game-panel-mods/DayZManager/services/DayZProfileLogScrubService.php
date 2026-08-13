@@ -13,7 +13,7 @@ use Throwable;
  */
 final class DayZProfileLogScrubService
 {
-    private const RUN_INTERVAL_SECONDS = 900;
+    private const RUN_INTERVAL_SECONDS = 86400;
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
@@ -25,9 +25,9 @@ final class DayZProfileLogScrubService
     /**
      * @return array<string, mixed>
      */
-    public function tick(mixed $server): array
+    public function tick(mixed $server, bool $force = false): array
     {
-        if (!(bool) $this->settings->get('auto_scrub_profile_logs', false)) {
+        if (!$force && !(bool) $this->settings->get('auto_scrub_profile_logs', false)) {
             return ['status' => 'disabled'];
         }
 
@@ -41,10 +41,12 @@ final class DayZProfileLogScrubService
             'script'         => max(1, (int) $this->settings->get('script_log_retention_days', 14)),
             'crash'          => max(1, (int) $this->settings->get('crash_log_retention_days', 14)),
             'tm_general_log' => max(1, (int) $this->settings->get('tm_general_log_retention_days', 14)),
+            'dzserver_adm'   => max(1, (int) $this->settings->get('dzserver_adm_log_retention_days', 14)),
+            'dzserver_rpt'   => max(1, (int) $this->settings->get('dzserver_rpt_log_retention_days', 14)),
         ];
         $cacheKey = 'pteromods.dayz.profile_log_scrub.last_run.' . md5($serverKey);
 
-        if ($this->recentlyRan($cacheKey)) {
+        if (!$force && $this->recentlyRan($cacheKey)) {
             return ['status' => 'throttled', 'retention_by_type' => $retentionByType];
         }
 
@@ -82,6 +84,7 @@ final class DayZProfileLogScrubService
 
         return [
             'status' => 'scrubbed',
+            'forced' => $force,
             'retention_by_type' => $retentionByType,
             'scanned' => $scanned,
             'deleted' => $deleted,
@@ -99,6 +102,8 @@ final class DayZProfileLogScrubService
             'script'         => '/^script_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
             'crash'          => '/^crash_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
             'tm_general_log' => '/^TM_GeneralLogs_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i',
+            'dzserver_adm'   => '/^DayZServer_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.ADM$/i',
+            'dzserver_rpt'   => '/^DayZServer_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.RPT$/i',
         ];
 
         foreach ($patterns as $type => $pattern) {
@@ -140,4 +145,3 @@ final class DayZProfileLogScrubService
         }
     }
 }
-

@@ -49,7 +49,7 @@ PteroMods is a modular "Game Panel Mods" framework scaffold for Pterodactyl-styl
 - **Workshop dependency planner** – automatically resolves mod load order and injects CommunityFramework (CF, ID `1559212036`) when a mod requires it.
 - **Launch parameter builder** – generates the correct `-mod=` string from your ordered, enabled mod list; preview endpoint keeps operators informed.
 - **Mod reorder** – drag-and-drop position management persists to `dayz_mods.position` and immediately rebuilds the `-mod=` launch string.
-- **Player manager** – live/observed player activity plus ban, whitelist, and priority queue management, backed by `dayz_observed_players` and `dayz_player_lists`.
+- **Player manager** – persisted DayZ player records from `characters.db` / `players.db`, a separate live-online list, plus ban, whitelist, and priority queue management.
 - **Power controls** – start, restart, stop, and kill the server through the Pterodactyl daemon, with an optional reason.
 - **Configuration catalogue** – lists the configuration files that actually exist on the server (server root, `config/`, mission folders, BattlEye, profiles) and deep-links each one to the panel file editor, with the syntax mode matching its extension.
 - **Configuration backups** – every config save is versioned to the `dayz_configuration_backups` table.
@@ -377,16 +377,18 @@ The response includes the updated `-mod=` launch parameter string built from ena
 
 URL: `GET /servers/{server}/dayz/players`
 
-The **Players** tab combines live-map activity with the existing DayZ ban list, whitelist, and priority queue. Observed player snapshots are persisted to `dayz_observed_players`, while list changes are persisted to `dayz_player_lists`.
+The **Players** tab shows a single merged player directory: persisted DayZ records loaded from `characters.db` / `players.db` are combined with the currently online players from the live-map bridge snapshot, so each player appears once with their nickname, Steam64 (linked to their Steam profile), DayZ UID, last seen time, position and list membership. Each entry links straight to that player on the Live Map. Ban/whitelist/priority list changes are persisted to `dayz_player_lists`.
 
 | Action | Method | Endpoint |
 |---|---|---|
 | List entries | GET | `/api/servers/{server}/dayz/players/{list_type}` |
 | Add entry | POST | `/api/servers/{server}/dayz/players/{list_type}` |
 | Remove entry | DELETE | `/api/servers/{server}/dayz/players/{list_type}/{id}` |
-| Kick observed player | POST | `/api/servers/{server}/dayz/player-actions/kick` |
+| Kick live player | POST | `/api/servers/{server}/dayz/player-actions/kick` |
 
-Observed players show their last known coordinates, heading, health/state, and any inventory payload supplied by the bridge. `{list_type}` must be one of `ban`, `whitelist`, or `priority`.
+Persisted players include last-known coordinates and a bounds check against the active map size; live players show current online position/health from the bridge. `{list_type}` must be one of `ban`, `whitelist`, or `priority`.
+
+The persistence database is copied from the container via Wings and read with the first SQLite implementation available in the panel runtime: the `sqlite3` extension, PDO's `sqlite` driver, or the bundled dependency-free `DayZSqliteFileReader`, which parses the SQLite file format directly. **No PHP SQLite extension is required.** Table and column names are matched heuristically, so both vanilla and community persistence layouts are supported.
 
 **Add payload:**
 
@@ -486,17 +488,50 @@ the client application re-renders its navigation.
 
 ### Live Map
 
-The **Live Map** tab shows an interactive 3-D (or 2-D fallback) map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. Supported maps render with a self-contained tactical background and labelled major locations so the operator is not left with an empty wireframe plane.
+The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable.
 
 #### How it works
 
-1. The panel polls `/api/server/{server}/dayz/live-map/snapshot` every 7 seconds.
-2. The snapshot endpoint reads `/profiles/PteroMods/live_map_players.json` (falling back to `/profiles/live_map_players.json`) from the server file system via Wings.
-3. The frontend renders each player as a coloured cone marker on the map.
+1. Leaflet 1.9.4 is loaded from unpkg, with jsDelivr and cdnjs as fallbacks (all pinned with the same Subresource Integrity hash). If every mirror is blocked, the map area explains that instead of rendering an empty box.
+2. Map tiles come from the template configured in **DayZ Manager → Settings → Live Map tile URL** (`{map}`, `{z}`, `{x}`, `{y}` placeholders). Leave it blank, or point it at an unreachable host, and the grid-only view is shown with a notice.
+3. The panel polls `/api/server/{server}/dayz/live-map/snapshot` every 7 seconds.
+4. The snapshot endpoint reads `/profiles/PteroMods/live_map_players.json` (falling back to `/profiles/live_map_players.json`) from the server file system via Wings.
+5. Each player is rendered as a marker at `L.latLng(z, x)`, using a `L.CRS.Simple` transformation of `256 / world_size` so DayZ world coordinates line up with the tiles.
 
 #### Server-side bridge setup (required for live data)
 
-You need a DayZ server-side script that writes player positions to the bridge file every few seconds. The file must contain valid JSON matching this schema:
+The panel ships an EnfScript bridge (`assets/bridge/pteromods_live_map.c`) that writes the snapshot for you. **DayZ Manager → Live Map → Deploy Bridge** copies it to `mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c` and wires it into `mpmissions/dayzOffline.chernarusplus/init.c`. Restart the server afterwards — the bridge only starts when the mission is (re)loaded.
+
+##### The two init.c lines (required)
+
+Without these lines nothing is ever written to the snapshot file and the Live Map stays empty, even though the map itself loads. If you removed them, add them back exactly like this:
+
+1. At the very top of your active mission `init.c` (for example `mpmissions/dayzOffline.chernarusplus/init.c`):
+
+   ```c
+   #include "$CurrentDir:mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c";
+   ```
+
+2. Inside the **existing** `main()` function of the same file:
+
+   ```c
+   void main()
+   {
+       PteroMods_LiveMap_Init();
+
+       // ... the rest of your existing main() body stays unchanged ...
+   }
+   ```
+
+> ⚠️ `PteroMods_LiveMap_Init();` must be **inside** `main()`. EnfScript only allows declarations at file scope, so putting the call next to the `#include` makes the mission fail to compile and the server will not start. (Panel versions before this fix appended it at file scope — redeploy the bridge to have it corrected automatically.)
+>
+> The `#include` also requires `mpmissions/dayzOffline.chernarusplus/pteromods_live_map.c` to exist, otherwise the server logs `Can't find file 'pteromods_live_map.c'`. Deploy the bridge first, or remove the `#include` again.
+
+Use **Live Map → Remove Bridge** to strip both lines and delete the script if you ever need to roll back.
+
+##### Writing the snapshot yourself
+
+If you prefer your own mod or script, write the bridge file every few seconds instead. It must contain valid JSON matching this schema:
 
 ```json
 {
@@ -523,7 +558,7 @@ Write this file to `/profiles/PteroMods/live_map_players.json` inside the server
 
 | Status shown | Meaning |
 |---|---|
-| **Waiting for bridge data at `/profiles/PteroMods/live_map_players.json`** | The endpoint is working but no bridge file has been written yet. Set up the server-side script above. |
+| **Waiting for bridge data at `/profiles/PteroMods/live_map_players.json`** | The endpoint is working but no bridge file has been written yet. Deploy the bridge, check the two `init.c` lines above, and restart the server. |
 | **Live snapshot received.** | Data is flowing — player markers will appear on the map. |
 | **Bridge snapshot exists but is invalid (or signature check failed).** | The file exists but is not valid JSON, or the optional HMAC signature did not match the configured secret. |
 | **Failed to fetch live map snapshot.** | The HTTP request to the snapshot endpoint itself failed (network error or the server returned a non-JSON response). Check that the module routes are registered and that you are logged in. |
@@ -767,6 +802,21 @@ Ensure the web server user has write access: `chown www-data:www-data game-panel
 
 **Workshop URL not recognised**
 `WorkshopReferenceParser` accepts a bare numeric ID (e.g. `1559212036`) or a full URL containing `?id=` or `&id=`. Any other format throws `InvalidArgumentException`.
+
+**Live Map is a blank box**
+Earlier builds loaded `dist/leaflet.min.js`, a file that does not exist in the
+Leaflet 1.9.4 distribution, so the library never initialised and the map area
+stayed empty. Update to this version and run `php artisan view:clear`. If the
+map still does not draw, open the browser console: the viewer now reports
+whether Leaflet itself was blocked (allow `unpkg.com`, `cdn.jsdelivr.net`, or
+`cdnjs.cloudflare.com`) or only the tiles failed, in which case the coordinate
+grid is drawn and **Settings → Live Map tile URL** needs to be corrected.
+
+**Players tab reports that SQLite is unavailable**
+That message is obsolete. `characters.db` / `players.db` are now read with the
+bundled `DayZSqliteFileReader` when neither the `sqlite3` extension nor
+`pdo_sqlite` is present. If no records appear, the file was not found: check
+that persistence exists under `/mpmissions/dayzOffline.*/storage_1/`.
 
 **Player list type rejected**
 `DayZPlayerService` only accepts `ban`, `whitelist`, or `priority` as the list type. Any other value throws `InvalidArgumentException`.

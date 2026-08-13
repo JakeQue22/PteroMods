@@ -120,10 +120,15 @@ final class DayZServerQueryService
             function () use ($candidates, $server): array {
                 $result = $this->queryCandidates($candidates);
 
-                if (!$result['online']) {
+                // Supplement from the live-map bridge file when the Steam
+                // query either failed (offline) or returned 0 players while
+                // the server is running.  DayZ occasionally reports 0 through
+                // the Steam query protocol even when players are present, so
+                // the bridge count is used as the authoritative fallback.
+                if (!$result['online'] || (int) ($result['players'] ?? 0) === 0) {
                     $bridgeCount = $this->bridgePlayerCount($server);
 
-                    if ($bridgeCount !== null) {
+                    if ($bridgeCount !== null && $bridgeCount > 0) {
                         $result['players'] = $bridgeCount;
                     }
                 }
@@ -525,10 +530,10 @@ final class DayZServerQueryService
     {
         $result = $this->queryCandidates($candidates);
 
-        if (!$result['online']) {
+        if (!$result['online'] || (int) ($result['players'] ?? 0) === 0) {
             $bridgeCount = $this->bridgePlayerCount($server);
 
-            if ($bridgeCount !== null) {
+            if ($bridgeCount !== null && $bridgeCount > 0) {
                 $result['players'] = $bridgeCount;
             }
         }

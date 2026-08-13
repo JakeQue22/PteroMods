@@ -54,7 +54,19 @@ final class DayZLiveMapService
         $this->observedPlayers->trackSnapshot($server, $mapName, $players);
         $updatedAt = $this->normalizeUpdatedAt(is_array($data) ? ($data['updated_at'] ?? '') : '');
 
-        $status = $source === '' ? 'waiting_for_bridge' : (is_array($data) ? 'ok' : 'invalid_bridge_payload');
+        if ($source === '') {
+            $status = 'waiting_for_bridge';
+        } elseif (!is_array($data)) {
+            $status = 'invalid_bridge_payload';
+        } elseif (trim((string) ($data['mapName'] ?? $data['map'] ?? '')) === '' && ($data['players'] ?? []) === []) {
+            // The snapshot file exists but map is empty and players is empty — this is
+            // the initial placeholder written by the panel deploy step.  The game bridge
+            // has not written a real snapshot yet (likely because the PteroMods output
+            // directory did not exist when the bridge first ran).
+            $status = 'stale_snapshot';
+        } else {
+            $status = 'ok';
+        }
 
         return [
             'status' => $status,
@@ -75,6 +87,8 @@ final class DayZLiveMapService
                     'map' => 'ChernarusPlus',
                     'players' => [[
                         'steam64' => '76561198000000000',
+                        'player_uid' => '76561198000000000',
+                        'real_steam64' => '76561198000000000',
                         'name' => 'PlayerName',
                         'x' => 7500.0,
                         'y' => 50.0,
@@ -82,6 +96,8 @@ final class DayZLiveMapService
                         'direction' => 180.0,
                         'alive' => true,
                         'health' => 92.5,
+                        'in_vehicle' => true,
+                        'vehicle_class' => 'OffroadHatchback',
                     ]],
                 ],
             ],
@@ -106,24 +122,46 @@ final class DayZLiveMapService
             }
 
             $steam64 = trim((string) ($entry['steam64'] ?? $entry['steam_id'] ?? ''));
+            $playerUid = trim((string) ($entry['player_uid'] ?? ''));
             $name = trim((string) ($entry['name'] ?? $entry['player_name'] ?? ''));
             $x = $this->floatValue($entry['x'] ?? ($entry['position']['x'] ?? null));
             $y = $this->floatValue($entry['y'] ?? ($entry['position']['y'] ?? null));
             $z = $this->floatValue($entry['z'] ?? ($entry['position']['z'] ?? null));
 
-            if ($steam64 === '' || $name === '' || $x === null || $z === null) {
+            // Primary stable identifier: prefer player_uid (DayZ UID), fall back to
+            // steam64 (older bridge deployments store the DayZ UID in that field).
+            $primaryId = $playerUid !== '' ? $playerUid : $steam64;
+
+            if ($primaryId === '' || $name === '' || $x === null || $z === null) {
                 continue;
             }
 
+            // Health comes from the bridge on a 0–100 scale. Older bridge
+            // deployments mistakenly multiplied by 100 (yielding 0–10 000);
+            // normalise those values back to 0–100 here.
+            $rawHealth = $this->floatValue($entry['health'] ?? null);
+            $health = $rawHealth === null ? null : ($rawHealth > 100 ? round($rawHealth / 100, 2) : $rawHealth);
+
+            // Accept both raw 17-digit Steam64 values and wrappers such as
+            // "steam:7656119..." by extracting the 17-digit token.
+            $realSteam64 = $this->extractSteam64($steam64);
+
             $players[] = [
-                'steam64' => $steam64,
+                'steam64' => $primaryId,   // used as map marker key (may be DayZ UID)
+                'real_steam64' => $realSteam64,  // actual Steam64 if available, else null
+                'steam64_raw' => $steam64 !== '' ? $steam64 : null,
+                'player_uid' => $playerUid !== ''
+                    ? $playerUid
+                    : ($realSteam64 === null ? $primaryId : null), // old bridge fallback where steam64 carried UID
                 'name' => $name,
                 'x' => $x,
                 'y' => $y ?? 0.0,
                 'z' => $z,
                 'direction' => $this->floatValue($entry['direction'] ?? $entry['yaw'] ?? 0.0) ?? 0.0,
                 'alive' => (bool) ($entry['alive'] ?? true),
-                'health' => $this->floatValue($entry['health'] ?? null),
+                'health' => $health,
+                'in_vehicle' => (bool) ($entry['in_vehicle'] ?? false),
+                'vehicle_class' => $this->stringValue($entry['vehicle_class'] ?? null),
                 'inventory' => $this->normalizeOptionalData($entry['inventory'] ?? null),
                 'metadata' => $this->normalizeMetadata($entry),
             ];
@@ -132,13 +170,30 @@ final class DayZLiveMapService
         return $players;
     }
 
+    private function extractSteam64(string $value): ?string
+    {
+        if ($value === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{17}$/', $value) === 1) {
+            return $value;
+        }
+
+        if (preg_match('/(?<!\d)(\d{17})(?!\d)/', $value, $matches) === 1) {
+            return (string) $matches[1];
+        }
+
+        return null;
+    }
+
     /**
      * @param array<string, mixed>|null $data
      * @param array<string, mixed> $query
      */
     private function resolveMapName(?array $data, array $query): string
     {
-        $map = trim((string) (($data['map'] ?? '') ?: ($query['map'] ?? '')));
+        $map = trim((string) (($data['mapName'] ?? $data['map'] ?? '') ?: ($query['map'] ?? '')));
 
         if ($map === '') {
             return 'ChernarusPlus';
@@ -240,6 +295,13 @@ final class DayZLiveMapService
         }
 
         return null;
+    }
+
+    private function stringValue(mixed $value): ?string
+    {
+        $text = trim((string) ($value ?? ''));
+
+        return $text === '' ? null : $text;
     }
 
     /**

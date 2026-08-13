@@ -453,7 +453,7 @@ final class DayZStartupService
         return array_values(array_unique(array_filter(array_map(
             static fn (mixed $id): string => trim((string) $id),
             $workshopIds,
-        ), static fn (string $id): bool => $id !== '' && ctype_digit($id))));
+        ), static fn (string $id): bool => $id !== '' && ctype_digit($id) && (int) $id > 0)));
     }
 
     /**

@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS `dayz_player_lists` (
     `id`         INT UNSIGNED  NOT NULL AUTO_INCREMENT,
     `list_type`  ENUM('ban','whitelist','priority') NOT NULL,
     `player_id`  VARCHAR(64)   NOT NULL COMMENT 'Steam64 ID or GUID',
+    `nickname`   VARCHAR(255)  NOT NULL DEFAULT '',
     `note`       VARCHAR(255)  NOT NULL DEFAULT '',
     `added_by`   VARCHAR(64)   NOT NULL DEFAULT '',
     `created_at` TIMESTAMP     NULL DEFAULT NULL,
@@ -58,7 +59,9 @@ CREATE TABLE IF NOT EXISTS `dayz_restart_schedules` (
     `server_id`        VARCHAR(64)   NOT NULL,
     `enabled`          TINYINT(1)    NOT NULL DEFAULT 0,
     `interval_minutes` INT           NOT NULL DEFAULT 360,
+    `start_time`       VARCHAR(5)    NOT NULL DEFAULT '',
     `next_restart_at`  TIMESTAMP     NULL DEFAULT NULL,
+    `last_restart_at`  TIMESTAMP     NULL DEFAULT NULL,
     `timed_restart_at` TIMESTAMP     NULL DEFAULT NULL,
     `timed_warnings_sent` VARCHAR(255) NOT NULL DEFAULT '',
     `warnings_sent`    VARCHAR(255)  NOT NULL DEFAULT '',
@@ -97,7 +100,9 @@ ALTER TABLE `dayz_restart_schedules`
     ADD COLUMN IF NOT EXISTS `timed_restart_at`      TIMESTAMP     NULL DEFAULT NULL AFTER `next_restart_at`,
     ADD COLUMN IF NOT EXISTS `timed_warnings_sent`   VARCHAR(255)  NOT NULL DEFAULT '' AFTER `timed_restart_at`,
     ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1' AFTER `warnings_sent`,
-    ADD COLUMN IF NOT EXISTS `warning_messages`      TEXT          NULL AFTER `warning_minutes_enabled`;
+    ADD COLUMN IF NOT EXISTS `warning_messages`      TEXT          NULL AFTER `warning_minutes_enabled`,
+    ADD COLUMN IF NOT EXISTS `start_time`             VARCHAR(5)    NOT NULL DEFAULT '' AFTER `interval_minutes`,
+    ADD COLUMN IF NOT EXISTS `last_restart_at`        TIMESTAMP     NULL DEFAULT NULL AFTER `next_restart_at`;
 
 CREATE TABLE IF NOT EXISTS `dayz_dzsa_pending` (
     `id`           INT UNSIGNED  NOT NULL AUTO_INCREMENT,
@@ -142,4 +147,36 @@ CREATE TABLE IF NOT EXISTS `dayz_observed_players` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_dayz_observed_players_server_player` (`server_id`, `player_id`),
     KEY `idx_dayz_observed_players_server_seen` (`server_id`, `last_seen_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE `dayz_observed_players`
+    ADD COLUMN IF NOT EXISTS `steam64` VARCHAR(64) NULL DEFAULT NULL AFTER `player_id`,
+    ADD KEY IF NOT EXISTS `idx_dayz_observed_players_steam64` (`steam64`);
+
+CREATE TABLE IF NOT EXISTS `dayz_observed_player_backups` (
+    `id`            INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`     VARCHAR(64)   NOT NULL,
+    `player_id`     VARCHAR(64)   NOT NULL,
+    `snapshot_json` LONGTEXT      NOT NULL,
+    `created_at`    TIMESTAMP     NULL DEFAULT NULL,
+    `updated_at`    TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_dayz_observed_player_backups_server_player` (`server_id`, `player_id`),
+    KEY `idx_dayz_observed_player_backups_server_created` (`server_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dayz_give_money_queue` (
+    `id`          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    `server_id`   VARCHAR(64)   NOT NULL,
+    `player_id`   VARCHAR(64)   NOT NULL,
+    `player_name` VARCHAR(255)  NOT NULL DEFAULT '',
+    `item_class`  VARCHAR(64)   NOT NULL,
+    `quantity`    SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+    `status`      VARCHAR(16)   NOT NULL DEFAULT 'pending',
+    `note`        VARCHAR(255)  NOT NULL DEFAULT '',
+    `created_at`  TIMESTAMP     NULL DEFAULT NULL,
+    `updated_at`  TIMESTAMP     NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `idx_dayz_give_money_queue_server_player` (`server_id`, `player_id`),
+    KEY `idx_dayz_give_money_queue_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

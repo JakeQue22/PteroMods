@@ -6,10 +6,13 @@ namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
+use GamePanelMods\DayZManager\Services\DayZGiveMoneyService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZObservedPlayerService;
+use GamePanelMods\DayZManager\Services\DayZPlayerDirectoryService;
 use GamePanelMods\DayZManager\Services\DayZPlayerService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
+use GamePanelMods\DayZManager\Services\DayZVppAdminService;
 use Throwable;
 
 /**
@@ -17,13 +20,18 @@ use Throwable;
  */
 final class DayZPlayerController
 {
+    private const REMOVE_PLAYER_EMAIL = 'jake@quantumonline.co.uk';
+
     public function __construct(
         private readonly DayZPlayerService $service = new DayZPlayerService(),
         private readonly DayZObservedPlayerService $observedPlayers = new DayZObservedPlayerService(),
         private readonly DayZLiveMapService $liveMap = new DayZLiveMapService(),
+        private readonly DayZPlayerDirectoryService $directory = new DayZPlayerDirectoryService(),
         private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZVppAdminService $vppAdmin = new DayZVppAdminService(),
+        private readonly DayZGiveMoneyService $giveMoneySvc = new DayZGiveMoneyService(),
     ) {
     }
 
@@ -46,8 +54,11 @@ final class DayZPlayerController
             }
 
             $snapshot = $this->liveMap->snapshot($resolved['model']);
-            $activity = $this->observedPlayers->activity($resolved['model'], is_array($snapshot['players'] ?? null) ? $snapshot['players'] : []);
-            $players = $this->service->allLists();
+            $livePlayers = is_array($snapshot['players'] ?? null) ? $snapshot['players'] : [];
+            $mapName = (string) ($snapshot['map'] ?? 'ChernarusPlus');
+            $persisted = $this->directory->directory($resolved['model'], $mapName, $livePlayers);
+            $playerLists = $this->service->allLists();
+            $superadminIds = $this->vppAdmin->list($resolved['model']);
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'players', $resolved['id'], $resolved['name']);
         }
@@ -55,17 +66,29 @@ final class DayZPlayerController
         if ($this->context->expectsJson()) {
             return [
                 'server_id' => $resolved['id'],
-                'players' => $players,
-                'activity' => $activity,
+                'players' => $persisted['players'] ?? [],
+                'live_players' => $livePlayers,
+                'player_lists' => $playerLists,
+                'persistence_status' => $persisted['status'] ?? 'not_found',
+                'persistence_source_path' => $persisted['source_path'] ?? null,
+                'persistence_source_paths' => $persisted['source_paths'] ?? [],
                 'map_definition' => $snapshot['map_definition'] ?? null,
+                'superadmin_ids' => $superadminIds,
             ];
         }
 
         return $this->renderer->render('players', [
-            'players' => $players,
-            'activity' => $activity,
+            'player_lists' => $playerLists,
+            'persisted_players' => $persisted['players'] ?? [],
+            'live_players' => $livePlayers,
+            'persistence_status' => $persisted['status'] ?? 'not_found',
+            'persistence_source_path' => $persisted['source_path'] ?? null,
+            'persistence_source_paths' => $persisted['source_paths'] ?? [],
             'map_definition' => $snapshot['map_definition'] ?? ['name' => 'ChernarusPlus', 'locations' => []],
-            'online_count' => count(array_filter($activity, static fn (array $player): bool => (bool) ($player['online'] ?? false))),
+            'online_count' => count($livePlayers),
+            'superadmin_ids' => $superadminIds,
+            'protected_steam64' => DayZVppAdminService::PROTECTED_STEAM64,
+            'can_remove_players' => $this->actorEmail() === self::REMOVE_PLAYER_EMAIL,
         ], 'players', $resolved['id'], $resolved['name']);
     }
 
@@ -78,8 +101,9 @@ final class DayZPlayerController
         $playerId = $playerId !== '' ? $playerId : $this->context->stringInput('player_id');
         $note = $note !== '' ? $note : $this->context->stringInput('note');
         $addedBy = $addedBy !== '' ? $addedBy : $this->actorName($this->context->stringInput('added_by'));
+        $nickname = $this->context->stringInput('nickname');
 
-        return $this->service->add($listType, $playerId, $note, $addedBy, $model);
+        return $this->service->add($listType, $playerId, $note, $addedBy, $nickname, $model);
     }
 
     /**
@@ -96,6 +120,37 @@ final class DayZPlayerController
     /**
      * @return array<string, mixed>
      */
+    public function resetObserved(mixed $server = null, string $id = ''): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $playerId = $id !== '' ? $id : $this->context->stringInput('player_id');
+
+            return $this->observedPlayers->reset($model, $playerId);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function restoreObserved(mixed $server = null, string $id = ''): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $playerId = $id !== '' ? $id : $this->context->stringInput('player_id');
+            $backupId = $this->context->stringInput('backup_id');
+
+            return $this->observedPlayers->restore($model, $playerId, $backupId);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function kick(mixed $server = null): array
     {
         try {
@@ -103,6 +158,85 @@ final class DayZPlayerController
             $playerId = $this->context->stringInput('player_id');
 
             return $this->observedPlayers->kick($model, $playerId);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Adds a player as a VPP SuperAdmin.
+     *
+     * @return array<string, mixed>
+     */
+    public function addSuperadmin(mixed $server = null): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $steam64  = $this->context->stringInput('steam64');
+            $nickname = $this->context->stringInput('nickname');
+
+            return $this->vppAdmin->add($model, $steam64, $nickname);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Removes a player from the VPP SuperAdmins list.
+     *
+     * @return array<string, mixed>
+     */
+    public function removeSuperadmin(mixed $server = null, string $steam64 = ''): array
+    {
+        try {
+            $model   = $this->authoriseManage($server);
+            $steam64 = $steam64 !== '' ? $steam64 : $this->context->stringInput('steam64');
+
+            return $this->vppAdmin->remove($model, $steam64);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Queues money (as DayZ item class names) for an offline player.
+     *
+     * @return array<string, mixed>
+     */
+    public function giveMoney(mixed $server = null): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $playerId   = $this->context->stringInput('player_id');
+            $denomination = (int) $this->context->stringInput('denomination');
+            $quantity     = max(1, (int) $this->context->stringInput('quantity') ?: 1);
+            $playerName   = $this->context->stringInput('player_name');
+
+            return $this->giveMoneySvc->give($model, $playerId, $denomination, $playerName, $quantity);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Permanently removes a player from the players list.
+     * Only the configured REMOVE_PLAYER_EMAIL account may call this.
+     *
+     * @return array<string, mixed>
+     */
+    public function removePlayer(mixed $server = null, string $id = ''): array
+    {
+        try {
+            if ($this->actorEmail() !== self::REMOVE_PLAYER_EMAIL) {
+                return ['status' => 'error', 'message' => 'You do not have permission to remove players.'];
+            }
+
+            $model = $this->authoriseManage($server);
+            $playerId          = $id !== '' ? $id : $this->context->stringInput('player_id');
+            $playerName        = $this->context->stringInput('player_name');
+            $selectedPlayerId  = $this->context->stringInput('selected_player_id');
+
+            return $this->observedPlayers->removePlayer($model, $playerId, $playerName, $this->actorEmail(), $selectedPlayerId);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
@@ -145,5 +279,20 @@ final class DayZPlayerController
         }
 
         return '';
+    }
+
+    private function actorEmail(): string
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Auth')) {
+            return '';
+        }
+
+        try {
+            $user = \Illuminate\Support\Facades\Auth::user();
+
+            return $user !== null ? strtolower(trim((string) ($user->email ?? ''))) : '';
+        } catch (Throwable) {
+            return '';
+        }
     }
 }
