@@ -221,28 +221,28 @@ final class DayZPlayerController
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
+    }
 
-        /**
-         * @return array<string, mixed>
-         */
-        public function resolveInventory(mixed $server = null): array
-        {
-            try {
-                $model = $this->context->resolve($server)['model'];
-                $items = $this->context->input('items', []);
-                $forceRefresh = filter_var($this->context->input('refresh', false), FILTER_VALIDATE_BOOL);
+    /**
+     * @return array<string, mixed>
+     */
+    public function resolveInventory(mixed $server = null): array
+    {
+        try {
+            $this->authoriseManage($server);
+            $items = $this->context->input('items', []);
+            $forceRefresh = filter_var($this->context->input('refresh', false), FILTER_VALIDATE_BOOL);
 
-                if (!is_array($items)) {
-                    return ['status' => 'error', 'message' => 'Inventory items payload must be an array.', 'items' => []];
-                }
-
-                return [
-                    'status' => 'ok',
-                    'items' => $this->inventoryResolver->resolveBatch($items, $forceRefresh),
-                ];
-            } catch (Throwable $exception) {
-                return ['status' => 'error', 'message' => $exception->getMessage(), 'items' => []];
+            if (!is_array($items)) {
+                return ['status' => 'error', 'message' => 'Inventory items payload must be an array.', 'items' => []];
             }
+
+            return [
+                'status' => 'ok',
+                'items' => $this->inventoryResolver->resolveBatch($items, $forceRefresh),
+            ];
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage(), 'items' => []];
         }
     }
 
