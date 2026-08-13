@@ -71,18 +71,21 @@
     // {map} is replaced with the map's tile id; {z}/{x}/{y} are Leaflet placeholders.
     const TILE_URL_TPL = @json($tile_url ?? '');
     const INITIAL_SUPERADMINS = @json(array_values($superadmin_ids ?? []));
-    const INITIAL_SNAPSHOT = @json([
-        'status' => $status ?? 'waiting_for_bridge',
-        'source' => $source ?? '',
-        'map' => $map ?? 'ChernarusPlus',
-        'map_definition' => $map_definition ?? ['name' => 'ChernarusPlus', 'world_size' => 15360.0, 'locations' => []],
-        'players' => $players ?? [],
-        'online_count' => $online_count ?? 0,
-        'last_update' => $last_update ?? null,
-        'query_online' => $query_online ?? false,
+    @php
+    $_snapshot_data = [
+        'status'             => $status ?? 'waiting_for_bridge',
+        'source'             => $source ?? '',
+        'map'                => $map ?? 'ChernarusPlus',
+        'map_definition'     => $map_definition ?? ['name' => 'ChernarusPlus', 'world_size' => 15360.0, 'locations' => []],
+        'players'            => $players ?? [],
+        'online_count'       => $online_count ?? 0,
+        'last_update'        => $last_update ?? null,
+        'query_online'       => $query_online ?? false,
         'query_player_count' => $query_player_count ?? 0,
-        'superadmin_ids' => $superadmin_ids ?? [],
-    ]);
+        'superadmin_ids'     => $superadmin_ids ?? [],
+    ];
+    @endphp
+    const INITIAL_SNAPSHOT = @json($_snapshot_data);
     const INITIAL_MARKER_GROUPS = @json($initial_marker_groups ?? []);
     const INITIAL_PLAYER_DIRECTORY = @json($initial_player_directory ?? []);
     const INITIAL_BRIDGE_STATUS = @json($initial_bridge_status ?? null);

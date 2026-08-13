@@ -360,6 +360,23 @@ final class DayZServerService
         }
 
         // ── Recurring scheduled restart ───────────────────────────────────────
+        // While a one-time timed restart is pending, the scheduled restart is
+        // suppressed so the timed override is the sole authority for when the
+        // next restart and its warning messages will fire.
+        if ($this->hasScheduleColumn('timed_restart_at')) {
+            $pendingTimed = $schedule['timed_restart_at'] ?? null;
+            $pendingTimedTs = $pendingTimed !== null ? strtotime((string) $pendingTimed) : false;
+            if ($pendingTimedTs !== false && $pendingTimedTs > $now) {
+                return [
+                    'status'          => $results === [] ? 'idle' : 'warning_sent',
+                    'messages_sent'   => $results,
+                    'next_restart_at' => (string) ($schedule['next_restart_at'] ?? ''),
+                    'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
+                    'restarted'       => false,
+                ];
+            }
+        }
+
         if (!(bool) ($schedule['enabled'] ?? false)) {
             return [
                 'status'          => $results === [] ? 'idle' : 'warning_sent',
@@ -435,12 +452,9 @@ final class DayZServerService
      * the countdown accurate and avoids a burst of stale "restart in 3 hours"
      * style messages when ticks resume after a gap.
      *
-     * The returned `remaining_minutes` is the actual seconds-accurate time left
-     * until the restart (rounded up), which callers should use for the displayed
-     * countdown rather than the threshold key (`minutes`). This ensures the
-     * in-game message always reflects real remaining time — e.g. "restart in
-     * 45 minutes" instead of "restart in 60 minutes" when the 60-min threshold
-     * was crossed late.
+     * The returned `remaining_minutes` equals the threshold key (`minutes`) so
+     * the in-game message always reads the configured value (e.g. "2 hours") and
+     * is never off by a minute due to scheduler tick timing drift.
      *
      * @param list<int> $enabledMinutes
      * @param list<int> $alreadySent
@@ -460,13 +474,12 @@ final class DayZServerService
 
         sort($due);
 
-        // Compute actual remaining time so the message is accurate regardless of
-        // when this tick fired relative to the threshold crossing.
-        $remainingMinutes = max(1, (int) ceil(($next - $now) / 60));
-
+        // Use the threshold key as the display value so that minor scheduler
+        // tick drift (a few seconds late) never causes the message to read
+        // "1 hour 59 min" instead of "2 hours", etc.
         return [
             'minutes'          => $due[0],
-            'remaining_minutes' => $remainingMinutes,
+            'remaining_minutes' => $due[0],
             'sent'             => array_values(array_unique(array_merge($alreadySent, $due))),
         ];
     }
@@ -745,9 +758,23 @@ final class DayZServerService
         // delay (i.e., M >= $minutes) so the first tick does not fire them all at
         // once. The immediate announcement below already covers the "restart in N
         // minutes" message; shorter-interval warnings will fire at the right time.
+        //
+        // Additionally, if the recurring schedule has a next_restart_at that is
+        // sooner than the timed delay, also pre-mark thresholds covered by that
+        // proximity: those warnings would have been sent by the scheduled path and
+        // the timed override should start its countdown from where the schedule
+        // left off.
+        $schedule = $this->scheduleRow($serverId);
+        $scheduledNextTs = $schedule !== null
+            ? strtotime((string) ($schedule['next_restart_at'] ?? ''))
+            : false;
+        $minutesUntilScheduled = ($scheduledNextTs !== false && $scheduledNextTs > time())
+            ? (int) ceil(($scheduledNextTs - time()) / 60)
+            : 0;
+
         $alreadySent = array_values(array_filter(
             self::RESTART_WARNINGS_MINUTES,
-            static fn (int $m): bool => $m >= $minutes,
+            static fn (int $m): bool => $m >= $minutes || ($minutesUntilScheduled > 0 && $m >= $minutesUntilScheduled),
         ));
 
         $update = [
