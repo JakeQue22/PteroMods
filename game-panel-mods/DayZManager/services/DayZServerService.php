@@ -345,7 +345,7 @@ final class DayZServerService
                 );
 
                 if ($warning !== null) {
-                    $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule));
+                    $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule), $warning['remaining_minutes']);
 
                     if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
                         $results[] = $message;
@@ -401,7 +401,7 @@ final class DayZServerService
             $warning = $this->dueWarning($next, $now, $this->enabledWarningMinutes($schedule), $warningsSent);
 
             if ($warning !== null) {
-                $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule));
+                $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule), $warning['remaining_minutes']);
 
                 if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
                     $results[] = $message;
@@ -437,9 +437,16 @@ final class DayZServerService
      * the countdown accurate and avoids a burst of stale "restart in 3 hours"
      * style messages when ticks resume after a gap.
      *
+     * The returned `remaining_minutes` is the actual seconds-accurate time left
+     * until the restart (rounded up), which callers should use for the displayed
+     * countdown rather than the threshold key (`minutes`). This ensures the
+     * in-game message always reflects real remaining time — e.g. "restart in
+     * 45 minutes" instead of "restart in 60 minutes" when the 60-min threshold
+     * was crossed late.
+     *
      * @param list<int> $enabledMinutes
      * @param list<int> $alreadySent
-     * @return array{minutes: int, sent: list<int>}|null
+     * @return array{minutes: int, remaining_minutes: int, sent: list<int>}|null
      */
     private function dueWarning(int $next, int $now, array $enabledMinutes, array $alreadySent): ?array
     {
@@ -455,9 +462,14 @@ final class DayZServerService
 
         sort($due);
 
+        // Compute actual remaining time so the message is accurate regardless of
+        // when this tick fired relative to the threshold crossing.
+        $remainingMinutes = max(1, (int) ceil(($next - $now) / 60));
+
         return [
-            'minutes' => $due[0],
-            'sent' => array_values(array_unique(array_merge($alreadySent, $due))),
+            'minutes'          => $due[0],
+            'remaining_minutes' => $remainingMinutes,
+            'sent'             => array_values(array_unique(array_merge($alreadySent, $due))),
         ];
     }
 
@@ -1149,10 +1161,17 @@ final class DayZServerService
     /**
      * @param array<string, string> $customMessages
      */
-    private function warningMessage(int $minutes, array $customMessages): string
+    /**
+     * @param int|null $remainingMinutes Actual remaining minutes to the restart;
+     *                                   when provided it replaces the threshold
+     *                                   value in the {time} placeholder so the
+     *                                   in-game countdown is always accurate.
+     */
+    private function warningMessage(int $minutes, array $customMessages, ?int $remainingMinutes = null): string
     {
+        $displayMinutes = $remainingMinutes ?? $minutes;
         $template = $customMessages[(string) $minutes] ?? 'Server restart in {time}.';
-        $message = str_replace('{time}', $this->formatMinutes($minutes), $template);
+        $message = str_replace('{time}', $this->formatMinutes($displayMinutes), $template);
 
         if (preg_match('/<t\b/i', $message) !== 1) {
             $message = "<t color='#ff0000'>" . $message . '</t>';
