@@ -48,26 +48,40 @@ final class DayZCacheWarmService
             return;
         }
 
-        try {
-            foreach ($this->serversToWarm($priorityServer) as $server) {
-                $this->dashboard->dashboard($server);
-                $this->workshop->installedMods($server);
-                $this->workshop->settings($server);
-                $this->server->launchParameters($server);
-                $this->query->query($server);
-                $this->logScrub->tick($server);
+        // Resolve the server list synchronously (cheap DB query) so the
+        // priority server is always included even if the shutdown function runs
+        // in a different execution context.
+        $serversToWarm = $this->serversToWarm($priorityServer);
+
+        // Defer the actual warming work to run after the response has been sent
+        // so tab loads always return stale cache immediately rather than
+        // blocking while cold-cache service calls complete.
+        register_shutdown_function(function () use ($serversToWarm, $lockKey): void {
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
             }
 
-            $this->players->allLists();
-        } catch (Throwable) {
-            // Best-effort warming only.
-        } finally {
             try {
-                \Illuminate\Support\Facades\Cache::forget($lockKey);
+                foreach ($serversToWarm as $server) {
+                    $this->dashboard->dashboard($server);
+                    $this->workshop->installedMods($server);
+                    $this->workshop->settings($server);
+                    $this->server->launchParameters($server);
+                    $this->query->query($server);
+                    $this->logScrub->tick($server);
+                }
+
+                $this->players->allLists();
             } catch (Throwable) {
-                // Best-effort lock cleanup.
+                // Best-effort warming only.
+            } finally {
+                try {
+                    \Illuminate\Support\Facades\Cache::forget($lockKey);
+                } catch (Throwable) {
+                    // Best-effort lock cleanup.
+                }
             }
-        }
+        });
     }
 
     /**

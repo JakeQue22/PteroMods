@@ -141,6 +141,59 @@ final class DayZGiveMoneyService
     }
 
     /**
+     * Marks a pending queue entry as 'delivered' (called by the server-side mod
+     * via the panel API, or manually from the UI).
+     *
+     * @return array<string, mixed>
+     */
+    public function markFulfilled(mixed $server, int $queueId): array
+    {
+        $serverId = $this->serverId($server);
+
+        if ($serverId === '') {
+            return ['status' => 'error', 'message' => 'Could not resolve server.'];
+        }
+
+        if ($queueId <= 0 || !$this->tableExists()) {
+            return ['status' => 'error', 'message' => 'That give money queue entry could not be found.'];
+        }
+
+        try {
+            $updated = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('id', $queueId)
+                ->whereIn('status', ['pending'])
+                ->update(['status' => 'delivered', 'updated_at' => date('Y-m-d H:i:s')]);
+
+            if ($updated < 1) {
+                // Already delivered or not found — still a success from the caller's view.
+                return ['status' => 'ok', 'id' => $queueId, 'message' => 'Queue entry already marked as delivered.'];
+            }
+
+            // Re-sync the queue file for this player so it no longer contains
+            // this entry.
+            $row = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('id', $queueId)
+                ->first();
+
+            if ($row !== null) {
+                $entry = (array) $row;
+                $playerId = trim((string) ($entry['player_id'] ?? ''));
+                $playerUid = trim((string) ($entry['player_uid'] ?? ''));
+
+                if ($playerId !== '') {
+                    $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
+                }
+            }
+
+            return ['status' => 'delivered', 'id' => $queueId, 'message' => 'Queue entry marked as delivered.'];
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
      * Removes a pending queue entry and rewrites the server-side queue file.
      *
      * @return array<string, mixed>

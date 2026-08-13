@@ -285,6 +285,9 @@
                     <td style="padding:0.25rem 0.5rem;color:var(--dz-muted);">{{ $entry['created_at_display'] ?? ($entry['created_at'] ?? '—') }}</td>
                     <td style="padding:0.25rem 0.5rem;">
                         @if (!empty($entry['id']))
+                            @if (($entry['status'] ?? 'pending') === 'pending')
+                                <button class="dz-btn" type="button" style="margin-right:0.25rem;" onclick="pteroFulfillGiveMoney({{ (int) $entry['id'] }}, {{ json_encode(($entry['player_name'] ?? '') !== '' ? $entry['player_name'] : ($entry['player_id'] ?? 'player'), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Mark Done</button>
+                            @endif
                             <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveGiveMoney({{ (int) $entry['id'] }}, {{ json_encode(($entry['player_name'] ?? '') !== '' ? $entry['player_name'] : ($entry['player_id'] ?? 'player'), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($entry['item_class'] ?? 'item'), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ (int) ($entry['quantity'] ?? 1) }})">Remove</button>
                         @endif
                     </td>
@@ -476,6 +479,19 @@
                 if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
             })
             .catch(function () { setStatus('Give money request failed.', false, playerActionId); });
+    };
+
+    window.pteroFulfillGiveMoney = function (queueId, playerName) {
+        if (!queueId) { return; }
+        if (!confirm('Mark queue entry for "' + playerName + '" as delivered? This confirms the server-side mod has processed the item.')) { return; }
+        setStatus('Marking as delivered…', undefined, 'give-money-queue');
+        req('POST', '/dayz/player-actions/give-money/' + encodeURIComponent(queueId) + '/fulfil', null)
+            .then(function (d) {
+                var ok = d.status === 'delivered' || d.status === 'ok';
+                setStatus(d.message || (ok ? 'Marked as delivered.' : 'Failed to mark as delivered.'), ok ? undefined : false, 'give-money-queue');
+                if (ok) { setTimeout(function () { window.location.reload(); }, 900); }
+            })
+            .catch(function () { setStatus('Fulfil give money request failed.', false, 'give-money-queue'); });
     };
 
     window.pteroRemoveGiveMoney = function (queueId, playerName, itemClass, quantity) {

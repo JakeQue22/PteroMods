@@ -264,6 +264,24 @@ final class DayZPlayerController
     }
 
     /**
+     * Marks a give-money queue entry as delivered.
+     * Called by the server-side mod callback or manually from the UI.
+     *
+     * @return array<string, mixed>
+     */
+    public function fulfillGiveMoney(mixed $server = null, string $id = ''): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $queueId = (int) ($id !== '' ? $id : $this->context->stringInput('id'));
+
+            return $this->giveMoneySvc->markFulfilled($model, $queueId);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
      * Permanently removes a player from the players list.
      * Only the configured REMOVE_PLAYER_EMAIL account may call this.
      *

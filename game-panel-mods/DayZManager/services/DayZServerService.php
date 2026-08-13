@@ -349,9 +349,8 @@ final class DayZServerService
 
                     if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
                         $results[] = $message;
+                        $timedWarningsSent = $warning['sent'];
                     }
-
-                    $timedWarningsSent = $warning['sent'];
                 }
 
                 if ($timedWarningsSent !== $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''))) {
@@ -405,9 +404,8 @@ final class DayZServerService
 
                 if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
                     $results[] = $message;
+                    $warningsSent = $warning['sent'];
                 }
-
-                $warningsSent = $warning['sent'];
             }
         }
 

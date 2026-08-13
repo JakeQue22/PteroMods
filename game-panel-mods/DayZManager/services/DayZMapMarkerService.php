@@ -173,6 +173,7 @@ final class DayZMapMarkerService
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -189,12 +190,30 @@ final class DayZMapMarkerService
      */
     public function markers(mixed $server, string $mapName): array
     {
-        $cached = $this->cached($server, $mapName);
+        $cacheKey = $this->cacheKey($server, $mapName);
 
-        if ($cached !== null) {
-            return $cached;
+        if ($cacheKey !== '') {
+            /** @var array{status: string, map: string, groups: list<array<string, mixed>>, sources: list<string>>}|null $result */
+            $result = $this->staleCache->remember(
+                $cacheKey,
+                self::CACHE_SECONDS,
+                self::CACHE_SECONDS * 20,
+                fn (): array => $this->buildMarkers($server, $mapName),
+            );
+
+            if (is_array($result)) {
+                return $result;
+            }
         }
 
+        return $this->buildMarkers($server, $mapName);
+    }
+
+    /**
+     * @return array{status: string, map: string, groups: list<array<string, mixed>>, sources: list<string>}
+     */
+    private function buildMarkers(mixed $server, string $mapName): array
+    {
         $markers = [];
         $sources = [];
 
@@ -216,8 +235,6 @@ final class DayZMapMarkerService
             'groups' => $this->buildGroups($markers),
             'sources' => $sources,
         ];
-
-        $this->remember($server, $mapName, $result);
 
         return $result;
     }
@@ -579,44 +596,6 @@ final class DayZMapMarkerService
         }
 
         return $missions === [] ? '' : '/mpmissions/' . $missions[0];
-    }
-
-    /**
-     * @return array{status: string, map: string, groups: list<array<string, mixed>>, sources: list<string>}|null
-     */
-    private function cached(mixed $server, string $mapName): ?array
-    {
-        $key = $this->cacheKey($server, $mapName);
-
-        if ($key === '' || !class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return null;
-        }
-
-        try {
-            $value = \Illuminate\Support\Facades\Cache::get($key);
-        } catch (Throwable) {
-            return null;
-        }
-
-        return is_array($value) ? $value : null;
-    }
-
-    /**
-     * @param array<string, mixed> $result
-     */
-    private function remember(mixed $server, string $mapName, array $result): void
-    {
-        $key = $this->cacheKey($server, $mapName);
-
-        if ($key === '' || !class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return;
-        }
-
-        try {
-            \Illuminate\Support\Facades\Cache::put($key, $result, self::CACHE_SECONDS);
-        } catch (Throwable) {
-            // Best-effort caching only.
-        }
     }
 
     private function cacheKey(mixed $server, string $mapName): string
