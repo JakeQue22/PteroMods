@@ -48,20 +48,39 @@
                 $listEntryIds = is_array($player['list_entry_ids'] ?? null) ? $player['list_entry_ids'] : [];
                 $resetBackupId = isset($player['reset_backup_id']) ? (int) $player['reset_backup_id'] : 0;
                 $resetBackupAt = !empty($player['reset_backup_at']) ? (string) $player['reset_backup_at'] : null;
+                $isOnline = !empty($player['online']);
+                $previousNames = is_array($player['previous_names'] ?? null) ? $player['previous_names'] : [];
+                $canRemovePlayers = !empty($can_remove_players) && !$isProtectedPlayer;
                 $resetBackupLabel = $resetBackupAt ? date('d-m-Y H:i', strtotime($resetBackupAt)) : null;
+                $currentName = (string) ($player['name'] ?? '');
+                $filteredPreviousNames = array_values(array_filter($previousNames, static fn ($pn) => ($pn['nickname'] ?? '') !== '' && ($pn['nickname'] ?? '') !== $currentName));
             @endphp
             <div class="dz-player-card" data-search="{{ strtolower(trim(($player['name'] ?? '') . ' ' . ($steam64 ?? '') . ' ' . $playerId . ' ' . ($uid ?? ''))) }}">
                 <div class="dz-player-card__head">
                     <div>
                         <strong>{{ $player['name'] ?: $playerId }}</strong>
                     </div>
-                    <span class="dz-badge {{ !empty($player['online']) ? 'dz-badge-on' : 'dz-badge-off' }}">
-                        {{ !empty($player['online']) ? 'Online' : 'Offline' }}
-                    </span>
+                    <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <span class="dz-badge {{ !empty($player['online']) ? 'dz-badge-on' : 'dz-badge-off' }}">
+                            {{ !empty($player['online']) ? 'Online' : 'Offline' }}
+                        </span>
+                        @if ($canRemovePlayers)
+                            <button class="dz-btn dz-btn-red" type="button" title="Remove player permanently" style="padding:0.15rem 0.45rem;font-size:0.85rem;line-height:1;" onclick="pteroRemovePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">✕</button>
+                        @endif
+                    </div>
                 </div>
 
                 <dl class="dz-browse-meta" style="margin-top:0.75rem;">
                     <div><dt>Nickname</dt><dd>{{ $player['name'] ?: '—' }}</dd></div>
+                    @if (!empty($filteredPreviousNames))
+                        <div><dt>Previous names</dt><dd>
+                            <span style="font-size:0.82rem;color:var(--dz-muted);">
+                                @foreach ($filteredPreviousNames as $pn)
+                                    {{ $pn['nickname'] }}@if (!$loop->last), @endif
+                                @endforeach
+                            </span>
+                        </dd></div>
+                    @endif
                     <div><dt>Steam64</dt><dd>
                         @if ($steam64)
                             <a href="https://steamcommunity.com/profiles/{{ $steam64 }}" target="_blank" rel="noopener noreferrer">{{ $steam64 }}</a>
@@ -159,6 +178,9 @@
                     @endif
                     @if ($resetBackupId > 0)
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
+                    @endif
+                    @if (!$isOnline)
+                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
                     @endif
                 </div>
             </div>
@@ -367,6 +389,52 @@
                 if (d.status === 'restored') { setTimeout(function () { window.location.reload(); }, 900); }
             })
             .catch(function () { setStatus('Restore request failed.', false); });
+    };
+
+    window.pteroGiveMoney = function (playerId, playerName) {
+        var msg = '⚠️  Player must be OFFLINE before giving money.\n\n'
+            + 'Give money to "' + playerName + '"?\n\n'
+            + 'Select denomination:\n'
+            + '  1   = MoneyRuble1  (1 coin)\n'
+            + '  50  = MoneyRuble50 (50 coins)\n'
+            + '  100 = MoneyRuble100 (100 coins)';
+        var denom = window.prompt(msg + '\n\nEnter denomination (1 / 50 / 100):', '100');
+        if (denom === null) { return; }
+        denom = parseInt(denom, 10);
+        if (denom !== 1 && denom !== 50 && denom !== 100) {
+            alert('Invalid denomination. Please enter 1, 50, or 100.');
+            return;
+        }
+        var qty = window.prompt('How many items of MoneyRuble' + denom + ' to give? (1–99)', '1');
+        if (qty === null) { return; }
+        qty = Math.max(1, Math.min(99, parseInt(qty, 10) || 1));
+        setStatus('Queueing give money…');
+        req('POST', '/dayz/player-actions/give-money', { player_id: playerId, player_name: playerName, denomination: denom, quantity: qty })
+            .then(function (d) {
+                var ok = d.status === 'queued';
+                setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false);
+            })
+            .catch(function () { setStatus('Give money request failed.', false); });
+    };
+
+    window.pteroRemovePlayer = function (playerId, playerName) {
+        var msg = '⛔  PERMANENTLY REMOVE "' + playerName + '" from the players list?\n\n'
+            + 'This action CANNOT be undone. The player will be hidden from the list permanently '
+            + '(they will reappear if observed online again, but will be re-hidden immediately).';
+        if (!confirm(msg)) { return; }
+        var confirmInput = window.prompt('Type REMOVE to confirm permanent removal of "' + playerName + '":', '');
+        if ((confirmInput || '').trim().toUpperCase() !== 'REMOVE') {
+            setStatus('Removal cancelled — type REMOVE to confirm.', false);
+            return;
+        }
+        setStatus('Removing player…');
+        req('DELETE', '/dayz/player-actions/players/' + encodeURIComponent(playerId), { player_name: playerName })
+            .then(function (d) {
+                var ok = d.status === 'removed';
+                setStatus(d.message || (ok ? 'Player removed.' : 'Removal failed.'), ok ? undefined : false);
+                if (ok) { setTimeout(function () { window.location.reload(); }, 900); }
+            })
+            .catch(function () { setStatus('Remove request failed.', false); });
     };
 
     window.pteroViewInventory = function (playerName, inventoryJson) {

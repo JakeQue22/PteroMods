@@ -42,6 +42,8 @@ $routes = [
 foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix) {
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/players/superadmin',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@addSuperadmin'];
     $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/players/superadmin/{id}',   'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removeSuperadmin'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@giveMoney'];
+    $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/player-actions/players/{id}', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removePlayer'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/tab', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZTabController@status'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dashboard', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/power', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@power'];

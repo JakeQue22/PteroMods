@@ -60,6 +60,7 @@ final class DayZPlayerDirectoryService
                 'player_id' => $playerId !== '' ? $playerId : $key,
                 'player_uid' => $playerId !== '' && $playerId !== $steam64 ? $playerId : null,
                 'name' => trim((string) ($entry['name'] ?? '')) ?: $key,
+                'previous_names' => is_array($entry['previous_names'] ?? null) ? $entry['previous_names'] : [],
                 'online' => (bool) ($entry['online'] ?? false),
                 'alive' => $entry['alive'] ?? null,
                 'health' => $entry['health'] ?? null,
@@ -112,6 +113,7 @@ final class DayZPlayerDirectoryService
                 'player_id' => $existing['player_id'] ?? $bridgeId,
                 'player_uid' => $existing['player_uid'] ?? ($bridgeId !== $realSteam64 ? $bridgeId : null),
                 'name' => trim((string) ($live['name'] ?? '')) ?: (string) ($existing['name'] ?? $key),
+                'previous_names' => is_array($existing['previous_names'] ?? null) ? $existing['previous_names'] : [],
                 'online' => true,
                 'alive' => $live['alive'] ?? ($existing['alive'] ?? null),
                 'health' => $live['health'] ?? ($existing['health'] ?? null),
@@ -173,6 +175,7 @@ final class DayZPlayerDirectoryService
                 'name' => !empty($record['has_name'])
                     ? (string) $record['name']
                     : (string) ($existing['name'] ?? $record['name'] ?? $key),
+                'previous_names' => is_array($existing['previous_names'] ?? null) ? $existing['previous_names'] : [],
                 'online' => (bool) ($existing['online'] ?? false),
                 'alive' => $existing['alive'] ?? $record['alive'] ?? null,
                 'health' => $existing['health'] ?? null,

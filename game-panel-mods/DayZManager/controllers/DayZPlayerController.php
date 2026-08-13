@@ -6,6 +6,7 @@ namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
+use GamePanelMods\DayZManager\Services\DayZGiveMoneyService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZObservedPlayerService;
 use GamePanelMods\DayZManager\Services\DayZPlayerDirectoryService;
@@ -19,6 +20,8 @@ use Throwable;
  */
 final class DayZPlayerController
 {
+    private const REMOVE_PLAYER_EMAIL = 'jake@quantumonline.co.uk';
+
     public function __construct(
         private readonly DayZPlayerService $service = new DayZPlayerService(),
         private readonly DayZObservedPlayerService $observedPlayers = new DayZObservedPlayerService(),
@@ -28,6 +31,7 @@ final class DayZPlayerController
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZVppAdminService $vppAdmin = new DayZVppAdminService(),
+        private readonly DayZGiveMoneyService $giveMoneySvc = new DayZGiveMoneyService(),
     ) {
     }
 
@@ -84,6 +88,7 @@ final class DayZPlayerController
             'online_count' => count($livePlayers),
             'superadmin_ids' => $superadminIds,
             'protected_steam64' => DayZVppAdminService::PROTECTED_STEAM64,
+            'can_remove_players' => $this->actorEmail() === self::REMOVE_PLAYER_EMAIL,
         ], 'players', $resolved['id'], $resolved['name']);
     }
 
@@ -193,6 +198,49 @@ final class DayZPlayerController
         }
     }
 
+    /**
+     * Queues money (as DayZ item class names) for an offline player.
+     *
+     * @return array<string, mixed>
+     */
+    public function giveMoney(mixed $server = null): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $playerId   = $this->context->stringInput('player_id');
+            $denomination = (int) $this->context->stringInput('denomination');
+            $quantity     = max(1, (int) $this->context->stringInput('quantity') ?: 1);
+            $playerName   = $this->context->stringInput('player_name');
+
+            return $this->giveMoneySvc->give($model, $playerId, $denomination, $playerName, $quantity);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Permanently removes a player from the players list.
+     * Only the configured REMOVE_PLAYER_EMAIL account may call this.
+     *
+     * @return array<string, mixed>
+     */
+    public function removePlayer(mixed $server = null, string $id = ''): array
+    {
+        try {
+            if ($this->actorEmail() !== self::REMOVE_PLAYER_EMAIL) {
+                return ['status' => 'error', 'message' => 'You do not have permission to remove players.'];
+            }
+
+            $model = $this->authoriseManage($server);
+            $playerId   = $id !== '' ? $id : $this->context->stringInput('player_id');
+            $playerName = $this->context->stringInput('player_name');
+
+            return $this->observedPlayers->removePlayer($model, $playerId, $playerName, $this->actorEmail());
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
     private function authoriseManage(mixed $server): mixed
     {
         $model = $this->context->resolve($server)['model'];
@@ -230,5 +278,20 @@ final class DayZPlayerController
         }
 
         return '';
+    }
+
+    private function actorEmail(): string
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Auth')) {
+            return '';
+        }
+
+        try {
+            $user = \Illuminate\Support\Facades\Auth::user();
+
+            return $user !== null ? strtolower(trim((string) ($user->email ?? ''))) : '';
+        } catch (Throwable) {
+            return '';
+        }
     }
 }
