@@ -71,19 +71,6 @@ final class DayZGiveMoneyService
 
         $now = date('Y-m-d H:i:s');
 
-        // Ensure the player_uid column exists (added in a later revision).
-        try {
-            if (class_exists('Illuminate\\Support\\Facades\\Schema')
-                && !\Illuminate\Support\Facades\Schema::hasColumn(self::TABLE, 'player_uid')
-            ) {
-                \Illuminate\Support\Facades\DB::statement(
-                    "ALTER TABLE `dayz_give_money_queue` ADD COLUMN `player_uid` VARCHAR(128) NOT NULL DEFAULT '' AFTER `player_id`"
-                );
-            }
-        } catch (Throwable) {
-            // Best-effort column migration; non-fatal.
-        }
-
         $row = [
             'server_id'   => $serverId,
             'player_id'   => $playerId,
@@ -155,7 +142,19 @@ final class DayZGiveMoneyService
             $uidKey   = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
             $fileKeys = array_values(array_unique([$uidKey, $playerId]));
 
-            $entry = [
+            $primaryPath = self::QUEUE_FILE_DIR . '/give_money_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $uidKey) . '.json';
+            $existing    = $this->gateway->readFile($server, $primaryPath);
+            $queue       = [];
+
+            if (is_string($existing) && $existing !== '') {
+                $decoded = json_decode($existing, true);
+
+                if (is_array($decoded)) {
+                    $queue = $decoded;
+                }
+            }
+
+            $queue[] = [
                 'server_id'  => $serverId,
                 'player_id'  => $playerId,
                 'player_uid' => $playerUid !== '' ? $playerUid : $playerId,
@@ -164,27 +163,13 @@ final class DayZGiveMoneyService
                 'queued_at'  => date('Y-m-d H:i:s'),
             ];
 
+            $encoded = json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+            // Write both the primary (UID) file and the secondary (steam64) file
+            // with the same content so they stay in sync.
             foreach ($fileKeys as $key) {
-                $safeName = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key);
-                $path     = self::QUEUE_FILE_DIR . '/give_money_' . $safeName . '.json';
-                $existing = $this->gateway->readFile($server, $path);
-                $queue    = [];
-
-                if (is_string($existing) && $existing !== '') {
-                    $decoded = json_decode($existing, true);
-
-                    if (is_array($decoded)) {
-                        $queue = $decoded;
-                    }
-                }
-
-                $queue[] = $entry;
-
-                $this->gateway->writeFile(
-                    $server,
-                    $path,
-                    json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-                );
+                $path = self::QUEUE_FILE_DIR . '/give_money_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key) . '.json';
+                $this->gateway->writeFile($server, $path, $encoded);
             }
         } catch (Throwable) {
             // Best-effort only; the DB record is the source of truth.
@@ -198,35 +183,61 @@ final class DayZGiveMoneyService
 
     private function tableExists(): bool
     {
+        $tableFound = false;
+
         try {
             if (class_exists('Illuminate\\Support\\Facades\\Schema')
                 && \Illuminate\Support\Facades\Schema::hasTable(self::TABLE)
             ) {
-                return true;
+                $tableFound = true;
             }
         } catch (Throwable) {
             // fall through
         }
 
-        if (!class_exists('Illuminate\\Support\\Facades\\DB')) {
-            return false;
+        if (!$tableFound) {
+            if (!class_exists('Illuminate\\Support\\Facades\\DB')) {
+                return false;
+            }
+
+            try {
+                \Illuminate\Support\Facades\DB::statement($this->createTableSql());
+                $tableFound = true;
+            } catch (Throwable) {
+                // fall through
+            }
+
+            if (!$tableFound) {
+                try {
+                    \Illuminate\Support\Facades\DB::table(self::TABLE)->limit(1)->get();
+                    $tableFound = true;
+                } catch (Throwable) {
+                    return false;
+                }
+            }
         }
 
-        try {
-            \Illuminate\Support\Facades\DB::statement($this->createTableSql());
+        // Ensure the player_uid column exists (added in a later revision).
+        // This runs at most once per request thanks to the static flag.
+        static $uidColumnChecked = false;
 
-            return true;
-        } catch (Throwable) {
-            // fall through
+        if (!$uidColumnChecked) {
+            $uidColumnChecked = true;
+
+            try {
+                if (class_exists('Illuminate\\Support\\Facades\\Schema')
+                    && !\Illuminate\Support\Facades\Schema::hasColumn(self::TABLE, 'player_uid')
+                ) {
+                    \Illuminate\Support\Facades\DB::statement(
+                        "ALTER TABLE `dayz_give_money_queue` ADD COLUMN `player_uid` VARCHAR(128) NOT NULL DEFAULT '' AFTER `player_id`"
+                    );
+                }
+            } catch (Throwable) {
+                // Best-effort column migration; non-fatal.
+            }
         }
 
-        try {
-            \Illuminate\Support\Facades\DB::table(self::TABLE)->limit(1)->get();
-
-            return true;
-        } catch (Throwable) {
-            return false;
-        }
+        return true;
     }
 
     private function createTableSql(): string

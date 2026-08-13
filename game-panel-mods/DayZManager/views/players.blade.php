@@ -453,8 +453,12 @@
 
     // Converts a DayZ class name to the wiki filename convention.
     // e.g. "TacticalShirt_Black" → "Tactical_Shirt_Black"
+    //      "NVGoggles_Black"     → "NV_Goggles_Black"
     function classToWikiName(cls) {
-        return cls.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/_+/g, '_');
+        return cls
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+            .replace(/([a-z])([A-Z])/g, '$1_$2')
+            .replace(/_+/g, '_');
     }
 
     function wikiImageUrl(wikiName) {
