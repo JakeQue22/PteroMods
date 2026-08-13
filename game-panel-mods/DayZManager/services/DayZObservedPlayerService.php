@@ -550,7 +550,7 @@ final class DayZObservedPlayerService
                 $canonicalSteam64,
                 $playerId,
                 $selectedPlayerId,
-            ]), static fn (string $id): bool => $id !== ''));
+            ]), static fn (mixed $id): bool => trim((string) $id) !== ''));
 
             // Add to the removed-players blocklist (best-effort if table absent).
             if ($this->removedTableExists()) {
