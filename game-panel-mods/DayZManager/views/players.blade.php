@@ -257,6 +257,7 @@
 <section class="dz-card">
     <h2>Give Money Queue</h2>
     <p class="dz-sub">Items queued for delivery when the player next connects. The server-side mod reads <code>/profiles/PteroMods/give_money_&lt;uid&gt;.json</code> and awards the items.</p>
+    <p id="dz-give-money-queue-status" class="dz-status" style="margin:0 0 0.75rem;"></p>
     <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
         <thead>
             <tr style="border-bottom:1px solid var(--dz-border,#2d3348);">
@@ -318,6 +319,10 @@
     }
 
     function actionStatusEl(playerActionId) {
+        if (playerActionId && String(playerActionId) === 'give-money-queue') {
+            return document.getElementById('dz-give-money-queue-status');
+        }
+
         if (playerActionId) {
             var cards = document.querySelectorAll('.dz-player-card');
             for (var i = 0; i < cards.length; i += 1) {
@@ -476,14 +481,14 @@
     window.pteroRemoveGiveMoney = function (queueId, playerName, itemClass, quantity) {
         if (!queueId) { return; }
         if (!confirm('Remove ' + quantity + '× ' + itemClass + ' queued for "' + playerName + '"?')) { return; }
-        setStatus('Removing queued give money…');
+        setStatus('Removing queued give money…', undefined, 'give-money-queue');
         req('DELETE', '/dayz/player-actions/give-money/' + encodeURIComponent(queueId), null)
             .then(function (d) {
                 var ok = d.status === 'removed';
-                setStatus(d.message || (ok ? 'Queued give money removed.' : 'Failed to remove queued give money.'), ok ? undefined : false);
+                setStatus(d.message || (ok ? 'Queued give money removed.' : 'Failed to remove queued give money.'), ok ? undefined : false, 'give-money-queue');
                 if (ok) { setTimeout(function () { window.location.reload(); }, 900); }
             })
-            .catch(function () { setStatus('Remove give money request failed.', false); });
+            .catch(function () { setStatus('Remove give money request failed.', false, 'give-money-queue'); });
     };
 
     window.pteroRemovePlayer = function (actionId, playerName, selectedPlayerId, playerActionId) {
@@ -584,7 +589,7 @@
         'BallisticHelmet': 'Ballistic_Helmet',
         'SteelHelmet':     'Steel_Helmet',
         'SteelHelmetPilot': 'Pilot_Helmet',
-        'MotoHelmet':      'Motorcycle_Helmet',
+        'MotoHelmet':      'Motorcycle_Helmet', // aliases the same wiki page as MotorcycleHelmet
         'TankHelmet':      'Tank_Helmet',
         'PoliceBeret':     'Police_Beret',
         // ── Masks / eyewear ────────────────────────────────────────────────
@@ -760,7 +765,7 @@
                 : wikiDisplay(exactTitle),
             search: compoundTitle || exactTitle || cls,
             pageCandidates: dedupeStrings([exactAlias, compoundTitle, exactTitle, baseTitle]),
-            fileCandidates: dedupeStrings([exactAlias, compoundTitle, exactTitle, legacyImageTitle, altImageTitle, baseTitle]),
+        fileCandidates: dedupeStrings([cls, exactAlias, compoundTitle, exactTitle, legacyImageTitle, altImageTitle, baseTitle]),
         };
     }
 
