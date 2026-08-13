@@ -145,7 +145,11 @@ final class DayZPlayerDirectoryService
             $nameKey = $this->nameKey((string) ($record['name'] ?? ''));
 
             if ($steam64 === '' && !empty($record['has_name']) && isset($byName[$nameKey])) {
-                $steam64 = $byName[$nameKey];
+                $matchedSteam64 = (string) $byName[$nameKey];
+
+                if (preg_match('/^\d{17}$/', $matchedSteam64) === 1) {
+                    $steam64 = $matchedSteam64;
+                }
             }
 
             $key = $steam64 !== '' ? $steam64 : $uid;
@@ -158,7 +162,7 @@ final class DayZPlayerDirectoryService
 
             // Prefer existing steam64 from observed/live (may be more trustworthy)
             // but fill in from persistence if we don't have one yet.
-            $resolvedSteam64 = ($existing['steam64'] ?? null) ?? ($steam64 !== '' ? $steam64 : null);
+            $resolvedSteam64 = ($existing['steam64'] ?? null) ?? (preg_match('/^\d{17}$/', $steam64) === 1 ? $steam64 : null);
             $resolvedUid = $uid !== '' ? $uid : ($existing['player_uid'] ?? null);
 
             $players[$key] = [

@@ -391,7 +391,7 @@ final class DayZObservedPlayerService
             return ['status' => 'error', 'message' => 'Player ID is required.'];
         }
 
-        $dispatched = $this->gateway->sendCommand($server, 'kick ' . $playerId);
+        $dispatched = $this->gateway->sendCommand($server, '#kick ' . $playerId);
 
         return [
             'status'    => $dispatched ? 'dispatched' : 'failed',
@@ -443,9 +443,19 @@ final class DayZObservedPlayerService
         }
 
         try {
-            $rows = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
+            $latestIds = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
                 ->where('server_id', $serverId)
-                ->orderByDesc('id')
+                ->selectRaw('MAX(id) AS id')
+                ->groupBy('player_id')
+                ->pluck('id')
+                ->all();
+
+            if ($latestIds === []) {
+                return [];
+            }
+
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_observed_player_backups')
+                ->whereIn('id', array_map('intval', $latestIds))
                 ->get()
                 ->all();
         } catch (Throwable) {
