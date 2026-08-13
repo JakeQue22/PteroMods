@@ -238,7 +238,6 @@ final class DayZPlayerDirectoryService
                 $byUid[$uid] = $key;
             }
 
-            $key = null;
         }
 
         foreach ($players as $key => $player) {
