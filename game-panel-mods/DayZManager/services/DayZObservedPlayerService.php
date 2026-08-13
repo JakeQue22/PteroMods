@@ -478,9 +478,10 @@ final class DayZObservedPlayerService
      *
      * @return array<string, mixed>
      */
-    public function removePlayer(mixed $server, string $playerId, string $playerName = '', string $removedBy = ''): array
+    public function removePlayer(mixed $server, string $playerId, string $playerName = '', string $removedBy = '', string $selectedPlayerId = ''): array
     {
         $playerId = trim($playerId);
+        $selectedPlayerId = trim($selectedPlayerId);
 
         if ($playerId === '') {
             return ['status' => 'error', 'message' => 'Player ID is required.'];
@@ -495,7 +496,7 @@ final class DayZObservedPlayerService
         try {
             $now = date('Y-m-d H:i:s');
             $canonicalPlayerId = $playerId;
-            $canonicalSteam64 = '';
+            $canonicalSteam64 = null;
 
             if ($this->tableExists()) {
                 $row = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
@@ -505,13 +506,29 @@ final class DayZObservedPlayerService
 
                 if ($row === null && preg_match('/^\d{17}$/', $playerId) === 1) {
                     try {
-                        $matchedPlayerId = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                        $matchedRows = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
                             ->where('server_id', $serverId)
                             ->where('steam64', $playerId)
-                            ->value('player_id');
+                            ->pluck('player_id')
+                            ->all();
 
-                        if ($matchedPlayerId !== null && trim((string) $matchedPlayerId) !== '') {
-                            $canonicalPlayerId = trim((string) $matchedPlayerId);
+                        $matchedPlayerIds = array_values(array_filter(array_map(
+                            static fn (mixed $value): string => trim((string) $value),
+                            is_array($matchedRows) ? $matchedRows : [],
+                        ), static fn (string $value): bool => $value !== ''));
+
+                        if ($selectedPlayerId !== '' && in_array($selectedPlayerId, $matchedPlayerIds, true)) {
+                            $canonicalPlayerId = $selectedPlayerId;
+                        } elseif (count($matchedPlayerIds) === 1) {
+                            $canonicalPlayerId = $matchedPlayerIds[0];
+                        } elseif (count($matchedPlayerIds) > 1) {
+                            return [
+                                'status' => 'error',
+                                'message' => 'Duplicate player records were found. Please remove the specific row from the list.',
+                            ];
+                        }
+
+                        if ($canonicalPlayerId !== '') {
                             $row = \Illuminate\Support\Facades\DB::table('dayz_observed_players')
                                 ->where('server_id', $serverId)
                                 ->where('player_id', $canonicalPlayerId)
@@ -528,11 +545,7 @@ final class DayZObservedPlayerService
                 }
             }
 
-            $removedIds = array_values(array_filter(array_unique([
-                $playerId,
-                $canonicalPlayerId,
-                $canonicalSteam64,
-            ]), static fn (string $id): bool => $id !== ''));
+            $removedIds = array_values(array_filter(array_unique([$canonicalPlayerId]), static fn (string $id): bool => $id !== ''));
 
             // Add to the removed-players blocklist (best-effort if table absent).
             if ($this->removedTableExists()) {
@@ -568,6 +581,7 @@ final class DayZObservedPlayerService
             return [
                 'status'    => 'removed',
                 'player_id' => $canonicalPlayerId,
+                'steam64'   => $canonicalSteam64,
                 'message'   => 'Player has been permanently removed from the players list.',
             ];
         } catch (Throwable $exception) {

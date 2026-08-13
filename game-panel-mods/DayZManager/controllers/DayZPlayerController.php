@@ -232,10 +232,11 @@ final class DayZPlayerController
             }
 
             $model = $this->authoriseManage($server);
-            $playerId   = $id !== '' ? $id : $this->context->stringInput('player_id');
-            $playerName = $this->context->stringInput('player_name');
+            $playerId          = $id !== '' ? $id : $this->context->stringInput('player_id');
+            $playerName        = $this->context->stringInput('player_name');
+            $selectedPlayerId  = $this->context->stringInput('selected_player_id');
 
-            return $this->observedPlayers->removePlayer($model, $playerId, $playerName, $this->actorEmail());
+            return $this->observedPlayers->removePlayer($model, $playerId, $playerName, $this->actorEmail(), $selectedPlayerId);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
