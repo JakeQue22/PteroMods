@@ -162,7 +162,7 @@ final class DayZGiveMoneyService
             $updated = \Illuminate\Support\Facades\DB::table(self::TABLE)
                 ->where('server_id', $serverId)
                 ->where('id', $queueId)
-                ->whereIn('status', ['pending'])
+                ->where('status', 'pending')
                 ->update(['status' => 'delivered', 'updated_at' => date('Y-m-d H:i:s')]);
 
             if ($updated < 1) {
