@@ -1138,7 +1138,7 @@ final class DayZInventoryItemResolverService
             return $metadata;
         }
 
-        if (preg_match_all('/^\|\s*([^=\n]+?)\s*=\s*(.+)$/m', $wikitext, $matches, PREG_SET_ORDER) !== 1 && $matches === []) {
+        if (preg_match_all('/^\|\s*([^=\n]+?)\s*=\s*(.+)$/m', $wikitext, $matches, PREG_SET_ORDER) === 0) {
             return $metadata;
         }
 
