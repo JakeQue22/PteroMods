@@ -222,6 +222,23 @@ final class DayZPlayerController
     }
 
     /**
+     * Removes a queued give-money entry.
+     *
+     * @return array<string, mixed>
+     */
+    public function removeGiveMoney(mixed $server = null, string $id = ''): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $queueId = (int) ($id !== '' ? $id : $this->context->stringInput('id'));
+
+            return $this->giveMoneySvc->remove($model, $queueId);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
      * Permanently removes a player from the players list.
      * Only the configured REMOVE_PLAYER_EMAIL account may call this.
      *

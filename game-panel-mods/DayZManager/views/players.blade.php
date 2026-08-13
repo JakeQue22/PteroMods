@@ -265,6 +265,7 @@
                 <th style="text-align:left;padding:0.25rem 0.5rem;">Qty</th>
                 <th style="text-align:left;padding:0.25rem 0.5rem;">Status</th>
                 <th style="text-align:left;padding:0.25rem 0.5rem;">Queued</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -280,7 +281,12 @@
                             {{ ucfirst($entry['status'] ?? 'pending') }}
                         </span>
                     </td>
-                    <td style="padding:0.25rem 0.5rem;color:var(--dz-muted);">{{ $entry['created_at'] ?? '—' }}</td>
+                    <td style="padding:0.25rem 0.5rem;color:var(--dz-muted);">{{ $entry['created_at_display'] ?? ($entry['created_at'] ?? '—') }}</td>
+                    <td style="padding:0.25rem 0.5rem;">
+                        @if (!empty($entry['id']))
+                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveGiveMoney({{ (int) $entry['id'] }}, {{ json_encode(($entry['player_name'] ?? '') !== '' ? $entry['player_name'] : ($entry['player_id'] ?? 'player'), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($entry['item_class'] ?? 'item'), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ (int) ($entry['quantity'] ?? 1) }})">Remove</button>
+                        @endif
+                    </td>
                 </tr>
             @endforeach
         </tbody>
@@ -465,6 +471,19 @@
                 if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
             })
             .catch(function () { setStatus('Give money request failed.', false, playerActionId); });
+    };
+
+    window.pteroRemoveGiveMoney = function (queueId, playerName, itemClass, quantity) {
+        if (!queueId) { return; }
+        if (!confirm('Remove ' + quantity + '× ' + itemClass + ' queued for "' + playerName + '"?')) { return; }
+        setStatus('Removing queued give money…');
+        req('DELETE', '/dayz/player-actions/give-money/' + encodeURIComponent(queueId), null)
+            .then(function (d) {
+                var ok = d.status === 'removed';
+                setStatus(d.message || (ok ? 'Queued give money removed.' : 'Failed to remove queued give money.'), ok ? undefined : false);
+                if (ok) { setTimeout(function () { window.location.reload(); }, 900); }
+            })
+            .catch(function () { setStatus('Remove give money request failed.', false); });
     };
 
     window.pteroRemovePlayer = function (actionId, playerName, selectedPlayerId, playerActionId) {
@@ -684,57 +703,163 @@
             .trim();
     }
 
-    // Returns { page, image, label } for a DayZ class name.
-    //   page  – wiki page title (e.g. "T-Shirt")      used in the URL
-    //   image – wiki image file (e.g. "T-Shirt_-_(Red-Black_Stripes)") used for the img src
-    //   label – human-readable label shown to the user
-    function classWikiInfo(cls) {
+    var WIKI_API_BASE = 'https://dayz.wiki.gg/api.php';
+    var WIKI_SEARCH_BASE = 'https://dayz.wiki.gg/wiki/Special:Search?search=';
+    var WIKI_META_CACHE = Object.create(null);
+
+    function wikiDisplay(text) {
+        return String(text || '').replace(/_/g, ' ');
+    }
+
+    function normalizeWikiTitle(text) {
+        return String(text || '').replace(/ /g, '_').toLowerCase();
+    }
+
+    function dedupeStrings(list) {
+        var out = [];
+        var seen = Object.create(null);
+        (list || []).forEach(function (entry) {
+            var value = String(entry || '').trim();
+            if (value === '' || seen[value]) { return; }
+            seen[value] = true;
+            out.push(value);
+        });
+        return out;
+    }
+
+    function variantDisplayName(variantKey) {
+        return WIKI_VARIANT_MAP[variantKey] || camelCaseToWords(variantKey).replace(/ /g, '_');
+    }
+
+    function classWikiCandidates(cls) {
+        var exactAlias = WIKI_BASE[cls] || '';
+        var exactTitle = camelCaseToWords(cls).replace(/ /g, '_');
         var sep = cls.indexOf('_');
 
-        // ── No variant suffix: look up the whole class as the base ──────────
         if (sep <= 0) {
-            var exact = WIKI_BASE[cls];
-            if (exact) { return { page: exact, image: exact, label: exact.replace(/_/g, ' ') }; }
-            var name = camelCaseToWords(cls).replace(/ /g, '_');
-            return { page: name, image: name, label: name.replace(/_/g, ' ') };
+            var flatTitle = exactAlias || exactTitle;
+            return {
+                label: wikiDisplay(flatTitle),
+                search: flatTitle || cls,
+                pageCandidates: dedupeStrings([exactAlias, exactTitle]),
+                fileCandidates: dedupeStrings([exactAlias, exactTitle]),
+            };
         }
 
-        // ── Has variant suffix ──────────────────────────────────────────────
-        var baseKey    = cls.substring(0, sep);
+        var baseKey = cls.substring(0, sep);
         var variantKey = cls.substring(sep + 1);
-        var wikiBase   = WIKI_BASE[baseKey];
+        var baseTitle = WIKI_BASE[baseKey] || camelCaseToWords(baseKey).replace(/ /g, '_');
+        var variantTitle = variantDisplayName(variantKey);
+        var compoundTitle = baseTitle !== '' ? (baseTitle + '_' + variantTitle) : exactTitle;
+        var legacyImageTitle = baseTitle !== '' ? (baseTitle + '_-_(' + variantTitle + ')') : exactTitle;
+        var altImageTitle = baseTitle !== '' ? (baseTitle + '_(' + variantTitle + ')') : exactTitle;
 
-        if (!wikiBase) {
-            // Unknown base: treat the whole thing as a camelCase name.
-            var fallback = camelCaseToWords(cls).replace(/ /g, '_');
-            return { page: fallback, image: fallback, label: fallback.replace(/_/g, ' ') };
+        return {
+            label: baseTitle !== ''
+                ? (wikiDisplay(baseTitle) + ' (' + wikiDisplay(variantTitle) + ')')
+                : wikiDisplay(exactTitle),
+            search: compoundTitle || exactTitle || cls,
+            pageCandidates: dedupeStrings([exactAlias, compoundTitle, exactTitle, baseTitle]),
+            fileCandidates: dedupeStrings([exactAlias, compoundTitle, exactTitle, legacyImageTitle, altImageTitle, baseTitle]),
+        };
+    }
+
+    function wikiApiUrl(params) {
+        var search = new URLSearchParams(params || {});
+        search.set('format', 'json');
+        search.set('origin', '*');
+        return WIKI_API_BASE + '?' + search.toString();
+    }
+
+    function wikiFetchJson(params) {
+        return fetch(wikiApiUrl(params)).then(function (res) {
+            if (!res.ok) {
+                throw new Error('Wiki request failed.');
+            }
+            return res.json();
+        });
+    }
+
+    function pickWikiPage(candidates, pages) {
+        var available = {};
+        Object.keys(pages || {}).forEach(function (key) {
+            var page = pages[key];
+            if (!page || page.missing !== undefined) { return; }
+            available[normalizeWikiTitle(page.title)] = page;
+        });
+
+        for (var i = 0; i < candidates.length; i += 1) {
+            var match = available[normalizeWikiTitle(candidates[i])];
+            if (match) { return match; }
         }
 
-        // Resolve variant display name.
-        var variantDisplay = WIKI_VARIANT_MAP[variantKey];
-        if (!variantDisplay) {
-            // Auto-convert via camelCase split (covers simple cases like "Black", "Green", "Tan").
-            variantDisplay = camelCaseToWords(variantKey).replace(/ /g, '_');
+        var keys = Object.keys(available);
+        return keys.length ? available[keys[0]] : null;
+    }
+
+    function pickWikiFile(candidates, pages) {
+        var available = {};
+        Object.keys(pages || {}).forEach(function (key) {
+            var page = pages[key];
+            var info = page && Array.isArray(page.imageinfo) ? page.imageinfo[0] : null;
+            if (!page || page.missing !== undefined || !info) { return; }
+            var title = String(page.title || '').replace(/^File:/i, '').replace(/\.png$/i, '');
+            available[normalizeWikiTitle(title)] = info;
+        });
+
+        for (var i = 0; i < candidates.length; i += 1) {
+            var match = available[normalizeWikiTitle(candidates[i])];
+            if (match) { return match; }
         }
 
-        var image = wikiBase + '_-_(' + variantDisplay + ')';
-        var label = wikiBase.replace(/_/g, ' ') + ' (' + variantDisplay.replace(/_/g, ' ') + ')';
-        return { page: wikiBase, image: image, label: label };
+        var keys = Object.keys(available);
+        return keys.length ? available[keys[0]] : null;
     }
 
-    function wikiImageUrl(cls) {
-        var info = classWikiInfo(cls);
-        var enc  = encodeURIComponent(info.image);
-        return 'https://dayz.wiki.gg/images/thumb/' + enc + '.png/245px-' + enc + '.png';
-    }
+    function resolveWikiMeta(cls) {
+        var cacheKey = String(cls || '');
+        if (!cacheKey) {
+            return Promise.resolve({ label: 'Unknown item', pageUrl: '', imageUrl: '' });
+        }
+        if (WIKI_META_CACHE[cacheKey]) {
+            return WIKI_META_CACHE[cacheKey];
+        }
 
-    function wikiPageUrl(cls) {
-        var info = classWikiInfo(cls);
-        return 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(info.page);
-    }
+        var candidates = classWikiCandidates(cacheKey);
+        var fallbackUrl = WIKI_SEARCH_BASE + encodeURIComponent(candidates.search || cacheKey);
 
-    function wikiLabel(cls) {
-        return classWikiInfo(cls).label;
+        WIKI_META_CACHE[cacheKey] = Promise.all([
+            wikiFetchJson({
+                action: 'query',
+                prop: 'info',
+                inprop: 'url',
+                titles: candidates.pageCandidates.join('|'),
+            }).catch(function () { return null; }),
+            wikiFetchJson({
+                action: 'query',
+                prop: 'imageinfo',
+                iiprop: 'url',
+                iiurlwidth: '245',
+                titles: candidates.fileCandidates.map(function (title) { return 'File:' + title + '.png'; }).join('|'),
+            }).catch(function () { return null; }),
+        ]).then(function (responses) {
+            var pageData = responses[0] && responses[0].query ? pickWikiPage(candidates.pageCandidates, responses[0].query.pages || {}) : null;
+            var fileData = responses[1] && responses[1].query ? pickWikiFile(candidates.fileCandidates, responses[1].query.pages || {}) : null;
+
+            return {
+                label: (pageData && pageData.title ? wikiDisplay(pageData.title) : candidates.label) || cacheKey,
+                pageUrl: (pageData && pageData.fullurl) ? pageData.fullurl : fallbackUrl,
+                imageUrl: fileData ? (fileData.thumburl || fileData.url || '') : '',
+            };
+        }).catch(function () {
+            return {
+                label: candidates.label || cacheKey,
+                pageUrl: fallbackUrl,
+                imageUrl: '',
+            };
+        });
+
+        return WIKI_META_CACHE[cacheKey];
     }
 
     window.pteroViewInventory = function (playerName, inventoryJson) {
@@ -815,7 +940,7 @@
         var containerItems = items.filter(function (i) { return i.isContainerContent; });
 
         // Group items by slot for readability.
-        var slotOrder = ['Hands', 'Body', 'Legs', 'Feet', 'Head', 'Back', 'Vest', 'Hips', 'Shoulder', 'Mask', 'Gloves', 'Eyewear', 'Armband', ''];
+        var slotOrder = ['Hands', 'Headgear', 'Mask', 'Eyewear', 'Gloves', 'Armband', 'Body', 'Back', 'Vest', 'Hips', 'Legs', 'Feet', 'Shoulder', ''];
         var bySlot = {};
         equippedItems.forEach(function (item) {
             var s = item.slot || '';
@@ -832,17 +957,12 @@
         var imgStyle  = 'width:80px;height:80px;object-fit:contain;display:block;';
         var emojiStyle = 'font-size:2.5rem;text-align:center;line-height:1;';
 
-        function makeItemCard(item) {
-            var cls     = item.className;
-            var label   = wikiLabel(cls);
-            var imgUrl  = wikiImageUrl(cls);
-            var pageUrl = wikiPageUrl(cls);
-
-            var card = document.createElement('div');
-            card.style.cssText = cardStyle;
-
-            var imgWrap = document.createElement('div');
-            imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;';
+        function setCardImage(imgWrap, imgUrl, label) {
+            imgWrap.innerHTML = '';
+            if (!imgUrl) {
+                imgWrap.innerHTML = '<span style="' + emojiStyle + '">📦</span>';
+                return;
+            }
 
             var img = document.createElement('img');
             img.src = imgUrl;
@@ -852,6 +972,19 @@
                 imgWrap.innerHTML = '<span style="' + emojiStyle + '">📦</span>';
             };
             imgWrap.appendChild(img);
+        }
+
+        function makeItemCard(item) {
+            var cls     = item.className;
+            var meta    = classWikiCandidates(cls);
+            var label   = meta.label || cls;
+            var pageUrl = WIKI_SEARCH_BASE + encodeURIComponent(meta.search || cls);
+            var card = document.createElement('div');
+            card.style.cssText = cardStyle;
+
+            var imgWrap = document.createElement('div');
+            imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;';
+            setCardImage(imgWrap, '', label);
             card.appendChild(imgWrap);
 
             var nameEl = document.createElement('div');
@@ -865,6 +998,15 @@
             link.style.cssText = 'color:var(--dz-accent);text-decoration:none;';
             nameEl.appendChild(link);
             card.appendChild(nameEl);
+
+            resolveWikiMeta(cls).then(function (resolved) {
+                if (!resolved) { return; }
+                link.href = resolved.pageUrl || pageUrl;
+                link.textContent = resolved.label || label;
+                if (resolved.imageUrl) {
+                    setCardImage(imgWrap, resolved.imageUrl, resolved.label || label);
+                }
+            });
 
             return card;
         }

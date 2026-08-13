@@ -89,17 +89,18 @@ final class DayZGiveMoneyService
         }
 
         try {
-            \Illuminate\Support\Facades\DB::table(self::TABLE)->insert($row);
+            $queueId = \Illuminate\Support\Facades\DB::table(self::TABLE)->insertGetId($row);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
 
-        // Best-effort: write a JSON queue file to the server so a server-side
+        // Best-effort: sync the JSON queue file on the server so a server-side
         // mod can fulfil the action when the player next connects.
-        $this->writeQueueFile($server, $serverId, $playerId, $playerUid, $itemClass, $quantity);
+        $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
 
         return [
             'status'     => 'queued',
+            'id'         => (int) $queueId,
             'player_id'  => $playerId,
             'item_class' => $itemClass,
             'quantity'   => $quantity,
@@ -124,61 +125,162 @@ final class DayZGiveMoneyService
             return \Illuminate\Support\Facades\DB::table(self::TABLE)
                 ->where('server_id', $serverId)
                 ->orderByDesc('created_at')
+                ->orderByDesc('id')
                 ->limit(200)
                 ->get()
-                ->map(fn ($row) => (array) $row)
+                ->map(function ($row): array {
+                    $entry = (array) $row;
+                    $entry['created_at_display'] = $this->displayTimestamp($entry['created_at'] ?? null);
+
+                    return $entry;
+                })
                 ->all();
         } catch (Throwable) {
             return [];
         }
     }
 
-    private function writeQueueFile(mixed $server, string $serverId, string $playerId, string $playerUid, string $itemClass, int $quantity): void
+    /**
+     * Removes a pending queue entry and rewrites the server-side queue file.
+     *
+     * @return array<string, mixed>
+     */
+    public function remove(mixed $server, int $queueId): array
     {
+        $serverId = $this->serverId($server);
+
+        if ($serverId === '') {
+            return ['status' => 'error', 'message' => 'Could not resolve server.'];
+        }
+
+        if ($queueId <= 0 || !$this->tableExists()) {
+            return ['status' => 'error', 'message' => 'That give money queue entry could not be found.'];
+        }
+
         try {
-            // Use the DayZ UID as the primary filename key when available, since
-            // server-side mods identify players by UID.  Retain the steam64-named
-            // file as a secondary fallback so older mod versions still work.
-            $uidKey   = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
-            $fileKeys = array_values(array_unique([$uidKey, $playerId]));
+            $row = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('id', $queueId)
+                ->first();
 
-            $primaryPath = self::QUEUE_FILE_DIR . '/give_money_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $uidKey) . '.json';
-            $existing    = $this->gateway->readFile($server, $primaryPath);
-            $queue       = [];
-
-            if (is_string($existing) && $existing !== '') {
-                $decoded = json_decode($existing, true);
-
-                if (is_array($decoded)) {
-                    $queue = $decoded;
-                }
+            if ($row === null) {
+                return ['status' => 'error', 'message' => 'That give money queue entry could not be found.'];
             }
 
-            $queue[] = [
-                'server_id'  => $serverId,
-                'player_id'  => $playerId,
-                'player_uid' => $playerUid !== '' ? $playerUid : $playerId,
-                'item_class' => $itemClass,
-                'quantity'   => $quantity,
-                'queued_at'  => date('Y-m-d H:i:s'),
+            $entry = (array) $row;
+
+            $deleted = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('id', $queueId)
+                ->delete();
+
+            if ($deleted < 1) {
+                return ['status' => 'error', 'message' => 'That give money queue entry could not be removed.'];
+            }
+
+            $playerId = trim((string) ($entry['player_id'] ?? ''));
+            $playerUid = trim((string) ($entry['player_uid'] ?? ''));
+
+            if ($playerId !== '') {
+                $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
+            }
+
+            return [
+                'status'  => 'removed',
+                'id'      => $queueId,
+                'message' => 'Removed that queued give money entry.',
             ];
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
 
-            $encoded = json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    private function syncQueueFile(mixed $server, string $serverId, string $playerId, string $playerUid): void
+    {
+        try {
+            $playerUid = trim($playerUid);
+            $uidKey = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
+            $fileKeys = array_values(array_unique([$uidKey, $playerId]));
+            $queue = $this->pendingQueueFileEntries($serverId, $playerId, $playerUid);
 
-            // Write both the primary (UID) file and the secondary (steam64) file
-            // with the same content so they stay in sync.
             foreach ($fileKeys as $key) {
-                $path = self::QUEUE_FILE_DIR . '/give_money_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key) . '.json';
-                $this->gateway->writeFile($server, $path, $encoded);
+                $path = $this->queueFilePath($key);
+
+                if ($queue === []) {
+                    $this->gateway->deletePath($server, $path);
+                    continue;
+                }
+
+                $encoded = json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+                if ($encoded !== false) {
+                    $this->gateway->writeFile($server, $path, $encoded);
+                }
             }
         } catch (Throwable) {
             // Best-effort only; the DB record is the source of truth.
         }
     }
 
+    /**
+     * @return list<array{queue_id:int, server_id:string, player_id:string, player_uid:string, item_class:string, quantity:int, queued_at:string}>
+     */
+    private function pendingQueueFileEntries(string $serverId, string $playerId, string $playerUid): array
+    {
+        if ($serverId === '' || $playerId === '') {
+            return [];
+        }
+
+        try {
+            return \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('status', 'pending')
+                ->where(function ($query) use ($playerId, $playerUid): void {
+                    $query->where('player_id', $playerId);
+
+                    if ($playerUid !== '' && $playerUid !== $playerId) {
+                        $query->orWhere('player_uid', $playerUid);
+                    }
+                })
+                ->orderBy('created_at')
+                ->orderBy('id')
+                ->get()
+                ->map(fn ($row): array => [
+                    'queue_id'   => (int) ($row->id ?? 0),
+                    'server_id'  => (string) ($row->server_id ?? $serverId),
+                    'player_id'  => (string) ($row->player_id ?? $playerId),
+                    'player_uid' => (string) (($row->player_uid ?? '') !== '' ? $row->player_uid : $playerId),
+                    'item_class' => (string) ($row->item_class ?? ''),
+                    'quantity'   => max(1, (int) ($row->quantity ?? 1)),
+                    'queued_at'  => (string) (($row->created_at ?? '') !== '' ? $row->created_at : date('Y-m-d H:i:s')),
+                ])
+                ->all();
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
     private function serverId(mixed $server): string
     {
         return $this->context->attribute($server, ['uuid', 'uuidShort', 'id']);
+    }
+
+    private function queueFilePath(string $key): string
+    {
+        return self::QUEUE_FILE_DIR . '/give_money_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key) . '.json';
+    }
+
+    private function displayTimestamp(mixed $timestamp): ?string
+    {
+        $text = trim((string) ($timestamp ?? ''));
+
+        if ($text === '') {
+            return null;
+        }
+
+        $time = strtotime($text);
+
+        return $time === false ? $text : date('d-m-Y H:i:s', $time);
     }
 
     private function tableExists(): bool
