@@ -132,18 +132,18 @@
                         @if (!empty($listFlags['ban']) && !empty($listEntryIds['ban']))
                             <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveFromList('ban', {{ json_encode((string) $listEntryIds['ban'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Ban List</button>
                         @else
-                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
+                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
                         @endif
                     @endif
                     @if (!empty($listFlags['whitelist']) && !empty($listEntryIds['whitelist']))
                         <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroRemoveFromList('whitelist', {{ json_encode((string) $listEntryIds['whitelist'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Whitelist</button>
                     @else
-                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('whitelist', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Whitelist</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('whitelist', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Whitelist</button>
                     @endif
                     @if (!empty($listFlags['priority']) && !empty($listEntryIds['priority']))
                         <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroRemoveFromList('priority', {{ json_encode((string) $listEntryIds['priority'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Priority Queue</button>
                     @else
-                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('priority', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Priority Queue</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('priority', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Priority Queue</button>
                     @endif
                     @if ($steam64)
                         @if (in_array($steam64, $superadmin_ids ?? [], true))
@@ -211,7 +211,7 @@
             @forelse ($player_lists[$type] ?? [] as $entry)
                 @php
                     $entryPlayerId = trim((string) ($entry['player_id'] ?? ''));
-                    $summary = $listPlayerLookup[$entryPlayerId] ?? ['name' => $entryPlayerId !== '' ? $entryPlayerId : 'Unknown', 'steam64' => ''];
+                    $summary = $listPlayerLookup[$entryPlayerId] ?? ['name' => ($entry['nickname'] ?? '') !== '' ? (string) $entry['nickname'] : ($entryPlayerId !== '' ? $entryPlayerId : 'Unknown'), 'steam64' => ''];
                     $displaySteamId = $summary['steam64'] !== '' ? $summary['steam64'] : ($entryPlayerId !== '' ? $entryPlayerId : 'Unknown');
                 @endphp
                 <li>
@@ -273,13 +273,13 @@
         window.setTimeout(function () { window.location.reload(); }, 900);
     }
 
-    window.pteroAddToList = function (listType, playerId) {
+    window.pteroAddToList = function (listType, playerId, nickname) {
         var labels = { whitelist: 'Whitelist', priority: 'Priority Queue' };
         var label = labels[listType] || listType;
         var note = window.prompt('Optional note for ' + label + ':', '');
         if (note === null) { return; }
         setStatus('Adding player to ' + label + '…');
-        req('POST', '/dayz/players/' + encodeURIComponent(listType), { player_id: playerId, note: note })
+        req('POST', '/dayz/players/' + encodeURIComponent(listType), { player_id: playerId, nickname: nickname || '', note: note })
             .then(function (d) {
                 var ok = d.status === 'saved';
                 setStatus(d.message || (ok ? 'Player added to ' + label + '.' : 'Failed.'), ok ? undefined : false);
@@ -310,11 +310,11 @@
             .catch(function () { setStatus('Kick request failed.', false); });
     };
 
-    window.pteroBanPlayer = function (playerId) {
+    window.pteroBanPlayer = function (playerId, nickname) {
         var note = window.prompt('Optional ban note:', '');
         if (note === null) { return; }
         setStatus('Adding player to ban list…');
-        req('POST', '/dayz/players/ban', { player_id: playerId, note: note })
+        req('POST', '/dayz/players/ban', { player_id: playerId, nickname: nickname || '', note: note })
             .then(function (d) {
                 var ok = d.status === 'saved';
                 setStatus(d.message || (ok ? 'Player added to ban list.' : 'Ban failed.'), ok ? undefined : false);

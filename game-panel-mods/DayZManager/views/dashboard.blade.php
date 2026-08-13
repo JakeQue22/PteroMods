@@ -47,6 +47,21 @@
     </dl>
 </section>
 
+@if (!empty($offline_crash_log['name']) && !empty($client_id) && strtolower((string) $server_status) === 'offline')
+    @php
+        $crashPath = '/' . ltrim(str_replace('\\', '/', (string) ($offline_crash_log['path'] ?? '')), '/');
+        $crashHref = '/server/' . rawurlencode((string) $client_id) . '/files/edit#'
+            . implode('/', array_map('rawurlencode', explode('/', $crashPath)));
+    @endphp
+    <section class="dz-card">
+        <h2>Latest Crash Log</h2>
+        <p class="dz-sub">{{ $offline_crash_log['reason'] ?? 'The latest console output suggests a crash.' }}</p>
+        <p>
+            <a href="{{ $crashHref }}">{{ $offline_crash_log['name'] }}</a>
+        </p>
+    </section>
+@endif
+
 <section class="dz-card">
     <h2>Workshop Mods</h2>
     <p class="dz-sub">

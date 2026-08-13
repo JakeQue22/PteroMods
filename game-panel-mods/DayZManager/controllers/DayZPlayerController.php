@@ -96,8 +96,9 @@ final class DayZPlayerController
         $playerId = $playerId !== '' ? $playerId : $this->context->stringInput('player_id');
         $note = $note !== '' ? $note : $this->context->stringInput('note');
         $addedBy = $addedBy !== '' ? $addedBy : $this->actorName($this->context->stringInput('added_by'));
+        $nickname = $this->context->stringInput('nickname');
 
-        return $this->service->add($listType, $playerId, $note, $addedBy, $model);
+        return $this->service->add($listType, $playerId, $note, $addedBy, $nickname, $model);
     }
 
     /**

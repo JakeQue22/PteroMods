@@ -58,6 +58,9 @@
     </dl>
 
     <p id="dz-settings-status" class="dz-status dz-hidden" style="margin-top:0.75rem;"></p>
+    <div class="dz-form" style="margin-top:0.75rem;">
+        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroDzClearLogsNow()">Clear now</button>
+    </div>
 </section>
 
 <script>
@@ -135,6 +138,48 @@ window.pteroDzTextSettingSave = function (key) {
             status.className = 'dz-status';
         } else {
             status.textContent = 'Could not save settings.';
+            status.className = 'dz-status dz-status-error';
+        }
+    })
+    .catch(function () {
+        status.textContent = 'Request failed. Please try again.';
+        status.className = 'dz-status dz-status-error';
+    });
+};
+
+window.pteroDzClearLogsNow = function () {
+    var status = document.getElementById('dz-settings-status');
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    var csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
+    var match = window.location.pathname.match(/^\/(?:servers?|admin\/servers\/view)\/([^/]+)\/dayz/);
+    if (!match) {
+        status.textContent = 'Could not determine the server for log cleanup.';
+        status.className = 'dz-status dz-status-error';
+        return;
+    }
+
+    status.className = 'dz-status';
+    status.textContent = 'Cleaning old logs now…';
+
+    fetch('/api/server/' + encodeURIComponent(match[1]) + '/dayz/server/log-scrub/tick', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrf,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+        body: JSON.stringify({ force: true }),
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+        if (data.status === 'scrubbed' || data.status === 'throttled') {
+            var deleted = Number(data.deleted || 0);
+            var scanned = Number(data.scanned || 0);
+            status.textContent = 'Log cleanup complete. Scanned ' + scanned + ' file(s), deleted ' + deleted + '.';
+            status.className = 'dz-status';
+        } else {
+            status.textContent = data.message || 'Could not clean logs.';
             status.className = 'dz-status dz-status-error';
         }
     })

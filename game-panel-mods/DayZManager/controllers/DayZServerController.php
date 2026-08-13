@@ -153,8 +153,13 @@ final class DayZServerController
     {
         $model = $this->context->resolve($server)['model'];
         $this->context->authorizeManage($model);
+        $force = filter_var(
+            $this->context->input('force', false),
+            FILTER_VALIDATE_BOOL,
+            FILTER_NULL_ON_FAILURE,
+        ) ?? false;
 
-        return $this->logScrub->tick($model);
+        return $this->logScrub->tick($model, $force);
     }
 
     /**

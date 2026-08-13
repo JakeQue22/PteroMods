@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS `dayz_player_lists` (
     `id`         INT UNSIGNED  NOT NULL AUTO_INCREMENT,
     `list_type`  ENUM('ban','whitelist','priority') NOT NULL,
     `player_id`  VARCHAR(64)   NOT NULL COMMENT 'Steam64 ID or GUID',
+    `nickname`   VARCHAR(255)  NOT NULL DEFAULT '',
     `note`       VARCHAR(255)  NOT NULL DEFAULT '',
     `added_by`   VARCHAR(64)   NOT NULL DEFAULT '',
     `created_at` TIMESTAMP     NULL DEFAULT NULL,

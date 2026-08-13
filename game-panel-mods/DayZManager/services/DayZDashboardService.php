@@ -48,6 +48,7 @@ final class DayZDashboardService
         $memoryLimitMb = $this->intValue($model, ['memory', 'memory_limit']);
         $diskLimitMb = $this->intValue($model, ['disk', 'disk_limit']);
         $status = $this->resolveStatus($model, $live, $details);
+        $offlineCrashLog = $status === 'offline' ? $this->offlineCrashLog($model) : null;
 
         return [
             'server_name'          => $live['name'] ?? $resolved['name'],
@@ -67,6 +68,7 @@ final class DayZDashboardService
             'connection_address'   => $this->query->connectionAddress($model) ?? 'Unknown',
             'query_endpoint'       => $live['endpoint'] ?? 'Unknown',
             'query_online'         => $live['online'],
+            'offline_crash_log'    => $offlineCrashLog,
         ];
     }
 
@@ -384,5 +386,102 @@ final class DayZDashboardService
         $value = $this->context->rawAttribute($source, $key);
 
         return $value === true || $value === 1 || $value === '1';
+    }
+
+    /**
+     * @return array{name: string, path: string, reason: string}|null
+     */
+    private function offlineCrashLog(mixed $model): ?array
+    {
+        $serverId = (string) $this->context->clientIdentifier($model);
+
+        if ($serverId === '') {
+            return null;
+        }
+
+        $cacheKey = 'pteromods.dayz.dashboard.offline_crash.' . md5($serverId);
+        $payload = $this->staleCache->remember(
+            $cacheKey,
+            self::STATS_CACHE_SECONDS,
+            self::STATS_CACHE_SECONDS * 20,
+            function () use ($model): ?array {
+                $reason = $this->offlineCrashReason($model);
+
+                if ($reason === null) {
+                    return null;
+                }
+
+                $log = $this->latestCrashLog($model);
+
+                if ($log === null) {
+                    return null;
+                }
+
+                $log['reason'] = $reason;
+
+                return $log;
+            },
+            null,
+        );
+
+        return is_array($payload) ? $payload : null;
+    }
+
+    private function offlineCrashReason(mixed $model): ?string
+    {
+        $lines = $this->gateway->consoleLogs($model);
+
+        if ($lines === []) {
+            return null;
+        }
+
+        $haystack = strtolower(implode("\n", array_slice($lines, -200)));
+
+        return match (true) {
+            str_contains($haystack, 'failed to load game scripts') => 'The latest console output reports "Failed to load game scripts".',
+            str_contains($haystack, 'termination successfully completed') => 'The latest console output reports "--- Termination successfully completed ---".',
+            preg_match('/\bcrash(ed|ing)?\b/i', $haystack) === 1 => 'The latest console output indicates a crash.',
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{name: string, path: string}|null
+     */
+    private function latestCrashLog(mixed $model): ?array
+    {
+        $latest = null;
+
+        foreach ($this->gateway->listDirectory($model, '/profiles') as $entry) {
+            if (!is_array($entry) || !($entry['file'] ?? false)) {
+                continue;
+            }
+
+            $name = trim((string) ($entry['name'] ?? ''));
+
+            if (preg_match('/^crash_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.log$/i', $name, $matches) !== 1) {
+                continue;
+            }
+
+            $date = \DateTimeImmutable::createFromFormat('Y-m-d_H-i-s', $matches[1]);
+            $unix = $date === false ? 0 : $date->getTimestamp();
+
+            if ($latest === null || $unix > $latest['timestamp']) {
+                $latest = [
+                    'timestamp' => $unix,
+                    'name' => $name,
+                    'path' => '/profiles/' . $name,
+                ];
+            }
+        }
+
+        if ($latest === null) {
+            return null;
+        }
+
+        return [
+            'name' => $latest['name'],
+            'path' => $latest['path'],
+        ];
     }
 }
