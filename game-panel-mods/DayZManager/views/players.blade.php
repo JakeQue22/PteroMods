@@ -511,214 +511,7 @@
             .catch(function () { setStatus('Remove request failed.', false, playerActionId || actionId); });
     };
 
-    // ── Wiki item lookup ───────────────────────────────────────────────────
-    //
-    // Maps the camelCase prefix of a DayZ class name to the wiki page title
-    // (underscore-separated, matching the wiki URL and image filename
-    // convention).  Variant items share one page but each have their own
-    // image named  BaseName_-_(Variant).png  on the wiki.
-    //
-    // Only the class prefix (everything before the first _) is used as the
-    // key, so every colour/variant of an item resolves automatically without
-    // needing individual entries.
-    var WIKI_BASE = {
-        // ── Shirts / tops ──────────────────────────────────────────────────
-        'TShirt':          'T-Shirt',
-        'TacticalShirt':   'Tactical_Shirt',
-        'PlaidShirt':      'Plaid_Shirt',
-        'CheckShirt':      'Check_Shirt',
-        'M65Jacket':       'M65_Jacket',
-        'CivilianCoat':    'Civilian_Coat',
-        'HuntingJacket':   'Hunting_Jacket',
-        'LongHoodie':      'Longsleeve_Hoodie',
-        'PoliceJacket':    'Police_Jacket',
-        'PoliceDressBlouse': 'Police_Dress_Blouse',
-        'WorkmanJacket':   'Workman_Jacket',
-        'TrackSuitTop':    'Tracksuit_Top',
-        'PustozerkaJacket': 'Pustozerka_Jacket',
-        'GorkaJacket':     'Gorka_Jacket',
-        'BomberJacket':    'Bomber_Jacket',
-        'SurvivorJacket':  'Survivor_Jacket',
-        'MMBJacket':       'MMB_Jacket',
-        'USMCParka':       'USMC_Parka',
-        'BomberPadded':    'Bomber_Jacket_Padded',
-        'WoolCoat':        'Wool_Coat',
-        'RainCoat':        'Rain_Jacket',
-        'PoliceParka':     'Police_Parka',
-        'MedicalScrubsTop': 'Medical_Scrubs_Top',
-        'FirefighterJacket': 'Firefighter_Jacket',
-        'PrisonUniformTop': 'Prison_Uniform_Top',
-        // ── Pants ──────────────────────────────────────────────────────────
-        'JeansPants':      'Jeans',
-        'CargoPants':      'Cargo_Pants',
-        'TacticalPants':   'Tactical_Pants',
-        'WorkingPants':    'Working_Pants',
-        'TrackSuitPants':  'Tracksuit_Pants',
-        'PoliceJeansPants': 'Police_Jeans',
-        'GorkaPants':      'Gorka_Pants',
-        'MedicalScrubsBottom': 'Medical_Scrubs_Bottom',
-        'PrisonUniformPants': 'Prison_Uniform_Pants',
-        'ShortJeans':      'Short_Jeans',
-        'FishingPants':    'Fishing_Pants',
-        // ── Boots / footwear ───────────────────────────────────────────────
-        'MilitaryBoots':   'Military_Boots',
-        'AthleticShoes':   'Athletic_Shoes',
-        'HikingBoots':     'Hiking_Boots',
-        'HighHeels':       'High_Heels',
-        'WelliesBoots':    'Rubber_Boots',
-        'CowboyBoots':     'Cowboy_Boots',
-        'OfficerBoots':    'Officer_Boots',
-        'AsicsShoes':      'Running_Shoes',
-        'TrekingBoots':    'Trekking_Boots',  // in-game class name has single 'k'
-        // ── Headgear ───────────────────────────────────────────────────────
-        'ColombianHat':    'Colombian_Hat',
-        'CowboyHat':       'Cowboy_Hat',
-        'BaseballCap':     'Baseball_Cap',
-        'ConstructionHelmet': 'Construction_Helmet',
-        'MotorcycleHelmet': 'Motorcycle_Helmet',
-        'MilitaryBeret':   'Military_Beret',
-        'GorkaCap':        'Gorka_Cap',
-        'BandanaCapBlack': 'Bandana_Cap',
-        'PoliceCap':       'Police_Cap',
-        'WoolenHat':       'Woolen_Hat',
-        'Ushanka':         'Ushanka',
-        'SantasHat':       'Santas_Hat',
-        'HardHat':         'Hard_Hat',
-        'BikiniTop':       'Bikini_Top',
-        'CamoHat':         'Hunting_Cap',
-        'BallisticHelmet': 'Ballistic_Helmet',
-        'SteelHelmet':     'Steel_Helmet',
-        'SteelHelmetPilot': 'Pilot_Helmet',
-        'MotoHelmet':      'Motorcycle_Helmet', // aliases the same wiki page as MotorcycleHelmet
-        'TankHelmet':      'Tank_Helmet',
-        'PoliceBeret':     'Police_Beret',
-        // ── Masks / eyewear ────────────────────────────────────────────────
-        'NVGoggles':       'NV-Goggles',
-        'SkiGoggles':      'Ski_Goggles',
-        'FaceWrapping':    'Face_Wrap',
-        'Balaclava':       'Balaclava',
-        'GasMask':         'Gas_Mask',
-        'GasMaskFilter':   'Gas_Mask_Filter',
-        'SurgicalMask':    'Surgical_Mask',
-        'ScaryMask':       'Scary_Mask',
-        'MotorcycleMask':  'Motorcycle_Mask',
-        'CoyoteMask':      'Coyote_Mask',
-        'DustMask':        'Dust_Mask',
-        'SunGlasses':      'Sunglasses',
-        'Bandana':         'Bandana',
-        // ── Gloves / hands ─────────────────────────────────────────────────
-        'LeatherGloves':   'Leather_Gloves',
-        'TacticalGloves':  'Tactical_Gloves',
-        'SurgicalGloves':  'Surgical_Gloves',
-        'WorkingGloves':   'Working_Gloves',
-        'PlateCarrierGloves': 'Plate_Carrier_Gloves',
-        // ── Vests ──────────────────────────────────────────────────────────
-        'HighCapacityVest': 'High_Capacity_Vest',
-        'HuntingVest':     'Hunting_Vest',
-        'PressVest':       'Press_Vest',
-        'PlateCarrierVest': 'Plate_Carrier_Vest',
-        'TTsKOVest':       'TTsKO_Vest',
-        'PolicePressVest': 'Police_Press_Vest',
-        'PoliceVest':      'Police_Vest',
-        // ── Bags / backpacks ───────────────────────────────────────────────
-        'AliceBag':        'Alice_Backpack',
-        'AssaultBag':      'Assault_Bag',
-        'MountainBag':     'Mountain_Backpack',
-        'MilitaryBag':     'Military_Backpack',
-        'CivilianBag':     'Civilian_Backpack',
-        'GardenBackpack':  'Garden_Backpack',
-        'SchoolBag':       'Schoolbag',
-        'DrybagBackpack':  'Drybag',
-        'Taloon':          'Taloon_Backpack',
-        'CoyoteBag':       'Coyote_Backpack',
-        'UniversalBag':    'Universal_Backpack',
-        'PistolHolsterBag': 'Pistol_Holster',
-        // ── Holsters / hip pouches ─────────────────────────────────────────
-        'HolsterChest':    'Chest_Holster',
-        'AKMag':           'AK_Magazine',
-        'M4A1':            'M4-A1',
-        // ── Weapons (commonly encountered in Back / Hands) ─────────────────
-        'AK101':           'AK-101',
-        'AK74':            'AK-74',
-        'AKM':             'AKM',
-        'Mosin9130':       'Mosin_91_30',
-        'SKS':             'SKS',
-        'SG5K':            'SG5-K',
-        'BK133':           'BK-133',
-        'Sporter22':       'Sporter_22',
-        'Winchester70':    'Winchester_Model_70',
-        'CZ527':           'CZ_527',
-        'CZ75':            'CZ_75',
-        'Glock19X':        'Glock_19X',
-        'P1PP':            'P1',
-        'Magnum':          'Magnum',
-        'UTAS':            'UTAS_UTS-15',
-        'KA74':            'KA-74',
-        'KA101':           'KA-101',
-        'MKII':            'MK_II',
-        'Repeater':        'Repeater_Carbine',
-        'FNX45':           'FNX-45',
-        'VSD':             'VSD',
-        'SVD':             'SVD',
-        'DMR':             'DMR',
-        'M79':             'M79_Grenade_Launcher',
-        'M16A2':           'M16-A2',
-        'MP5K':            'MP5-K',
-        'UMP45':           'UMP-45',
-        'VSS':             'VSS',
-        'AUG':             'Steyr_AUG',
-        'PKM':             'PKM',
-        'SVDS':            'SVDS',
-        'Crossbow':        'Crossbow',
-    };
-
-    // Known variant abbreviations that don't decode cleanly from camelCase.
-    // Key: the suffix after the first underscore in the class name.
-    // Value: the parenthesised variant text used in wiki image filenames.
-    var WIKI_VARIANT_MAP = {
-        'RBStripes':  'Red-Black_Stripes',
-        'LBStripes':  'Light-Blue_Stripes',
-        'YStripes':   'Yellow_Stripes',
-        'WGStripes':  'White-Green_Stripes',
-        'OliveGreen': 'Olive_Green',
-        'DarkBlue':   'Dark_Blue',
-        'WhiteBlue':  'White-Blue',
-        'BlackRed':   'Black-Red',
-        'BlueCamo':   'Blue_Camo',
-        'MVPCamo':    'MVP_Camo',
-        'NBCGreen':   'NBC_Green',
-        'NBCBlue':    'NBC_Blue',
-        'PoliceCamo': 'Police_Camo',
-        'GorkaFlora': 'Gorka_Flora',
-        'EMR':        'EMR',
-        'TTsKO':      'TTsKO',
-        'KLMK':       'KLMK',
-        'PautRev':    'Pautrev',
-        'ButterflyRev': 'Butterfly_Reversed',
-        'Butterfly':  'Butterfly',
-    };
-
-    // Converts camelCase to space-separated Title Words:
-    // "RBStripes" → "R B Stripes"  (fallback; exact mappings use WIKI_VARIANT_MAP)
-    function camelCaseToWords(str) {
-        return str
-            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
-            .replace(/([a-z])([A-Z])/g, '$1 $2')
-            .replace(/_+/g, ' ')
-            .trim();
-    }
-
-    var WIKI_API_BASE = 'https://dayz.wiki.gg/api.php';
-    var WIKI_SEARCH_BASE = 'https://dayz.wiki.gg/wiki/Special:Search?search=';
-    var WIKI_META_CACHE = Object.create(null);
-
-    function wikiDisplay(text) {
-        return String(text || '').replace(/_/g, ' ');
-    }
-
-    function normalizeWikiTitle(text) {
-        return String(text || '').replace(/ /g, '_').toLowerCase();
-    }
+    var INVENTORY_META_CACHE = Object.create(null);
 
     function dedupeStrings(list) {
         var out = [];
@@ -732,139 +525,67 @@
         return out;
     }
 
-    function variantDisplayName(variantKey) {
-        return WIKI_VARIANT_MAP[variantKey] || camelCaseToWords(variantKey).replace(/ /g, '_');
+    function humanizeInventoryClassName(value) {
+        return String(value || '')
+            .replace(/_/g, ' ')
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/([A-Za-z])(\d)/g, '$1 $2')
+            .replace(/(\d)([A-Za-z])/g, '$1 $2')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
-    function classWikiCandidates(cls) {
-        var exactAlias = WIKI_BASE[cls] || '';
-        var exactTitle = camelCaseToWords(cls).replace(/ /g, '_');
-        var sep = cls.indexOf('_');
-
-        if (sep <= 0) {
-            var flatTitle = exactAlias || exactTitle;
-            return {
-                label: wikiDisplay(flatTitle),
-                search: flatTitle || cls,
-                pageCandidates: dedupeStrings([exactAlias, exactTitle]),
-                fileCandidates: dedupeStrings([exactAlias, exactTitle]),
-            };
-        }
-
-        var baseKey = cls.substring(0, sep);
-        var variantKey = cls.substring(sep + 1);
-        var baseTitle = WIKI_BASE[baseKey] || camelCaseToWords(baseKey).replace(/ /g, '_');
-        var variantTitle = variantDisplayName(variantKey);
-        var compoundTitle = baseTitle !== '' ? (baseTitle + '_' + variantTitle) : exactTitle;
-        var legacyImageTitle = baseTitle !== '' ? (baseTitle + '_-_(' + variantTitle + ')') : exactTitle;
-        var altImageTitle = baseTitle !== '' ? (baseTitle + '_(' + variantTitle + ')') : exactTitle;
-
-        return {
-            label: baseTitle !== ''
-                ? (wikiDisplay(baseTitle) + ' (' + wikiDisplay(variantTitle) + ')')
-                : wikiDisplay(exactTitle),
-            search: compoundTitle || exactTitle || cls,
-            pageCandidates: dedupeStrings([exactAlias, compoundTitle, exactTitle, baseTitle]),
-        fileCandidates: dedupeStrings([cls, exactAlias, compoundTitle, exactTitle, legacyImageTitle, altImageTitle, baseTitle]),
-        };
+    function inventoryLookupKey(item) {
+        return [
+            String((item && item.className) || ''),
+            String((item && item.itemId) || ''),
+            String((item && item.name) || '')
+        ].join('|');
     }
 
-    function wikiApiUrl(params) {
-        var search = new URLSearchParams(params || {});
-        search.set('format', 'json');
-        search.set('origin', '*');
-        return WIKI_API_BASE + '?' + search.toString();
+    function fallbackInventoryLabel(item) {
+        if (item && item.name) { return String(item.name); }
+        if (item && item.className) { return humanizeInventoryClassName(item.className); }
+        if (item && item.itemId) { return String(item.itemId); }
+        return 'Unknown item';
     }
 
-    function wikiFetchJson(params) {
-        return fetch(wikiApiUrl(params)).then(function (res) {
-            if (!res.ok) {
-                throw new Error('Wiki request failed.');
-            }
-            return res.json();
-        });
-    }
-
-    function pickWikiPage(candidates, pages) {
-        var available = {};
-        Object.keys(pages || {}).forEach(function (key) {
-            var page = pages[key];
-            if (!page || page.missing !== undefined) { return; }
-            available[normalizeWikiTitle(page.title)] = page;
+    function resolveInventoryBatch(items) {
+        var pending = [];
+        (items || []).forEach(function (item) {
+            var key = inventoryLookupKey(item);
+            if (!key || INVENTORY_META_CACHE[key]) { return; }
+            pending.push(item);
         });
 
-        for (var i = 0; i < candidates.length; i += 1) {
-            var match = available[normalizeWikiTitle(candidates[i])];
-            if (match) { return match; }
+        if (!pending.length) {
+            return Promise.resolve({});
         }
 
-        var keys = Object.keys(available);
-        return keys.length ? available[keys[0]] : null;
-    }
+        var requestPromise = req('POST', '/dayz/player-actions/inventory/resolve', { items: pending })
+            .then(function (payload) {
+                var resolved = payload && payload.items && typeof payload.items === 'object' ? payload.items : {};
+                pending.forEach(function (item) {
+                    var key = inventoryLookupKey(item);
+                    INVENTORY_META_CACHE[key] = resolved[key] || { resolved: false };
+                });
+                return resolved;
+            })
+            .catch(function () {
+                pending.forEach(function (item) {
+                    INVENTORY_META_CACHE[inventoryLookupKey(item)] = { resolved: false };
+                });
+                return {};
+            });
 
-    function pickWikiFile(candidates, pages) {
-        var available = {};
-        Object.keys(pages || {}).forEach(function (key) {
-            var page = pages[key];
-            var info = page && Array.isArray(page.imageinfo) ? page.imageinfo[0] : null;
-            if (!page || page.missing !== undefined || !info) { return; }
-            var title = String(page.title || '').replace(/^File:/i, '').replace(/\.png$/i, '');
-            available[normalizeWikiTitle(title)] = info;
+        pending.forEach(function (item) {
+            INVENTORY_META_CACHE[inventoryLookupKey(item)] = requestPromise.then(function (resolved) {
+                return resolved[inventoryLookupKey(item)] || { resolved: false };
+            });
         });
 
-        for (var i = 0; i < candidates.length; i += 1) {
-            var match = available[normalizeWikiTitle(candidates[i])];
-            if (match) { return match; }
-        }
-
-        var keys = Object.keys(available);
-        return keys.length ? available[keys[0]] : null;
-    }
-
-    function resolveWikiMeta(cls) {
-        var cacheKey = String(cls || '');
-        if (!cacheKey) {
-            return Promise.resolve({ label: 'Unknown item', pageUrl: '', imageUrl: '' });
-        }
-        if (WIKI_META_CACHE[cacheKey]) {
-            return WIKI_META_CACHE[cacheKey];
-        }
-
-        var candidates = classWikiCandidates(cacheKey);
-        var fallbackUrl = WIKI_SEARCH_BASE + encodeURIComponent(candidates.search || cacheKey);
-
-        WIKI_META_CACHE[cacheKey] = Promise.all([
-            wikiFetchJson({
-                action: 'query',
-                prop: 'info',
-                inprop: 'url',
-                titles: candidates.pageCandidates.join('|'),
-            }).catch(function () { return null; }),
-            wikiFetchJson({
-                action: 'query',
-                prop: 'imageinfo',
-                iiprop: 'url',
-                iiurlwidth: '245',
-                titles: candidates.fileCandidates.map(function (title) { return 'File:' + title + '.png'; }).join('|'),
-            }).catch(function () { return null; }),
-        ]).then(function (responses) {
-            var pageData = responses[0] && responses[0].query ? pickWikiPage(candidates.pageCandidates, responses[0].query.pages || {}) : null;
-            var fileData = responses[1] && responses[1].query ? pickWikiFile(candidates.fileCandidates, responses[1].query.pages || {}) : null;
-
-            return {
-                label: (pageData && pageData.title ? wikiDisplay(pageData.title) : candidates.label) || cacheKey,
-                pageUrl: (pageData && pageData.fullurl) ? pageData.fullurl : fallbackUrl,
-                imageUrl: fileData ? (fileData.thumburl || fileData.url || '') : '',
-            };
-        }).catch(function () {
-            return {
-                label: candidates.label || cacheKey,
-                pageUrl: fallbackUrl,
-                imageUrl: '',
-            };
-        });
-
-        return WIKI_META_CACHE[cacheKey];
+        return requestPromise;
     }
 
     window.pteroViewInventory = function (playerName, inventoryJson) {
@@ -893,12 +614,24 @@
         // or "<parent>.attach" so they appear under a dedicated section.
         var items = []; // [{slot, className, isContainerContent}]
 
+        function stringField(entry, keys) {
+            for (var i = 0; i < keys.length; i += 1) {
+                var value = entry ? entry[keys[i]] : '';
+                if (typeof value === 'string' && value.trim() !== '') {
+                    return value.trim();
+                }
+            }
+            return '';
+        }
+
         function collectEntry(entry, parentSlot) {
             if (!entry || typeof entry !== 'object') { return; }
-            var cls = typeof entry.className === 'string' ? entry.className : '';
+            var cls = stringField(entry, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
+            var itemId = stringField(entry, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']);
+            var itemName = stringField(entry, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']);
             var slot = typeof entry.slot === 'string' ? entry.slot : (parentSlot || '');
             if (cls !== '') {
-                items.push({ slot: slot, className: cls, isContainerContent: !!parentSlot });
+                items.push({ slot: slot, className: cls, itemId: itemId, name: itemName, isContainerContent: !!parentSlot });
             }
             // Recurse into contents array (bridge v2 format with container contents).
             var contents = Array.isArray(entry.contents) ? entry.contents : null;
@@ -910,7 +643,7 @@
         if (Array.isArray(parsed)) {
             parsed.forEach(function (entry) {
                 if (typeof entry === 'string' && entry !== '') {
-                    items.push({ slot: '', className: entry, isContainerContent: false });
+                    items.push({ slot: '', className: entry, itemId: '', name: '', isContainerContent: false });
                 } else {
                     collectEntry(entry, '');
                 }
@@ -922,9 +655,15 @@
             (function walk(obj, parentSlot) {
                 if (!obj || typeof obj !== 'object') { return; }
                 if (Array.isArray(obj)) { obj.forEach(function (v) { walk(v, parentSlot); }); return; }
-                var cls = obj.className || obj.class || obj.type || obj.item;
+                var cls = stringField(obj, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
                 if (cls && typeof cls === 'string') {
-                    items.push({ slot: obj.slot || parentSlot || '', className: cls, isContainerContent: !!parentSlot });
+                    items.push({
+                        slot: obj.slot || parentSlot || '',
+                        className: cls,
+                        itemId: stringField(obj, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']),
+                        name: stringField(obj, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']),
+                        isContainerContent: !!parentSlot
+                    });
                 }
                 Object.values(obj).forEach(function (v) { if (v && typeof v === 'object') { walk(v, obj.slot || parentSlot || ''); } });
             }(parsed, ''));
@@ -979,11 +718,41 @@
             imgWrap.appendChild(img);
         }
 
+        var cardsByLookup = Object.create(null);
+
+        function applyResolvedMeta(cardBits, resolved, fallbackLabel) {
+            if (!cardBits) { return; }
+            var label = resolved && resolved.display_name ? resolved.display_name : fallbackLabel;
+
+            cardBits.nameEl.innerHTML = '';
+
+            if (resolved && resolved.resolved && resolved.wiki_url) {
+                var link = document.createElement('a');
+                link.href = resolved.wiki_url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+                link.textContent = label;
+                link.style.cssText = 'color:var(--dz-accent);text-decoration:none;';
+                link.title = [
+                    resolved.classname || cardBits.item.className || '',
+                    resolved.variant || '',
+                    resolved.type || resolved.category || ''
+                ].filter(Boolean).join(' · ');
+                cardBits.nameEl.appendChild(link);
+            } else {
+                var span = document.createElement('span');
+                span.textContent = label;
+                span.title = (cardBits.item.className || label);
+                cardBits.nameEl.appendChild(span);
+            }
+
+            if (resolved && resolved.image_url) {
+                setCardImage(cardBits.imgWrap, resolved.image_url, label);
+            }
+        }
+
         function makeItemCard(item) {
-            var cls     = item.className;
-            var meta    = classWikiCandidates(cls);
-            var label   = meta.label || cls;
-            var pageUrl = WIKI_SEARCH_BASE + encodeURIComponent(meta.search || cls);
+            var label = fallbackInventoryLabel(item);
             var card = document.createElement('div');
             card.style.cssText = cardStyle;
 
@@ -994,24 +763,13 @@
 
             var nameEl = document.createElement('div');
             nameEl.style.cssText = 'word-break:break-word;text-align:center;line-height:1.2;';
-            var link = document.createElement('a');
-            link.href = pageUrl;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            link.textContent = label;
-            link.title = cls;
-            link.style.cssText = 'color:var(--dz-accent);text-decoration:none;';
-            nameEl.appendChild(link);
+            nameEl.textContent = label;
+            nameEl.title = item.className || label;
             card.appendChild(nameEl);
 
-            resolveWikiMeta(cls).then(function (resolved) {
-                if (!resolved) { return; }
-                link.href = resolved.pageUrl || pageUrl;
-                link.textContent = resolved.label || label;
-                if (resolved.imageUrl) {
-                    setCardImage(imgWrap, resolved.imageUrl, resolved.label || label);
-                }
-            });
+            var key = inventoryLookupKey(item);
+            if (!cardsByLookup[key]) { cardsByLookup[key] = []; }
+            cardsByLookup[key].push({ item: item, imgWrap: imgWrap, nameEl: nameEl });
 
             return card;
         }
@@ -1078,6 +836,26 @@
 
         body.appendChild(frag);
         modal.style.display = 'block';
+
+        var uniqueItems = [];
+        var seenLookup = Object.create(null);
+        items.forEach(function (item) {
+            var key = inventoryLookupKey(item);
+            if (!key || seenLookup[key]) { return; }
+            seenLookup[key] = true;
+            uniqueItems.push({ className: item.className || '', itemId: item.itemId || '', name: item.name || '' });
+        });
+
+        resolveInventoryBatch(uniqueItems).then(function () {
+            Object.keys(cardsByLookup).forEach(function (key) {
+                var maybePromise = INVENTORY_META_CACHE[key];
+                Promise.resolve(maybePromise).then(function (resolved) {
+                    (cardsByLookup[key] || []).forEach(function (cardBits) {
+                        applyResolvedMeta(cardBits, resolved || null, fallbackInventoryLabel(cardBits.item));
+                    });
+                });
+            });
+        });
     };
 
     // Close modal on backdrop click.

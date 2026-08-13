@@ -7,6 +7,7 @@ namespace GamePanelMods\DayZManager\Controllers;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZGiveMoneyService;
+use GamePanelMods\DayZManager\Services\DayZInventoryItemResolverService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZObservedPlayerService;
 use GamePanelMods\DayZManager\Services\DayZPlayerDirectoryService;
@@ -32,6 +33,7 @@ final class DayZPlayerController
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZVppAdminService $vppAdmin = new DayZVppAdminService(),
         private readonly DayZGiveMoneyService $giveMoneySvc = new DayZGiveMoneyService(),
+        private readonly DayZInventoryItemResolverService $inventoryResolver = new DayZInventoryItemResolverService(),
     ) {
     }
 
@@ -218,6 +220,29 @@ final class DayZPlayerController
             return $this->giveMoneySvc->give($model, $playerId, $denomination, $playerName, $quantity, $playerUid);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+
+        /**
+         * @return array<string, mixed>
+         */
+        public function resolveInventory(mixed $server = null): array
+        {
+            try {
+                $model = $this->context->resolve($server)['model'];
+                $items = $this->context->input('items', []);
+                $forceRefresh = filter_var($this->context->input('refresh', false), FILTER_VALIDATE_BOOL);
+
+                if (!is_array($items)) {
+                    return ['status' => 'error', 'message' => 'Inventory items payload must be an array.', 'items' => []];
+                }
+
+                return [
+                    'status' => 'ok',
+                    'items' => $this->inventoryResolver->resolveBatch($items, $forceRefresh),
+                ];
+            } catch (Throwable $exception) {
+                return ['status' => 'error', 'message' => $exception->getMessage(), 'items' => []];
+            }
         }
     }
 
