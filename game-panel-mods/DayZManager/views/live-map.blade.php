@@ -31,7 +31,9 @@
 </section>
 
 <section class="dz-card dz-live-map-layout">
-    <div id="dz-live-map-canvas" class="dz-live-map-canvas" aria-label="DayZ live map viewer"></div>
+    <div id="dz-live-map-canvas" class="dz-live-map-canvas" aria-label="DayZ live map viewer">
+        <div id="dz-live-map-cursor" style="display:none;position:absolute;bottom:0.35rem;left:0.35rem;z-index:900;background:rgba(0,0,0,0.65);color:#e2e8f0;font-size:0.72rem;font-family:monospace;padding:0.15rem 0.4rem;border-radius:0.2rem;pointer-events:none;"></div>
+    </div>
     <aside class="dz-live-map-sidebar">
         <h3 id="dz-live-map-players-heading">Players (0/64)</h3>
         <div id="dz-live-map-status" class="dz-sub"></div>
@@ -257,6 +259,25 @@
         document.addEventListener('fullscreenchange', function () {
             state.leafletMap.invalidateSize(false);
         });
+
+        // Show DayZ world coordinates on mouse hover.
+        const cursorEl = document.getElementById('dz-live-map-cursor');
+        if (cursorEl) {
+            state.leafletMap.on('mousemove', function (ev) {
+                const ll = ev.latlng;
+                cursorEl.textContent = 'X: ' + Math.round(ll.lng) + '  Z: ' + Math.round(ll.lat);
+                cursorEl.style.display = '';
+            });
+            state.leafletMap.on('mouseout', function () {
+                cursorEl.style.display = 'none';
+            });
+            // Click on map copies coordinates to clipboard.
+            state.leafletMap.on('click', function (ev) {
+                if (!navigator.clipboard) { return; }
+                const ll = ev.latlng;
+                navigator.clipboard.writeText(Math.round(ll.lng) + ', ' + Math.round(ll.lat));
+            });
+        }
     }
 
     function applyTileLayer(mapDef) {
@@ -588,7 +609,13 @@
         state.list = players.slice();
         countEl.textContent = String(players.length);
         if (playersHeadingEl) {
-            playersHeadingEl.textContent = 'Players (' + String(players.length) + '/' + String(PLAYER_CAPACITY) + ')';
+            const aliveCount = players.filter(function (p) { return p.alive !== false; }).length;
+            const deadCount  = players.length - aliveCount;
+            let headingText = 'Players (' + aliveCount + '/' + String(PLAYER_CAPACITY) + ')';
+            if (deadCount > 0) {
+                headingText += ' · ' + deadCount + ' dead';
+            }
+            playersHeadingEl.textContent = headingText;
         }
         renderPlayerList();
         renderSelection();
@@ -640,18 +667,33 @@
         return '<div><dt>' + escapeHtml(label) + '</dt><dd>' + value + '</dd></div>';
     }
 
+    function healthBar(h) {
+        const pct   = Math.max(0, Math.min(100, h));
+        const color = pct > 60 ? '#34d399' : pct > 30 ? '#f59e0b' : '#f87171';
+        return '<div style="background:var(--dz-border,#2d3348);border-radius:2px;height:6px;width:100%;margin-top:2px;">'
+            + '<div style="background:' + color + ';width:' + pct.toFixed(0) + '%;height:6px;border-radius:2px;"></div></div>';
+    }
+
     function playerDetailRows(player) {
         const entry   = directoryEntry(player) || {};
         const lists   = Object.keys(entry.lists || {}).filter(function (key) { return entry.lists[key]; });
         const location = roughLocationName(player);
+        const x = Number(player.x || 0);
+        const z = Number(player.z || 0);
+        const coordStr = x.toFixed(1) + ', ' + z.toFixed(1);
 
         let html = '';
 
         html += playerRow('Location', escapeHtml(location));
-        html += playerRow('Position', Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1));
+        html += playerRow('Position',
+            coordStr
+            + ' <button type="button" onclick="navigator.clipboard&&navigator.clipboard.writeText(\'' + x.toFixed(0) + ', ' + z.toFixed(0) + '\')" '
+            + 'style="margin-left:4px;padding:0 4px;font-size:0.7rem;cursor:pointer;background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:3px;color:var(--dz-muted);" title="Copy coordinates">📋</button>');
         html += playerRow('Height', Number(player.y || 0).toFixed(1));
         html += playerRow('Direction', Number(player.direction || 0).toFixed(1) + '°');
-        html += playerRow('Status', player.alive !== false ? 'Alive' : 'Dead');
+        html += playerRow('Status', player.alive !== false
+            ? '<span style="color:#34d399;">Alive</span>'
+            : '<span style="color:#f87171;">Dead</span>');
         if (player.in_vehicle) {
             html += playerRow('In Vehicle', escapeHtml(player.vehicle_class || 'Unknown'));
         }
@@ -660,7 +702,7 @@
             var h = Number(player.health);
             // Older bridge deployments sent health on a 0-10000 scale; normalise.
             if (h > 100) { h = h / 100; }
-            html += playerRow('Health', h.toFixed(1) + '%');
+            html += playerRow('Health', h.toFixed(1) + '%' + healthBar(h));
         } else {
             html += playerRow('Health', 'N/A');
         }
@@ -751,7 +793,23 @@
             const player = entry.player;
             const li  = document.createElement('li');
             li.className = 'dz-live-map-list-item' + (state.selected === player.steam64 ? ' is-active' : '');
-            li.innerHTML = '<button type="button"><span class="dz-live-map-list-main">' + playerNameHtml(player) + '</span>'
+
+            // Health bar colour.
+            var h = player.health != null ? Number(player.health) : null;
+            if (h !== null && h > 100) { h = h / 100; }
+            var hPct   = h !== null ? Math.max(0, Math.min(100, h)) : null;
+            var hColor = hPct === null ? '#888' : (hPct > 60 ? '#34d399' : hPct > 30 ? '#f59e0b' : '#f87171');
+            var aliveIndicator = player.alive !== false
+                ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#34d399;margin-right:3px;flex-shrink:0;" title="Alive"></span>'
+                : '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f87171;margin-right:3px;flex-shrink:0;" title="Dead"></span>';
+            var healthHtml = hPct !== null
+                ? '<div style="background:var(--dz-border,#2d3348);border-radius:2px;height:3px;width:100%;margin-top:2px;">'
+                  + '<div style="background:' + hColor + ';width:' + hPct.toFixed(0) + '%;height:3px;border-radius:2px;"></div></div>'
+                : '';
+
+            li.innerHTML = '<button type="button"><span class="dz-live-map-list-main" style="display:flex;align-items:center;">'
+                + aliveIndicator + playerNameHtml(player) + '</span>'
+                + healthHtml
                 + '<small>' + escapeHtml(roughLocationName(player)) + '</small></button>';
             li.querySelector('button').addEventListener('click', function () {
                 selectPlayer(player.steam64);

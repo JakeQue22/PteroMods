@@ -74,6 +74,18 @@
             link.textContent = LABEL;
         }
 
+        // The panel client area is a React SPA that delegates click handling to
+        // React Router at the document level.  React Router intercepts the click,
+        // tries client-side navigation to a route that does not exist, and drops
+        // the event — leaving the page unchanged and requiring a second click for
+        // the browser to fall back to a full navigation.  Stopping propagation
+        // prevents React Router from seeing the click so the first click always
+        // navigates correctly.
+        link.addEventListener('click', function (e) {
+            e.stopImmediatePropagation();
+            window.location.href = url;
+        });
+
         return link;
     }
 

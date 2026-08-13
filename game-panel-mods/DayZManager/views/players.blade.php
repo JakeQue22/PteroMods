@@ -253,6 +253,41 @@
     </section>
 @endforeach
 
+@if (!empty($give_money_queue))
+<section class="dz-card">
+    <h2>Give Money Queue</h2>
+    <p class="dz-sub">Items queued for delivery when the player next connects. The server-side mod reads <code>/profiles/PteroMods/give_money_&lt;uid&gt;.json</code> and awards the items.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead>
+            <tr style="border-bottom:1px solid var(--dz-border,#2d3348);">
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Player</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Item</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Qty</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Status</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Queued</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach ($give_money_queue as $entry)
+                <tr style="border-bottom:1px solid var(--dz-border,#2d3348);">
+                    <td style="padding:0.25rem 0.5rem;">
+                        {{ ($entry['player_name'] ?? '') !== '' ? $entry['player_name'] : ($entry['player_id'] ?? '—') }}
+                    </td>
+                    <td style="padding:0.25rem 0.5rem;font-family:monospace;">{{ $entry['item_class'] ?? '—' }}</td>
+                    <td style="padding:0.25rem 0.5rem;">{{ $entry['quantity'] ?? 1 }}</td>
+                    <td style="padding:0.25rem 0.5rem;">
+                        <span style="color:{{ ($entry['status'] ?? '') === 'delivered' ? 'var(--dz-success,#10b981)' : (($entry['status'] ?? '') === 'pending' ? 'var(--dz-warn,#f59e0b)' : 'var(--dz-muted)') }}">
+                            {{ ucfirst($entry['status'] ?? 'pending') }}
+                        </span>
+                    </td>
+                    <td style="padding:0.25rem 0.5rem;color:var(--dz-muted);">{{ $entry['created_at'] ?? '—' }}</td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+</section>
+@endif
+
 <script>
 (function () {
     var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
@@ -427,6 +462,7 @@
             .then(function (d) {
                 var ok = d.status === 'queued';
                 setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false, playerActionId);
+                if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
             })
             .catch(function () { setStatus('Give money request failed.', false, playerActionId); });
     };
@@ -451,23 +487,254 @@
             .catch(function () { setStatus('Remove request failed.', false, playerActionId || actionId); });
     };
 
-    // Converts a DayZ class name to the wiki filename convention.
-    // e.g. "TacticalShirt_Black" → "Tactical_Shirt_Black"
-    //      "NVGoggles_Black"     → "NV_Goggles_Black"
-    function classToWikiName(cls) {
-        return cls
-            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
-            .replace(/([a-z])([A-Z])/g, '$1_$2')
-            .replace(/_+/g, '_');
+    // ── Wiki item lookup ───────────────────────────────────────────────────
+    //
+    // Maps the camelCase prefix of a DayZ class name to the wiki page title
+    // (underscore-separated, matching the wiki URL and image filename
+    // convention).  Variant items share one page but each have their own
+    // image named  BaseName_-_(Variant).png  on the wiki.
+    //
+    // Only the class prefix (everything before the first _) is used as the
+    // key, so every colour/variant of an item resolves automatically without
+    // needing individual entries.
+    var WIKI_BASE = {
+        // ── Shirts / tops ──────────────────────────────────────────────────
+        'TShirt':          'T-Shirt',
+        'TacticalShirt':   'Tactical_Shirt',
+        'PlaidShirt':      'Plaid_Shirt',
+        'CheckShirt':      'Check_Shirt',
+        'M65Jacket':       'M65_Jacket',
+        'CivilianCoat':    'Civilian_Coat',
+        'HuntingJacket':   'Hunting_Jacket',
+        'LongHoodie':      'Longsleeve_Hoodie',
+        'PoliceJacket':    'Police_Jacket',
+        'PoliceDressBlouse': 'Police_Dress_Blouse',
+        'WorkmanJacket':   'Workman_Jacket',
+        'TrackSuitTop':    'Tracksuit_Top',
+        'PustozerkaJacket': 'Pustozerka_Jacket',
+        'GorkaJacket':     'Gorka_Jacket',
+        'BomberJacket':    'Bomber_Jacket',
+        'SurvivorJacket':  'Survivor_Jacket',
+        'MMBJacket':       'MMB_Jacket',
+        'USMCParka':       'USMC_Parka',
+        'BomberPadded':    'Bomber_Jacket_Padded',
+        'WoolCoat':        'Wool_Coat',
+        'RainCoat':        'Rain_Jacket',
+        'PoliceParka':     'Police_Parka',
+        'MedicalScrubsTop': 'Medical_Scrubs_Top',
+        'FirefighterJacket': 'Firefighter_Jacket',
+        'PrisonUniformTop': 'Prison_Uniform_Top',
+        // ── Pants ──────────────────────────────────────────────────────────
+        'JeansPants':      'Jeans',
+        'CargoPants':      'Cargo_Pants',
+        'TacticalPants':   'Tactical_Pants',
+        'WorkingPants':    'Working_Pants',
+        'TrackSuitPants':  'Tracksuit_Pants',
+        'PoliceJeansPants': 'Police_Jeans',
+        'GorkaPants':      'Gorka_Pants',
+        'MedicalScrubsBottom': 'Medical_Scrubs_Bottom',
+        'PrisonUniformPants': 'Prison_Uniform_Pants',
+        'ShortJeans':      'Short_Jeans',
+        'FishingPants':    'Fishing_Pants',
+        // ── Boots / footwear ───────────────────────────────────────────────
+        'MilitaryBoots':   'Military_Boots',
+        'AthleticShoes':   'Athletic_Shoes',
+        'HikingBoots':     'Hiking_Boots',
+        'HighHeels':       'High_Heels',
+        'WelliesBoots':    'Rubber_Boots',
+        'CowboyBoots':     'Cowboy_Boots',
+        'OfficerBoots':    'Officer_Boots',
+        'AsicsShoes':      'Running_Shoes',
+        'TrekingBoots':    'Trekking_Boots',
+        // ── Headgear ───────────────────────────────────────────────────────
+        'ColombianHat':    'Colombian_Hat',
+        'CowboyHat':       'Cowboy_Hat',
+        'BaseballCap':     'Baseball_Cap',
+        'ConstructionHelmet': 'Construction_Helmet',
+        'MotorcycleHelmet': 'Motorcycle_Helmet',
+        'MilitaryBeret':   'Military_Beret',
+        'GorkaCap':        'Gorka_Cap',
+        'BandanaCapBlack': 'Bandana_Cap',
+        'PoliceCap':       'Police_Cap',
+        'WoolenHat':       'Woolen_Hat',
+        'Ushanka':         'Ushanka',
+        'SantasHat':       'Santas_Hat',
+        'HardHat':         'Hard_Hat',
+        'BikiniTop':       'Bikini_Top',
+        'CamoHat':         'Hunting_Cap',
+        'BallisticHelmet': 'Ballistic_Helmet',
+        'SteelHelmet':     'Steel_Helmet',
+        'SteelHelmetPilot': 'Pilot_Helmet',
+        'MotoHelmet':      'Motorcycle_Helmet',
+        'TankHelmet':      'Tank_Helmet',
+        'PoliceBeret':     'Police_Beret',
+        // ── Masks / eyewear ────────────────────────────────────────────────
+        'NVGoggles':       'NV-Goggles',
+        'SkiGoggles':      'Ski_Goggles',
+        'FaceWrapping':    'Face_Wrap',
+        'Balaclava':       'Balaclava',
+        'GasMask':         'Gas_Mask',
+        'GasMaskFilter':   'Gas_Mask_Filter',
+        'SurgicalMask':    'Surgical_Mask',
+        'ScaryMask':       'Scary_Mask',
+        'MotorcycleMask':  'Motorcycle_Mask',
+        'CoyoteMask':      'Coyote_Mask',
+        'DustMask':        'Dust_Mask',
+        'SunGlasses':      'Sunglasses',
+        'Bandana':         'Bandana',
+        // ── Gloves / hands ─────────────────────────────────────────────────
+        'LeatherGloves':   'Leather_Gloves',
+        'TacticalGloves':  'Tactical_Gloves',
+        'SurgicalGloves':  'Surgical_Gloves',
+        'WorkingGloves':   'Working_Gloves',
+        'PlateCarrierGloves': 'Plate_Carrier_Gloves',
+        // ── Vests ──────────────────────────────────────────────────────────
+        'HighCapacityVest': 'High_Capacity_Vest',
+        'HuntingVest':     'Hunting_Vest',
+        'PressVest':       'Press_Vest',
+        'PlateCarrierVest': 'Plate_Carrier_Vest',
+        'TTsKOVest':       'TTsKO_Vest',
+        'PolicePressVest': 'Police_Press_Vest',
+        'PoliceVest':      'Police_Vest',
+        // ── Bags / backpacks ───────────────────────────────────────────────
+        'AliceBag':        'Alice_Backpack',
+        'AssaultBag':      'Assault_Bag',
+        'MountainBag':     'Mountain_Backpack',
+        'MilitaryBag':     'Military_Backpack',
+        'CivilianBag':     'Civilian_Backpack',
+        'GardenBackpack':  'Garden_Backpack',
+        'SchoolBag':       'Schoolbag',
+        'DrybagBackpack':  'Drybag',
+        'Taloon':          'Taloon_Backpack',
+        'CoyoteBag':       'Coyote_Backpack',
+        'UniversalBag':    'Universal_Backpack',
+        'PistolHolsterBag': 'Pistol_Holster',
+        // ── Holsters / hip pouches ─────────────────────────────────────────
+        'HolsterChest':    'Chest_Holster',
+        'AKMag':           'AK_Magazine',
+        'M4A1':            'M4-A1',
+        // ── Weapons (commonly encountered in Back / Hands) ─────────────────
+        'AK101':           'AK-101',
+        'AK74':            'AK-74',
+        'AKM':             'AKM',
+        'Mosin9130':       'Mosin_91_30',
+        'SKS':             'SKS',
+        'SG5K':            'SG5-K',
+        'BK133':           'BK-133',
+        'Sporter22':       'Sporter_22',
+        'Winchester70':    'Winchester_Model_70',
+        'CZ527':           'CZ_527',
+        'CZ75':            'CZ_75',
+        'Glock19X':        'Glock_19X',
+        'P1PP':            'P1',
+        'Magnum':          'Magnum',
+        'UTAS':            'UTAS_UTS-15',
+        'KA74':            'KA-74',
+        'KA101':           'KA-101',
+        'MKII':            'MK_II',
+        'Repeater':        'Repeater_Carbine',
+        'FNX45':           'FNX-45',
+        'VSD':             'VSD',
+        'SVD':             'SVD',
+        'DMR':             'DMR',
+        'M79':             'M79_Grenade_Launcher',
+        'M16A2':           'M16-A2',
+        'MP5K':            'MP5-K',
+        'UMP45':           'UMP-45',
+        'VSS':             'VSS',
+        'AUG':             'Steyr_AUG',
+        'PKM':             'PKM',
+        'SVDS':            'SVDS',
+        'Crossbow':        'Crossbow',
+    };
+
+    // Known variant abbreviations that don't decode cleanly from camelCase.
+    // Key: the suffix after the first underscore in the class name.
+    // Value: the parenthesised variant text used in wiki image filenames.
+    var WIKI_VARIANT_MAP = {
+        'RBStripes':  'Red-Black_Stripes',
+        'LBStripes':  'Light-Blue_Stripes',
+        'YStripes':   'Yellow_Stripes',
+        'WGStripes':  'White-Green_Stripes',
+        'OliveGreen': 'Olive_Green',
+        'DarkBlue':   'Dark_Blue',
+        'WhiteBlue':  'White-Blue',
+        'BlackRed':   'Black-Red',
+        'BlueCamo':   'Blue_Camo',
+        'MVPCamo':    'MVP_Camo',
+        'NBCGreen':   'NBC_Green',
+        'NBCBlue':    'NBC_Blue',
+        'PoliceCamo': 'Police_Camo',
+        'GorkaFlora': 'Gorka_Flora',
+        'EMR':        'EMR',
+        'TTsKO':      'TTsKO',
+        'KLMK':       'KLMK',
+        'PautRev':    'Pautrev',
+        'ButterflyRev': 'Butterfly_Reversed',
+        'Butterfly':  'Butterfly',
+    };
+
+    // Converts camelCase to space-separated Title Words:
+    // "RBStripes" → "R B Stripes"  (fallback; exact mappings use WIKI_VARIANT_MAP)
+    function camelCaseToWords(str) {
+        return str
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/_+/g, ' ')
+            .trim();
     }
 
-    function wikiImageUrl(wikiName) {
-        var enc = encodeURIComponent(wikiName);
+    // Returns { page, image, label } for a DayZ class name.
+    //   page  – wiki page title (e.g. "T-Shirt")      used in the URL
+    //   image – wiki image file (e.g. "T-Shirt_-_(Red-Black_Stripes)") used for the img src
+    //   label – human-readable label shown to the user
+    function classWikiInfo(cls) {
+        var sep = cls.indexOf('_');
+
+        // ── No variant suffix: look up the whole class as the base ──────────
+        if (sep <= 0) {
+            var exact = WIKI_BASE[cls];
+            if (exact) { return { page: exact, image: exact, label: exact.replace(/_/g, ' ') }; }
+            var name = camelCaseToWords(cls).replace(/ /g, '_');
+            return { page: name, image: name, label: name.replace(/_/g, ' ') };
+        }
+
+        // ── Has variant suffix ──────────────────────────────────────────────
+        var baseKey    = cls.substring(0, sep);
+        var variantKey = cls.substring(sep + 1);
+        var wikiBase   = WIKI_BASE[baseKey];
+
+        if (!wikiBase) {
+            // Unknown base: treat the whole thing as a camelCase name.
+            var fallback = camelCaseToWords(cls).replace(/ /g, '_');
+            return { page: fallback, image: fallback, label: fallback.replace(/_/g, ' ') };
+        }
+
+        // Resolve variant display name.
+        var variantDisplay = WIKI_VARIANT_MAP[variantKey];
+        if (!variantDisplay) {
+            // Auto-convert via camelCase split (covers simple cases like "Black", "Green", "Tan").
+            variantDisplay = camelCaseToWords(variantKey).replace(/ /g, '_');
+        }
+
+        var image = wikiBase + '_-_(' + variantDisplay + ')';
+        var label = wikiBase.replace(/_/g, ' ') + ' (' + variantDisplay.replace(/_/g, ' ') + ')';
+        return { page: wikiBase, image: image, label: label };
+    }
+
+    function wikiImageUrl(cls) {
+        var info = classWikiInfo(cls);
+        var enc  = encodeURIComponent(info.image);
         return 'https://dayz.wiki.gg/images/thumb/' + enc + '.png/245px-' + enc + '.png';
     }
 
-    function wikiPageUrl(wikiName) {
-        return 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(wikiName);
+    function wikiPageUrl(cls) {
+        var info = classWikiInfo(cls);
+        return 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(info.page);
+    }
+
+    function wikiLabel(cls) {
+        return classWikiInfo(cls).label;
     }
 
     window.pteroViewInventory = function (playerName, inventoryJson) {
@@ -490,28 +757,47 @@
             return;
         }
 
-        // Collect items. The bridge format is [{slot, className}, …] but older
-        // snapshots may use other shapes — we handle both.
-        var items = []; // [{slot, className}]
+        // Collect items. The bridge format is [{slot, className, contents:[…]}, …]
+        // but older snapshots may use other shapes — we handle both.
+        // Items inside containers (e.g. backpack contents) use slot "<parent>.cargo"
+        // or "<parent>.attach" so they appear under a dedicated section.
+        var items = []; // [{slot, className, isContainerContent}]
+
+        function collectEntry(entry, parentSlot) {
+            if (!entry || typeof entry !== 'object') { return; }
+            var cls = typeof entry.className === 'string' ? entry.className : '';
+            var slot = typeof entry.slot === 'string' ? entry.slot : (parentSlot || '');
+            if (cls !== '') {
+                items.push({ slot: slot, className: cls, isContainerContent: !!parentSlot });
+            }
+            // Recurse into contents array (bridge v2 format with container contents).
+            var contents = Array.isArray(entry.contents) ? entry.contents : null;
+            if (contents && contents.length) {
+                contents.forEach(function (sub) { collectEntry(sub, slot || 'Unknown'); });
+            }
+        }
+
         if (Array.isArray(parsed)) {
             parsed.forEach(function (entry) {
-                if (entry && typeof entry === 'object' && typeof entry.className === 'string' && entry.className !== '') {
-                    items.push({ slot: (entry.slot || ''), className: entry.className });
-                } else if (typeof entry === 'string' && entry !== '') {
-                    items.push({ slot: '', className: entry });
+                if (typeof entry === 'string' && entry !== '') {
+                    items.push({ slot: '', className: entry, isContainerContent: false });
+                } else {
+                    collectEntry(entry, '');
                 }
             });
         }
 
         if (items.length === 0) {
             // Deep-walk fallback for any other inventory structure.
-            (function walk(obj) {
+            (function walk(obj, parentSlot) {
                 if (!obj || typeof obj !== 'object') { return; }
-                if (Array.isArray(obj)) { obj.forEach(walk); return; }
+                if (Array.isArray(obj)) { obj.forEach(function (v) { walk(v, parentSlot); }); return; }
                 var cls = obj.className || obj.class || obj.type || obj.item;
-                if (cls && typeof cls === 'string') { items.push({ slot: obj.slot || '', className: cls }); }
-                Object.values(obj).forEach(function (v) { if (v && typeof v === 'object') { walk(v); } });
-            }(parsed));
+                if (cls && typeof cls === 'string') {
+                    items.push({ slot: obj.slot || parentSlot || '', className: cls, isContainerContent: !!parentSlot });
+                }
+                Object.values(obj).forEach(function (v) { if (v && typeof v === 'object') { walk(v, obj.slot || parentSlot || ''); } });
+            }(parsed, ''));
         }
 
         if (items.length === 0) {
@@ -524,10 +810,14 @@
             return;
         }
 
+        // Split into equipped items (top-level slots) and container contents.
+        var equippedItems = items.filter(function (i) { return !i.isContainerContent; });
+        var containerItems = items.filter(function (i) { return i.isContainerContent; });
+
         // Group items by slot for readability.
         var slotOrder = ['Hands', 'Body', 'Legs', 'Feet', 'Head', 'Back', 'Vest', 'Hips', 'Shoulder', 'Mask', 'Gloves', 'Eyewear', 'Armband', ''];
         var bySlot = {};
-        items.forEach(function (item) {
+        equippedItems.forEach(function (item) {
             var s = item.slot || '';
             if (!bySlot[s]) { bySlot[s] = []; }
             bySlot[s].push(item);
@@ -541,6 +831,43 @@
         var cardStyle = 'background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.35rem;padding:0.6rem 0.5rem 0.5rem;font-size:0.78rem;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:0.35rem;';
         var imgStyle  = 'width:80px;height:80px;object-fit:contain;display:block;';
         var emojiStyle = 'font-size:2.5rem;text-align:center;line-height:1;';
+
+        function makeItemCard(item) {
+            var cls     = item.className;
+            var label   = wikiLabel(cls);
+            var imgUrl  = wikiImageUrl(cls);
+            var pageUrl = wikiPageUrl(cls);
+
+            var card = document.createElement('div');
+            card.style.cssText = cardStyle;
+
+            var imgWrap = document.createElement('div');
+            imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;';
+
+            var img = document.createElement('img');
+            img.src = imgUrl;
+            img.alt = label;
+            img.style.cssText = imgStyle;
+            img.onerror = function () {
+                imgWrap.innerHTML = '<span style="' + emojiStyle + '">📦</span>';
+            };
+            imgWrap.appendChild(img);
+            card.appendChild(imgWrap);
+
+            var nameEl = document.createElement('div');
+            nameEl.style.cssText = 'word-break:break-word;text-align:center;line-height:1.2;';
+            var link = document.createElement('a');
+            link.href = pageUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = label;
+            link.title = cls;
+            link.style.cssText = 'color:var(--dz-accent);text-decoration:none;';
+            nameEl.appendChild(link);
+            card.appendChild(nameEl);
+
+            return card;
+        }
 
         var frag = document.createDocumentFragment();
 
@@ -558,52 +885,48 @@
             var grid = document.createElement('div');
             grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
 
-            bySlot[slot].forEach(function (item) {
-                var cls      = item.className;
-                var wikiName = classToWikiName(cls);
-                var label    = wikiName.replace(/_/g, ' ');
-                var imgUrl   = wikiImageUrl(wikiName);
-                var pageUrl  = wikiPageUrl(wikiName);
-
-                var card = document.createElement('div');
-                card.style.cssText = cardStyle;
-
-                // Image wrapper with fallback emoji.
-                var imgWrap = document.createElement('div');
-                imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;';
-
-                var img = document.createElement('img');
-                img.src = imgUrl;
-                img.alt = label;
-                img.style.cssText = imgStyle;
-                img.onerror = function () {
-                    imgWrap.innerHTML = '<span style="' + emojiStyle + '">📦</span>';
-                };
-                imgWrap.appendChild(img);
-                card.appendChild(imgWrap);
-
-                var nameEl = document.createElement('div');
-                nameEl.style.cssText = 'word-break:break-word;text-align:center;line-height:1.2;';
-                var link = document.createElement('a');
-                link.href = pageUrl;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                link.textContent = label;
-                link.title = cls;
-                link.style.cssText = 'color:var(--dz-accent);text-decoration:none;';
-                nameEl.appendChild(link);
-                card.appendChild(nameEl);
-
-                grid.appendChild(card);
-            });
+            bySlot[slot].forEach(function (item) { grid.appendChild(makeItemCard(item)); });
 
             section.appendChild(grid);
             frag.appendChild(section);
         });
 
+        // Container contents section (backpack/vest/pants cargo from bridge v2).
+        if (containerItems.length > 0) {
+            var contSec = document.createElement('div');
+            contSec.style.cssText = 'margin-bottom:1rem;';
+
+            var contHead = document.createElement('p');
+            contHead.textContent = 'Container Contents';
+            contHead.style.cssText = 'font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--dz-muted);margin:0 0 0.4rem;border-top:1px solid var(--dz-border,#2d3348);padding-top:0.75rem;';
+            contSec.appendChild(contHead);
+
+            // Group container items by parent slot.
+            var byContainer = {};
+            containerItems.forEach(function (item) {
+                var k = item.slot || 'Unknown';
+                if (!byContainer[k]) { byContainer[k] = []; }
+                byContainer[k].push(item);
+            });
+
+            Object.keys(byContainer).forEach(function (containerSlot) {
+                var subHead = document.createElement('p');
+                subHead.textContent = 'In: ' + containerSlot;
+                subHead.style.cssText = 'font-size:0.7rem;color:var(--dz-muted);margin:0.5rem 0 0.25rem;';
+                contSec.appendChild(subHead);
+
+                var subGrid = document.createElement('div');
+                subGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
+                byContainer[containerSlot].forEach(function (item) { subGrid.appendChild(makeItemCard(item)); });
+                contSec.appendChild(subGrid);
+            });
+
+            frag.appendChild(contSec);
+        }
+
         var footer = document.createElement('p');
         footer.style.cssText = 'margin:0.25rem 0 0;font-size:0.72rem;color:var(--dz-muted);';
-        footer.textContent = items.length + ' item(s) equipped · Images and links from the DayZ wiki (dayz.wiki.gg)';
+        footer.textContent = equippedItems.length + ' item(s) equipped' + (containerItems.length ? ' · ' + containerItems.length + ' in containers' : '') + ' · Images and links from the DayZ wiki (dayz.wiki.gg)';
         frag.appendChild(footer);
 
         body.appendChild(frag);

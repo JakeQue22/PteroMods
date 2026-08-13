@@ -67,10 +67,19 @@
  *
  * INVENTORY
  * Top-level equipped items are collected from common attachment slots plus the
- * item held in the player's hands.  Only the slot name and item class name are
- * written; container contents (e.g. backpack contents) are not enumerated to
- * keep the snapshot small.  FindAttachmentBySlotName returns null for empty
- * slots and is safe to call on every tick.
+ * item held in the player's hands.  The slot name and item class name are
+ * written.  For containers that can hold cargo (Back = backpack, Hips = belt /
+ * holster, Legs = pants, Body = vest), items stored inside are also enumerated
+ * one level deep and placed in the parent item's "contents" array.
+ * PteroMods_LiveMap_CollectContainerContents uses:
+ *   EntityAI.GetInventory()                  → GameInventory
+ *   GameInventory.GetSlotCount()              → attachment slot count
+ *   GameInventory.GetAttachmentFromIndex(int) → item in attachment slot
+ *   GameInventory.GetCargo()                  → CargoBase (may be NULL)
+ *   CargoBase.GetItemCount()                  → total cargo item count
+ *   CargoBase.GetItem(int row, int col)        → item at cargo position
+ * FindAttachmentBySlotName returns null for empty slots and is safe to call on
+ * every tick.
  */
 
 // ---- Configuration ---------------------------------------------------------
@@ -90,11 +99,19 @@ const string PTEROMODS_LIVEMAP_DIR = "$profile:PteroMods";
 // Member names become the JSON keys, so they match what the PteroMods panel
 // reads in DayZLiveMapService::normalizePlayers().
 
-// One entry per top-level equipped attachment slot.
+// One entry per top-level equipped attachment slot (or item inside a container).
 class PteroMods_LiveMapItem
 {
     string slot;       // Slot name (e.g. "Body", "Back", "Hands")
     string className;  // Item class name (e.g. "CivilianCoat_Black")
+    // Items stored inside this container (backpack cargo, vest pockets, pants pockets …).
+    // Only one level deep: contents of contents are not serialised.
+    ref array<ref PteroMods_LiveMapItem> contents;
+
+    void PteroMods_LiveMapItem()
+    {
+        contents = new array<ref PteroMods_LiveMapItem>;
+    }
 }
 
 class PteroMods_LiveMapPlayer
@@ -143,6 +160,51 @@ float PteroMods_LiveMap_Round2(float value)
 {
     float scaled = Math.Round(value * 100.0);
     return scaled / 100.0;
+}
+
+// Enumerates items stored inside a container (backpack, vest, pants pocket, belt …)
+// and appends them to slotItem.contents.  Covers:
+//   - attachment-slot sub-items (e.g. weapon attachments inside a vest)
+//   - cargo items (clothes, food, ammo stored in a backpack or pants pocket)
+// Only one level of nesting is collected to keep the snapshot size bounded.
+void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_LiveMapItem slotItem)
+{
+    if (!container)
+        return;
+
+    GameInventory inv = container.GetInventory();
+    if (!inv)
+        return;
+
+    // Attachment-slot sub-items (vest pockets, weapon rail attachments, etc.).
+    int attachCount = inv.GetSlotCount();
+    for (int ai = 0; ai < attachCount; ai++)
+    {
+        EntityAI attached = inv.GetAttachmentFromIndex(ai);
+        if (!attached)
+            continue;
+        PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
+        sub.slot = slotItem.slot + ".attach";
+        sub.className = attached.GetType();
+        slotItem.contents.Insert(sub);
+    }
+
+    // Cargo items (the most important case: food/ammo/clothes in a backpack).
+    CargoBase cargo = inv.GetCargo();
+    if (!cargo)
+        return;
+
+    int itemCount = cargo.GetItemCount();
+    for (int ci = 0; ci < itemCount; ci++)
+    {
+        EntityAI cargoItem = EntityAI.Cast(cargo.GetItem(ci, 0));
+        if (!cargoItem)
+            continue;
+        PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
+        sub.slot = slotItem.slot + ".cargo";
+        sub.className = cargoItem.GetType();
+        slotItem.contents.Insert(sub);
+    }
 }
 
 // ---- Bridge ----------------------------------------------------------------
@@ -247,6 +309,9 @@ class PteroMods_LiveMapBridge
             }
 
             // Collect top-level equipped items from common attachment slots.
+            // For containers that can hold items (Back, Body, Hips, Legs), also
+            // enumerate their contents one level deep via
+            // PteroMods_LiveMap_CollectContainerContents.
             array<string> slotNames = new array<string>;
             slotNames.Insert("Headgear");
             slotNames.Insert("Mask");
@@ -266,6 +331,11 @@ class PteroMods_LiveMapBridge
                     PteroMods_LiveMapItem slotItem = new PteroMods_LiveMapItem();
                     slotItem.slot = slotName;
                     slotItem.className = attachment.GetType();
+
+                    // Enumerate container contents for slots that typically hold items.
+                    if (slotName == "Back" || slotName == "Body" || slotName == "Hips" || slotName == "Legs")
+                        PteroMods_LiveMap_CollectContainerContents(attachment, slotItem);
+
                     entry.inventory.Insert(slotItem);
                 }
             }

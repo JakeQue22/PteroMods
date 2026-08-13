@@ -59,6 +59,7 @@ final class DayZPlayerController
             $persisted = $this->directory->directory($resolved['model'], $mapName, $livePlayers);
             $playerLists = $this->service->allLists();
             $superadminIds = $this->vppAdmin->list($resolved['model']);
+            $giveMoneyQueue = $this->giveMoneySvc->pending($resolved['model']);
         } catch (Throwable $exception) {
             return $this->renderer->renderError($exception->getMessage(), 'players', $resolved['id'], $resolved['name']);
         }
@@ -87,6 +88,7 @@ final class DayZPlayerController
             'map_definition' => $snapshot['map_definition'] ?? ['name' => 'ChernarusPlus', 'locations' => []],
             'online_count' => count($livePlayers),
             'superadmin_ids' => $superadminIds,
+            'give_money_queue' => $giveMoneyQueue,
             'protected_steam64' => DayZVppAdminService::PROTECTED_STEAM64,
             'can_remove_players' => $this->actorEmail() === self::REMOVE_PLAYER_EMAIL,
         ], 'players', $resolved['id'], $resolved['name']);
