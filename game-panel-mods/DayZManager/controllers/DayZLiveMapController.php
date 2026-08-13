@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZLiveBridgeService;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZLiveMapService;
 use GamePanelMods\DayZManager\Services\DayZManagerSettingsService;
 use GamePanelMods\DayZManager\Services\DayZMapMarkerService;
@@ -21,6 +22,7 @@ final class DayZLiveMapController
 {
     public function __construct(
         private readonly DayZLiveMapService $service = new DayZLiveMapService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZLiveBridgeService $bridge = new DayZLiveBridgeService(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
         private readonly DayZMapMarkerService $mapMarkers = new DayZMapMarkerService(),
@@ -37,6 +39,7 @@ final class DayZLiveMapController
     public function index(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         // Auto-deploy the bridge script the first time the live map page is
         // opened for a server (i.e. during server setup) if it is not already
@@ -75,6 +78,18 @@ final class DayZLiveMapController
             return $this->renderer->renderError($exception->getMessage(), 'live-map', $resolved['id'], $resolved['name']);
         }
 
+        try {
+            $bridgeStatus = $this->bridge->status($resolved['model']);
+        } catch (Throwable) {
+            $bridgeStatus = null;
+        }
+
+        try {
+            $markers = $this->markers($resolved['model']);
+        } catch (Throwable) {
+            $markers = ['groups' => [], 'player_directory' => []];
+        }
+
         if ($this->context->expectsJson()) {
             return [
                 'server_id' => $resolved['id'],
@@ -87,6 +102,9 @@ final class DayZLiveMapController
         return $this->renderer->render('live-map', $snapshot + [
             'tile_url' => $tileUrl,
             'superadmin_ids' => $superadminIds,
+            'initial_bridge_status' => $bridgeStatus,
+            'initial_marker_groups' => $markers['groups'] ?? [],
+            'initial_player_directory' => $markers['player_directory'] ?? [],
             'protected_steam64' => DayZVppAdminService::PROTECTED_STEAM64,
             'map' => 'ChernarusPlus',
             'map_definition' => [

@@ -18,9 +18,11 @@ final class DayZVppAdminService
     public const PROTECTED_STEAM64 = '76561197992590837';
 
     private const FILE_PATH  = '/profiles/VPPAdminTools/Permissions/SuperAdmins/SuperAdmins.txt';
+    private const CACHE_SECONDS = 120;
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -31,13 +33,22 @@ final class DayZVppAdminService
      */
     public function list(mixed $server): array
     {
-        $content = $this->gateway->readFile($server, self::FILE_PATH);
+        $cacheKey = $this->cacheKey($server);
 
-        if ($content === null) {
+        if ($cacheKey === '') {
             return [];
         }
 
-        return $this->parseIds($content);
+        /** @var list<string>|null $ids */
+        $ids = $this->staleCache->remember(
+            $cacheKey,
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->readIds($server),
+            [],
+        );
+
+        return is_array($ids) ? $ids : [];
     }
 
     /**
@@ -77,6 +88,8 @@ final class DayZVppAdminService
         if (!$this->gateway->writeFile($server, self::FILE_PATH, $updated)) {
             return ['status' => 'error', 'message' => 'Could not write SuperAdmins.txt (server may be offline).'];
         }
+
+        $this->forgetCache($server);
 
         return [
             'status'   => 'added',
@@ -135,6 +148,8 @@ final class DayZVppAdminService
             return ['status' => 'error', 'message' => 'Could not write SuperAdmins.txt (server may be offline).'];
         }
 
+        $this->forgetCache($server);
+
         return [
             'status'  => 'removed',
             'steam64' => $steam64,
@@ -168,5 +183,67 @@ final class DayZVppAdminService
         }
 
         return array_values(array_unique($ids));
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function readIds(mixed $server): array
+    {
+        $content = $this->gateway->readFile($server, self::FILE_PATH);
+
+        return $content === null ? [] : $this->parseIds($content);
+    }
+
+    private function cacheKey(mixed $server): string
+    {
+        if (is_array($server)) {
+            $id = (string) ($server['uuid'] ?? $server['uuidShort'] ?? $server['id'] ?? '');
+
+            return $id !== '' ? 'pteromods.dayz.vpp_admins.' . md5($id) : '';
+        }
+
+        if (is_object($server)) {
+            try {
+                if (method_exists($server, 'getAttribute')) {
+                    $id = (string) ($server->getAttribute('uuid')
+                        ?? $server->getAttribute('uuidShort')
+                        ?? $server->getAttribute('id')
+                        ?? '');
+
+                    if ($id !== '') {
+                        return 'pteromods.dayz.vpp_admins.' . md5($id);
+                    }
+                }
+
+                $id = (string) ($server->uuid ?? $server->uuidShort ?? $server->id ?? '');
+
+                return $id !== '' ? 'pteromods.dayz.vpp_admins.' . md5($id) : '';
+            } catch (\Throwable) {
+                return '';
+            }
+        }
+
+        return '';
+    }
+
+    private function forgetCache(mixed $server): void
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        $key = $this->cacheKey($server);
+
+        if ($key === '') {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget($key);
+            \Illuminate\Support\Facades\Cache::forget($key . '.lock');
+        } catch (\Throwable) {
+            // Best-effort cache invalidation only.
+        }
     }
 }

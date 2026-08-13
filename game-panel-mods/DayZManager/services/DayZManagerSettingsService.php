@@ -16,6 +16,8 @@ use Throwable;
  */
 final class DayZManagerSettingsService
 {
+    private const CACHE_SECONDS = 120;
+
     /**
      * Defaults for every known setting key.
      *
@@ -248,30 +250,20 @@ final class DayZManagerSettingsService
             . 'Leave empty to disable tile loading (shows a plain dark background).',
     ];
 
+    public function __construct(
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
+    ) {
+    }
+
     /**
      * Retrieves a setting value, returning the typed default when the row is absent.
      */
     public function get(string $key, mixed $default = null): mixed
     {
         $fallback = array_key_exists($key, self::DEFAULTS) ? self::DEFAULTS[$key] : $default;
+        $settings = $this->all();
 
-        if (!$this->tableExists()) {
-            return $fallback;
-        }
-
-        try {
-            $row = \Illuminate\Support\Facades\DB::table('dayz_manager_settings')
-                ->where('key', $key)
-                ->value('value');
-
-            if ($row === null) {
-                return $fallback;
-            }
-
-            return $this->decode((string) $row, $fallback);
-        } catch (Throwable) {
-            return $fallback;
-        }
+        return array_key_exists($key, $settings) ? $settings[$key] : $fallback;
     }
 
     /**
@@ -294,7 +286,10 @@ final class DayZManagerSettingsService
             );
         } catch (Throwable) {
             // Best-effort: silently ignore write failures.
+            return;
         }
+
+        $this->forgetCache();
     }
 
     /**
@@ -304,30 +299,16 @@ final class DayZManagerSettingsService
      */
     public function all(): array
     {
-        $settings = self::DEFAULTS;
+        /** @var array<string, mixed>|null $settings */
+        $settings = $this->staleCache->remember(
+            'pteromods.dayz.settings.all',
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->loadAll(),
+            self::DEFAULTS,
+        );
 
-        if (!$this->tableExists()) {
-            return $settings;
-        }
-
-        try {
-            $rows = \Illuminate\Support\Facades\DB::table('dayz_manager_settings')
-                ->get(['key', 'value'])
-                ->all();
-
-            foreach ($rows as $row) {
-                $row = (array) $row;
-                $key = (string) ($row['key'] ?? '');
-
-                if ($key !== '' && array_key_exists($key, $settings)) {
-                    $settings[$key] = $this->decode((string) ($row['value'] ?? ''), $settings[$key]);
-                }
-            }
-        } catch (Throwable) {
-            // Fall through: return defaults.
-        }
-
-        return $settings;
+        return is_array($settings) ? $settings : self::DEFAULTS;
     }
 
     /**
@@ -368,6 +349,51 @@ final class DayZManagerSettingsService
             return json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         } catch (Throwable) {
             return $default;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function loadAll(): array
+    {
+        $settings = self::DEFAULTS;
+
+        if (!$this->tableExists()) {
+            return $settings;
+        }
+
+        try {
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_manager_settings')
+                ->get(['key', 'value'])
+                ->all();
+
+            foreach ($rows as $row) {
+                $row = (array) $row;
+                $key = (string) ($row['key'] ?? '');
+
+                if ($key !== '' && array_key_exists($key, $settings)) {
+                    $settings[$key] = $this->decode((string) ($row['value'] ?? ''), $settings[$key]);
+                }
+            }
+        } catch (Throwable) {
+            // Fall through: return defaults.
+        }
+
+        return $settings;
+    }
+
+    private function forgetCache(): void
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.settings.all');
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.settings.all.lock');
+        } catch (Throwable) {
+            // Best-effort cache invalidation only.
         }
     }
 }

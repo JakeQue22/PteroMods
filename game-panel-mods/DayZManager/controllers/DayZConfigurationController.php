@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZConfigurationService;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
@@ -16,6 +17,7 @@ final class DayZConfigurationController
 {
     public function __construct(
         private readonly DayZConfigurationService $service = new DayZConfigurationService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
     ) {
@@ -30,6 +32,7 @@ final class DayZConfigurationController
     public function index(mixed $server = null, array $paths = [])
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         try {
             $clientId = $this->context->clientIdentifier($resolved['model'], $resolved['id']);

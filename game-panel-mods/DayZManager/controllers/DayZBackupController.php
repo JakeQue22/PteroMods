@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZBackupService;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZManagerSettingsService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
@@ -17,6 +18,7 @@ final class DayZBackupController
 {
     public function __construct(
         private readonly DayZBackupService $service = new DayZBackupService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
@@ -29,6 +31,7 @@ final class DayZBackupController
     public function index(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         try {
             $backups = $this->service->list($resolved['model']);

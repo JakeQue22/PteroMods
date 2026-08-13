@@ -20,7 +20,15 @@ final class DayZCacheWarmService
         private readonly DayZWorkshopService $workshop = new DayZWorkshopService(),
         private readonly DayZServerService $server = new DayZServerService(),
         private readonly DayZServerQueryService $query = new DayZServerQueryService(),
+        private readonly DayZConfigurationService $configuration = new DayZConfigurationService(),
         private readonly DayZPlayerService $players = new DayZPlayerService(),
+        private readonly DayZPersistencePlayerService $persistence = new DayZPersistencePlayerService(),
+        private readonly DayZVppAdminService $vppAdmin = new DayZVppAdminService(),
+        private readonly DayZGiveMoneyService $giveMoney = new DayZGiveMoneyService(),
+        private readonly DayZLiveMapService $liveMap = new DayZLiveMapService(),
+        private readonly DayZMapMarkerService $mapMarkers = new DayZMapMarkerService(),
+        private readonly DayZBackupService $backups = new DayZBackupService(),
+        private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
         private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
     ) {
     }
@@ -62,16 +70,25 @@ final class DayZCacheWarmService
             }
 
             try {
+                $this->settings->all();
+                $this->players->allLists();
+
                 foreach ($serversToWarm as $server) {
                     $this->dashboard->dashboard($server);
                     $this->workshop->installedMods($server);
                     $this->workshop->settings($server);
                     $this->server->launchParameters($server);
                     $this->query->query($server);
+                    $this->configuration->groups($server, $this->serverId($server));
+                    $this->persistence->snapshot($server);
+                    $this->vppAdmin->list($server);
+                    $this->giveMoney->pending($server);
+                    $snapshot = $this->liveMap->snapshot($server);
+                    $mapName = trim((string) ($snapshot['map'] ?? 'ChernarusPlus'));
+                    $this->mapMarkers->markers($server, $mapName !== '' ? $mapName : 'ChernarusPlus');
+                    $this->backups->list($server);
                     $this->logScrub->tick($server);
                 }
-
-                $this->players->allLists();
             } catch (Throwable) {
                 // Best-effort warming only.
             } finally {

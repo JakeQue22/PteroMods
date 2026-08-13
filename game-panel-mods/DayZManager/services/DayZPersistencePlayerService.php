@@ -17,6 +17,7 @@ use Throwable;
 final class DayZPersistencePlayerService
 {
     private const TABLE_ROW_LIMIT = 3000;
+    private const CACHE_SECONDS = 120;
 
     private const FALLBACK_DB_PATHS = [
         '/storage_1/characters.db',
@@ -50,6 +51,8 @@ final class DayZPersistencePlayerService
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+        private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -66,6 +69,29 @@ final class DayZPersistencePlayerService
      * @return array{status: string, source_path: string|null, source_paths: list<string>, players: list<array<string, mixed>>}
      */
     public function snapshot(mixed $server, string $mapName = 'ChernarusPlus'): array
+    {
+        $serverId = $this->context->attribute($server, ['uuid', 'uuidShort', 'id']);
+
+        if ($serverId === '') {
+            return ['status' => 'not_found', 'source_path' => null, 'source_paths' => [], 'players' => []];
+        }
+
+        /** @var array{status: string, source_path: string|null, source_paths: list<string>, players: list<array<string, mixed>>}|null $snapshot */
+        $snapshot = $this->staleCache->remember(
+            'pteromods.dayz.persistence.snapshot.' . md5($serverId . '|' . $mapName),
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->readSnapshot($server, $mapName),
+            ['status' => 'not_found', 'source_path' => null, 'source_paths' => [], 'players' => []],
+        );
+
+        return is_array($snapshot) ? $snapshot : ['status' => 'not_found', 'source_path' => null, 'source_paths' => [], 'players' => []];
+    }
+
+    /**
+     * @return array{status: string, source_path: string|null, source_paths: list<string>, players: list<array<string, mixed>>}
+     */
+    private function readSnapshot(mixed $server, string $mapName = 'ChernarusPlus'): array
     {
         $readablePaths = [];
         $merged = [];

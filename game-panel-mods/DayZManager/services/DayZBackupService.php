@@ -18,6 +18,7 @@ use Throwable;
 final class DayZBackupService
 {
     private const AUTO_BACKUP_INTERVAL_SECONDS = 900;
+    private const CACHE_SECONDS = 120;
 
     /**
      * Tables that carry server-specific rows and are filtered by `server_id`.
@@ -40,6 +41,7 @@ final class DayZBackupService
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -58,18 +60,16 @@ final class DayZBackupService
             return [];
         }
 
-        try {
-            $rows = \Illuminate\Support\Facades\DB::table('dayz_backups')
-                ->where('server_id', $serverId)
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->get(['id', 'label', 'trigger', 'created_at'])
-                ->all();
+        /** @var list<array<string, mixed>>|null $rows */
+        $rows = $this->staleCache->remember(
+            'pteromods.dayz.backups.list.' . md5($serverId),
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->loadList($serverId),
+            [],
+        );
 
-            return array_map(static fn (mixed $row): array => (array) $row, $rows);
-        } catch (Throwable) {
-            return [];
-        }
+        return is_array($rows) ? $rows : [];
     }
 
     /**
@@ -103,6 +103,7 @@ final class DayZBackupService
             return ['status' => 'error', 'message' => 'Could not save backup: ' . $exception->getMessage()];
         }
 
+        $this->forgetListCache($serverId);
         $this->pruneOldBackups($serverId);
 
         return ['status' => 'created', 'server_id' => $serverId];
@@ -126,6 +127,10 @@ final class DayZBackupService
                 ->where('id', $backupId)
                 ->where('server_id', $serverId)
                 ->delete();
+
+            if ($deleted > 0) {
+                $this->forgetListCache($serverId);
+            }
 
             return $deleted > 0
                 ? ['status' => 'deleted']
@@ -267,6 +272,41 @@ final class DayZBackupService
         }
 
         return $payload;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function loadList(string $serverId): array
+    {
+        try {
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_backups')
+                ->where('server_id', $serverId)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->get(['id', 'label', 'trigger', 'created_at'])
+                ->all();
+
+            return array_map(static fn (mixed $row): array => (array) $row, $rows);
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    private function forgetListCache(string $serverId): void
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        $key = 'pteromods.dayz.backups.list.' . md5($serverId);
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget($key);
+            \Illuminate\Support\Facades\Cache::forget($key . '.lock');
+        } catch (Throwable) {
+            // Best-effort cache invalidation only.
+        }
     }
 
     /**

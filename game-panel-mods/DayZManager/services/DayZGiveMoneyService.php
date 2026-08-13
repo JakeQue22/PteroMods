@@ -22,6 +22,7 @@ use Throwable;
 final class DayZGiveMoneyService
 {
     private const TABLE = 'dayz_give_money_queue';
+    private const CACHE_SECONDS = 120;
 
     private const DENOMINATIONS = [1, 50, 100];
 
@@ -36,6 +37,7 @@ final class DayZGiveMoneyService
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -97,6 +99,7 @@ final class DayZGiveMoneyService
         // Best-effort: sync the JSON queue file on the server so a server-side
         // mod can fulfil the action when the player next connects.
         $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
+        $this->forgetPendingCache($serverId);
 
         return [
             'status'     => 'queued',
@@ -121,23 +124,16 @@ final class DayZGiveMoneyService
             return [];
         }
 
-        try {
-            return \Illuminate\Support\Facades\DB::table(self::TABLE)
-                ->where('server_id', $serverId)
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->limit(200)
-                ->get()
-                ->map(function ($row): array {
-                    $entry = (array) $row;
-                    $entry['created_at_display'] = $this->displayTimestamp($entry['created_at'] ?? null);
+        /** @var list<array<string, mixed>>|null $rows */
+        $rows = $this->staleCache->remember(
+            'pteromods.dayz.give_money.pending.' . md5($serverId),
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->loadPending($serverId),
+            [],
+        );
 
-                    return $entry;
-                })
-                ->all();
-        } catch (Throwable) {
-            return [];
-        }
+        return is_array($rows) ? $rows : [];
     }
 
     /**
@@ -186,6 +182,8 @@ final class DayZGiveMoneyService
                     $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
                 }
             }
+
+            $this->forgetPendingCache($serverId);
 
             return ['status' => 'delivered', 'id' => $queueId, 'message' => 'Queue entry marked as delivered.'];
         } catch (Throwable $exception) {
@@ -237,6 +235,8 @@ final class DayZGiveMoneyService
             if ($playerId !== '') {
                 $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
             }
+
+            $this->forgetPendingCache($serverId);
 
             return [
                 'status'  => 'removed',
@@ -310,6 +310,46 @@ final class DayZGiveMoneyService
                 ->all();
         } catch (Throwable) {
             return [];
+        }
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function loadPending(string $serverId): array
+    {
+        try {
+            return \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit(200)
+                ->get()
+                ->map(function ($row): array {
+                    $entry = (array) $row;
+                    $entry['created_at_display'] = $this->displayTimestamp($entry['created_at'] ?? null);
+
+                    return $entry;
+                })
+                ->all();
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    private function forgetPendingCache(string $serverId): void
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        $key = 'pteromods.dayz.give_money.pending.' . md5($serverId);
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget($key);
+            \Illuminate\Support\Facades\Cache::forget($key . '.lock');
+        } catch (Throwable) {
+            // Best-effort cache invalidation only.
         }
     }
 

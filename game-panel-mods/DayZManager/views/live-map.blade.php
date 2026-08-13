@@ -71,6 +71,21 @@
     // {map} is replaced with the map's tile id; {z}/{x}/{y} are Leaflet placeholders.
     const TILE_URL_TPL = @json($tile_url ?? '');
     const INITIAL_SUPERADMINS = @json(array_values($superadmin_ids ?? []));
+    const INITIAL_SNAPSHOT = @json([
+        'status' => $status ?? 'waiting_for_bridge',
+        'source' => $source ?? '',
+        'map' => $map ?? 'ChernarusPlus',
+        'map_definition' => $map_definition ?? ['name' => 'ChernarusPlus', 'world_size' => 15360.0, 'locations' => []],
+        'players' => $players ?? [],
+        'online_count' => $online_count ?? 0,
+        'last_update' => $last_update ?? null,
+        'query_online' => $query_online ?? false,
+        'query_player_count' => $query_player_count ?? 0,
+        'superadmin_ids' => $superadmin_ids ?? [],
+    ]);
+    const INITIAL_MARKER_GROUPS = @json($initial_marker_groups ?? []);
+    const INITIAL_PLAYER_DIRECTORY = @json($initial_player_directory ?? []);
+    const INITIAL_BRIDGE_STATUS = @json($initial_bridge_status ?? null);
 
     const state = {
         mapDef: @json($map_definition),
@@ -508,6 +523,10 @@
 
     async function loadMarkers() {
         await fetchMarkers();
+        scheduleMarkerReload();
+    }
+
+    function scheduleMarkerReload() {
         setTimeout(loadMarkers, MARKERS_MS);
     }
 
@@ -969,6 +988,29 @@
         }
     }
 
+    function applyBridgeStatusPayload(data) {
+        const script = !!(data && data.script);
+        const initC = !!(data && data.init_c);
+        const snapshot = !!(data && data.snapshot);
+        const legacy = !!(data && data.init_c_legacy);
+
+        if (data && data.deployed) {
+            setBridgeMessage('Bridge deployed (script, init.c, snapshot all present).', 'success');
+            return;
+        }
+
+        if (legacy) {
+            setBridgeMessage('Legacy bridge block detected in init.c — remove and redeploy bridge.', 'error');
+            return;
+        }
+
+        const parts = [];
+        parts.push('script: ' + (script ? 'yes' : 'no'));
+        parts.push('init.c: ' + (initC ? 'yes' : 'no'));
+        parts.push('snapshot: ' + (snapshot ? 'yes' : 'no'));
+        setBridgeMessage('Bridge not fully deployed (' + parts.join(', ') + ').', 'warn');
+    }
+
     async function refreshBridgeStatus() {
         try {
             const res = await fetch(BRIDGE_STATUS_URL, {
@@ -981,27 +1023,7 @@
             if (!res.ok) {
                 throw new Error('HTTP ' + res.status);
             }
-
-            const script = !!data.script;
-            const initC  = !!data.init_c;
-            const snapshot = !!data.snapshot;
-            const legacy = !!data.init_c_legacy;
-
-            if (data.deployed) {
-                setBridgeMessage('Bridge deployed (script, init.c, snapshot all present).', 'success');
-                return;
-            }
-
-            if (legacy) {
-                setBridgeMessage('Legacy bridge block detected in init.c — remove and redeploy bridge.', 'error');
-                return;
-            }
-
-            const parts = [];
-            parts.push('script: ' + (script ? 'yes' : 'no'));
-            parts.push('init.c: ' + (initC ? 'yes' : 'no'));
-            parts.push('snapshot: ' + (snapshot ? 'yes' : 'no'));
-            setBridgeMessage('Bridge not fully deployed (' + parts.join(', ') + ').', 'warn');
+            applyBridgeStatusPayload(data);
         } catch (err) {
             setBridgeMessage('Failed to load bridge status.', 'error');
         }
@@ -1052,8 +1074,12 @@
         } catch (err) {
             setStatusText('Failed to fetch live map snapshot.');
         } finally {
-            setTimeout(poll, POLL_MS);
+            schedulePoll();
         }
+    }
+
+    function schedulePoll() {
+        setTimeout(poll, POLL_MS);
     }
 
     // ── Leaflet loader ────────────────────────────────────────────────────
@@ -1111,8 +1137,18 @@
             return;
         }
 
-        poll();
-        loadMarkers();
+        applyDirectory(INITIAL_PLAYER_DIRECTORY);
+        applyMarkerGroups(INITIAL_MARKER_GROUPS);
+        applySnapshot(INITIAL_SNAPSHOT);
+
+        if (INITIAL_BRIDGE_STATUS && typeof INITIAL_BRIDGE_STATUS === 'object') {
+            applyBridgeStatusPayload(INITIAL_BRIDGE_STATUS);
+        } else {
+            refreshBridgeStatus();
+        }
+
+        schedulePoll();
+        scheduleMarkerReload();
     }
 
     window.pteroLiveMapResetCamera = resetView;
@@ -1137,7 +1173,6 @@
     }
 
     setStatusText('Loading map…');
-    refreshBridgeStatus();
     loadLeaflet(0);
 }());
 </script>
