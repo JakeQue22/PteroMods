@@ -545,7 +545,12 @@ final class DayZObservedPlayerService
                 }
             }
 
-            $removedIds = array_values(array_filter(array_unique([$canonicalPlayerId]), static fn (string $id): bool => $id !== ''));
+            $removedIds = array_values(array_filter(array_unique([
+                $canonicalPlayerId,
+                $canonicalSteam64,
+                $playerId,
+                $selectedPlayerId,
+            ]), static fn (string $id): bool => $id !== ''));
 
             // Add to the removed-players blocklist (best-effort if table absent).
             if ($this->removedTableExists()) {
@@ -566,8 +571,19 @@ final class DayZObservedPlayerService
             if ($this->tableExists()) {
                 \Illuminate\Support\Facades\DB::table('dayz_observed_players')
                     ->where('server_id', $serverId)
-                    ->where('player_id', $canonicalPlayerId)
+                    ->whereIn('player_id', $removedIds)
                     ->delete();
+
+                if ($canonicalSteam64 !== null && $canonicalSteam64 !== '') {
+                    try {
+                        \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                            ->where('server_id', $serverId)
+                            ->where('steam64', $canonicalSteam64)
+                            ->delete();
+                    } catch (Throwable) {
+                        // Older installs may not yet have the steam64 column.
+                    }
+                }
             }
 
             // Remove nickname history too.
@@ -634,6 +650,14 @@ final class DayZObservedPlayerService
         } catch (Throwable) {
             return [];
         }
+    }
+
+    /**
+     * @return array<string, true>
+     */
+    public function removedIdsForServer(mixed $server): array
+    {
+        return $this->removedIds($this->serverId($server));
     }
 
     /**

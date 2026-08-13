@@ -38,10 +38,12 @@ final class DayZPlayerDirectoryService
     {
         $persisted = $this->persistence->snapshot($server, $mapName);
         $observed = $this->observed->activity($server, $livePlayers);
+        $removedIds = $this->observed->removedIdsForServer($server);
         $listFlags = $this->listFlags();
 
         $players = [];
         $byName = [];
+        $byUid = [];
 
         foreach ($observed as $entry) {
             $playerId = trim((string) ($entry['player_id'] ?? ''));
@@ -50,7 +52,7 @@ final class DayZPlayerDirectoryService
             // Use the real Steam64 when available; otherwise the DayZ UID is the key.
             $key = $steam64 !== '' ? $steam64 : $playerId;
 
-            if ($key === '') {
+            if ($key === '' || $this->isRemoved($removedIds, $key, $playerId, $steam64)) {
                 continue;
             }
 
@@ -83,6 +85,10 @@ final class DayZPlayerDirectoryService
             if ($nameKey !== '') {
                 $byName[$nameKey] ??= $key;
             }
+
+            if ($playerId !== '') {
+                $byUid[$playerId] = $key;
+            }
         }
 
         // Online players are always listed, even when the observed-player
@@ -102,7 +108,7 @@ final class DayZPlayerDirectoryService
             // Prefer real Steam64 as dict key when available; fall back to bridge ID.
             $key = $realSteam64 ?? $bridgeId;
 
-            if ($key === '') {
+            if ($key === '' || $this->isRemoved($removedIds, $key, $bridgeId, (string) ($realSteam64 ?? ''))) {
                 continue;
             }
 
@@ -139,12 +145,37 @@ final class DayZPlayerDirectoryService
             if ($nameKey !== '') {
                 $byName[$nameKey] ??= $key;
             }
+
+            $resolvedPlayerId = trim((string) ($players[$key]['player_id'] ?? ''));
+            $resolvedPlayerUid = trim((string) ($players[$key]['player_uid'] ?? ''));
+
+            if ($resolvedPlayerId !== '') {
+                $byUid[$resolvedPlayerId] = $key;
+            }
+            if ($resolvedPlayerUid !== '') {
+                $byUid[$resolvedPlayerUid] = $key;
+            }
+            if ($bridgeId !== '') {
+                $byUid[$bridgeId] = $key;
+            }
         }
 
         foreach ($persisted['players'] ?? [] as $record) {
             $uid = trim((string) ($record['player_id'] ?? ''));
             $steam64 = trim((string) ($record['steam64'] ?? ''));
             $nameKey = $this->nameKey((string) ($record['name'] ?? ''));
+            $key = null;
+
+            if ($steam64 === '' && $uid !== '' && isset($byUid[$uid])) {
+                $matchedKey = trim((string) $byUid[$uid]);
+
+                if ($matchedKey !== '') {
+                    if (preg_match('/^\d{17}$/', $matchedKey) === 1) {
+                        $steam64 = $matchedKey;
+                    }
+                    $key = $matchedKey;
+                }
+            }
 
             if ($steam64 === '' && !empty($record['has_name']) && isset($byName[$nameKey])) {
                 $matchedSteam64 = (string) $byName[$nameKey];
@@ -154,7 +185,12 @@ final class DayZPlayerDirectoryService
                 }
             }
 
-            $key = $steam64 !== '' ? $steam64 : $uid;
+            $key = $key ?? ($steam64 !== '' ? $steam64 : $uid);
+
+            if ($this->isRemoved($removedIds, $key, $uid, $steam64)) {
+                $key = null;
+                continue;
+            }
 
             if ($key === '') {
                 continue;
@@ -197,6 +233,12 @@ final class DayZPlayerDirectoryService
                     is_array($record['source_paths'] ?? null) ? $record['source_paths'] : [],
                 ))),
             ];
+
+            if ($uid !== '') {
+                $byUid[$uid] = $key;
+            }
+
+            $key = null;
         }
 
         foreach ($players as $key => $player) {
@@ -308,5 +350,21 @@ final class DayZPlayerDirectoryService
         }
 
         return (strtotime($rightText) ?: 0) > (strtotime($leftText) ?: 0) ? $rightText : $leftText;
+    }
+
+    /**
+     * @param array<string, true> $removedIds
+     */
+    private function isRemoved(array $removedIds, string ...$identifiers): bool
+    {
+        foreach ($identifiers as $identifier) {
+            $value = trim($identifier);
+
+            if ($value !== '' && isset($removedIds[$value])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

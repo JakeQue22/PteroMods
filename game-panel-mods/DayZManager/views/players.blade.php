@@ -65,7 +65,7 @@
                             {{ !empty($player['online']) ? 'Online' : 'Offline' }}
                         </span>
                         @if ($canRemovePlayers)
-                            <button class="dz-btn dz-btn-red" type="button" title="Remove player permanently" style="padding:0.15rem 0.45rem;font-size:0.85rem;line-height:1;" onclick="pteroRemovePlayer({{ json_encode((string) $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">✕</button>
+                            <button class="dz-btn dz-btn-red" type="button" title="Remove player permanently" style="padding:0.15rem 0.45rem;font-size:0.85rem;line-height:1;" onclick="pteroRemovePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">✕</button>
                         @endif
                     </div>
                 </div>
@@ -417,7 +417,7 @@
             .catch(function () { setStatus('Give money request failed.', false); });
     };
 
-    window.pteroRemovePlayer = function (playerId, playerName) {
+    window.pteroRemovePlayer = function (actionId, playerName, selectedPlayerId) {
         var msg = '⛔  PERMANENTLY REMOVE "' + playerName + '" from the players list?\n\n'
             + 'This action CANNOT be undone. The player will be hidden from the list permanently '
             + '(they will reappear if observed online again, but will be re-hidden immediately).';
@@ -428,11 +428,11 @@
             return;
         }
         setStatus('Removing player…');
-        req('DELETE', '/dayz/player-actions/players/' + encodeURIComponent(playerId), { player_name: playerName, selected_player_id: playerId })
+        req('DELETE', '/dayz/player-actions/players/' + encodeURIComponent(actionId), { player_name: playerName, selected_player_id: selectedPlayerId || actionId })
             .then(function (d) {
                 var ok = d.status === 'removed';
                 setStatus(d.message || (ok ? 'Player removed.' : 'Removal failed.'), ok ? undefined : false);
-                if (ok) { setTimeout(function () { window.location.reload(); }, 900); }
+                if (ok) { window.location.reload(); }
             })
             .catch(function () { setStatus('Remove request failed.', false); });
     };
