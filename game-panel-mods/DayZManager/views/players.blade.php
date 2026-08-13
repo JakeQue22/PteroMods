@@ -55,7 +55,7 @@
                 $currentName = (string) ($player['name'] ?? '');
                 $filteredPreviousNames = array_values(array_filter($previousNames, static fn ($pn) => ($pn['nickname'] ?? '') !== '' && ($pn['nickname'] ?? '') !== $currentName));
             @endphp
-            <div class="dz-player-card" data-search="{{ strtolower(trim(($player['name'] ?? '') . ' ' . ($steam64 ?? '') . ' ' . $playerId . ' ' . ($uid ?? ''))) }}">
+            <div class="dz-player-card" data-player-action-id="{{ $actionId }}" data-search="{{ strtolower(trim(($player['name'] ?? '') . ' ' . ($steam64 ?? '') . ' ' . $playerId . ' ' . ($uid ?? ''))) }}">
                 <div class="dz-player-card__head">
                     <div>
                         <strong>{{ $player['name'] ?: $playerId }}</strong>
@@ -65,7 +65,7 @@
                             {{ !empty($player['online']) ? 'Online' : 'Offline' }}
                         </span>
                         @if ($canRemovePlayers)
-                            <button class="dz-btn dz-btn-red" type="button" title="Remove player permanently" style="padding:0.15rem 0.45rem;font-size:0.85rem;line-height:1;" onclick="pteroRemovePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">✕</button>
+                            <button class="dz-btn dz-btn-red" type="button" title="Remove player permanently" style="padding:0.15rem 0.45rem;font-size:0.85rem;line-height:1;" onclick="pteroRemovePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">✕</button>
                         @endif
                     </div>
                 </div>
@@ -145,44 +145,45 @@
                         <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroViewInventory({{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($inventoryJson, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">View Inventory</button>
                     @endif
                     @if (!$isProtectedPlayer && !empty($player['online']) && $kickId)
-                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $kickId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
+                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $kickId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
                     @endif
                     @if (!$isProtectedPlayer)
                         @if (!empty($listFlags['ban']) && !empty($listEntryIds['ban']))
-                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveFromList('ban', {{ json_encode((string) $listEntryIds['ban'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Ban List</button>
+                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveFromList('ban', {{ json_encode((string) $listEntryIds['ban'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Ban List</button>
                         @else
-                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
+                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroBanPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Ban</button>
                         @endif
                     @endif
                     @if (!empty($listFlags['whitelist']) && !empty($listEntryIds['whitelist']))
-                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroRemoveFromList('whitelist', {{ json_encode((string) $listEntryIds['whitelist'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Whitelist</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroRemoveFromList('whitelist', {{ json_encode((string) $listEntryIds['whitelist'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Whitelist</button>
                     @else
-                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('whitelist', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Whitelist</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('whitelist', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Whitelist</button>
                     @endif
                     @if (!empty($listFlags['priority']) && !empty($listEntryIds['priority']))
-                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroRemoveFromList('priority', {{ json_encode((string) $listEntryIds['priority'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Priority Queue</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroRemoveFromList('priority', {{ json_encode((string) $listEntryIds['priority'], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove from Priority Queue</button>
                     @else
-                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('priority', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Priority Queue</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroAddToList('priority', {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Add to Priority Queue</button>
                     @endif
                     @if ($steam64)
                         @if (in_array($steam64, $superadmin_ids ?? [], true))
                             @if (!$isProtectedPlayer)
-                                <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveSuperadmin({{ json_encode($steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove SuperAdmin</button>
+                                <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveSuperadmin({{ json_encode($steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Remove SuperAdmin</button>
                             @endif
                         @else
-                            <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroMakeSuperadmin({{ json_encode($steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Make SuperAdmin</button>
+                            <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroMakeSuperadmin({{ json_encode($steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Make SuperAdmin</button>
                         @endif
                     @endif
                     @if (!$isProtectedPlayer)
-                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-warn,#f59e0b);" onclick="pteroResetPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Reset Data</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-warn,#f59e0b);" onclick="pteroResetPlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Reset Data</button>
                     @endif
                     @if ($resetBackupId > 0)
-                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
                     @endif
                     @if (!$isOnline || in_array($steam64, $superadmin_ids ?? [], true))
-                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }})">Give Money</button>
+                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
                     @endif
                 </div>
+                <p class="dz-status dz-hidden dz-player-action-status" style="margin-top:0.75rem;"></p>
             </div>
         @empty
             <div class="dz-empty">
@@ -275,8 +276,21 @@
         return fetch(apiBase() + path, opts).then(function (r) { return r.json(); });
     }
 
-    function setStatus(msg, ok) {
-        var el = document.getElementById('dz-player-action-status');
+    function actionStatusEl(playerActionId) {
+        if (playerActionId) {
+            var cards = document.querySelectorAll('.dz-player-card');
+            for (var i = 0; i < cards.length; i += 1) {
+                if ((cards[i].getAttribute('data-player-action-id') || '') === String(playerActionId)) {
+                    return cards[i].querySelector('.dz-player-action-status');
+                }
+            }
+        }
+
+        return document.getElementById('dz-player-action-status');
+    }
+
+    function setStatus(msg, ok, playerActionId) {
+        var el = actionStatusEl(playerActionId);
         if (!el) { return; }
         el.textContent = msg;
         el.className = 'dz-status' + (ok === false ? ' dz-status-error' : '');
@@ -295,103 +309,103 @@
         window.setTimeout(function () { window.location.reload(); }, 900);
     }
 
-    window.pteroAddToList = function (listType, playerId, nickname) {
+    window.pteroAddToList = function (listType, playerId, nickname, playerActionId) {
         var labels = { whitelist: 'Whitelist', priority: 'Priority Queue' };
         var label = labels[listType] || listType;
         var note = window.prompt('Optional note for ' + label + ':', '');
         if (note === null) { return; }
-        setStatus('Adding player to ' + label + '…');
+        setStatus('Adding player to ' + label + '…', undefined, playerActionId);
         req('POST', '/dayz/players/' + encodeURIComponent(listType), { player_id: playerId, nickname: nickname || '', note: note })
             .then(function (d) {
                 var ok = d.status === 'saved';
-                setStatus(d.message || (ok ? 'Player added to ' + label + '.' : 'Failed.'), ok ? undefined : false);
+                setStatus(d.message || (ok ? 'Player added to ' + label + '.' : 'Failed.'), ok ? undefined : false, playerActionId);
                 if (ok) { reloadSoon(); }
             })
-            .catch(function () { setStatus('Request failed.', false); });
+            .catch(function () { setStatus('Request failed.', false, playerActionId); });
     };
 
-    window.pteroRemoveFromList = function (listType, playerId) {
+    window.pteroRemoveFromList = function (listType, playerId, playerActionId) {
         var labels = { ban: 'Ban List', whitelist: 'Whitelist', priority: 'Priority Queue' };
         var label = labels[listType] || listType;
         if (!confirm('Remove this player from ' + label + '?')) { return; }
-        setStatus('Removing player from ' + label + '…');
+        setStatus('Removing player from ' + label + '…', undefined, playerActionId);
         req('DELETE', '/dayz/players/' + encodeURIComponent(listType) + '/' + encodeURIComponent(playerId), null)
             .then(function (d) {
                 var ok = d.status === 'deleted';
-                setStatus(d.message || (ok ? 'Player removed from ' + label + '.' : 'Failed.'), ok ? undefined : false);
+                setStatus(d.message || (ok ? 'Player removed from ' + label + '.' : 'Failed.'), ok ? undefined : false, playerActionId);
                 if (ok) { reloadSoon(); }
             })
-            .catch(function () { setStatus('Request failed.', false); });
+            .catch(function () { setStatus('Request failed.', false, playerActionId); });
     };
 
-    window.pteroKickPlayer = function (playerId) {
+    window.pteroKickPlayer = function (playerId, playerActionId) {
         if (!confirm('Kick this player from the server now?')) { return; }
-        setStatus('Sending kick command…');
+        setStatus('Sending kick command…', undefined, playerActionId);
         req('POST', '/dayz/player-actions/kick', { player_id: playerId })
-            .then(function (d) { setStatus(d.message || (d.status === 'dispatched' ? 'Kick command sent.' : 'Kick failed.'), d.status === 'dispatched' ? undefined : false); })
-            .catch(function () { setStatus('Kick request failed.', false); });
+            .then(function (d) { setStatus(d.message || (d.status === 'dispatched' ? 'Kick command sent.' : 'Kick failed.'), d.status === 'dispatched' ? undefined : false, playerActionId); })
+            .catch(function () { setStatus('Kick request failed.', false, playerActionId); });
     };
 
-    window.pteroBanPlayer = function (playerId, nickname) {
+    window.pteroBanPlayer = function (playerId, nickname, playerActionId) {
         var note = window.prompt('Optional ban note:', '');
         if (note === null) { return; }
-        setStatus('Adding player to ban list…');
+        setStatus('Adding player to ban list…', undefined, playerActionId);
         req('POST', '/dayz/players/ban', { player_id: playerId, nickname: nickname || '', note: note })
             .then(function (d) {
                 var ok = d.status === 'saved';
-                setStatus(d.message || (ok ? 'Player added to ban list.' : 'Ban failed.'), ok ? undefined : false);
+                setStatus(d.message || (ok ? 'Player added to ban list.' : 'Ban failed.'), ok ? undefined : false, playerActionId);
                 if (ok) { reloadSoon(); }
             })
-            .catch(function () { setStatus('Ban request failed.', false); });
+            .catch(function () { setStatus('Ban request failed.', false, playerActionId); });
     };
 
-    window.pteroMakeSuperadmin = function (steam64, playerName) {
+    window.pteroMakeSuperadmin = function (steam64, playerName, playerActionId) {
         if (!confirm('Add "' + playerName + '" as VPP SuperAdmin?\n\nThey will be added to SuperAdmins.txt. Changes take effect after the next server restart.')) { return; }
-        setStatus('Adding SuperAdmin…');
+        setStatus('Adding SuperAdmin…', undefined, playerActionId);
         req('POST', '/dayz/players/superadmin', { steam64: steam64, nickname: playerName })
             .then(function (d) {
-                setStatus(d.message || (d.status === 'added' ? 'Player added as SuperAdmin.' : 'Failed.'), d.status === 'added' ? undefined : false);
+                setStatus(d.message || (d.status === 'added' ? 'Player added as SuperAdmin.' : 'Failed.'), d.status === 'added' ? undefined : false, playerActionId);
                 if (d.status === 'added') { setTimeout(function () { window.location.reload(); }, 1500); }
             })
-            .catch(function () { setStatus('Request failed.', false); });
+            .catch(function () { setStatus('Request failed.', false, playerActionId); });
     };
 
-    window.pteroRemoveSuperadmin = function (steam64, playerName) {
+    window.pteroRemoveSuperadmin = function (steam64, playerName, playerActionId) {
         if (!confirm('Remove "' + playerName + '" from VPP SuperAdmins?\n\nThey will be removed from SuperAdmins.txt. Changes take effect after the next server restart.')) { return; }
-        setStatus('Removing SuperAdmin…');
+        setStatus('Removing SuperAdmin…', undefined, playerActionId);
         req('DELETE', '/dayz/players/superadmin/' + encodeURIComponent(steam64), null)
             .then(function (d) {
-                setStatus(d.message || (d.status === 'removed' ? 'Player removed from SuperAdmins.' : 'Failed.'), d.status === 'removed' ? undefined : false);
+                setStatus(d.message || (d.status === 'removed' ? 'Player removed from SuperAdmins.' : 'Failed.'), d.status === 'removed' ? undefined : false, playerActionId);
                 if (d.status === 'removed') { setTimeout(function () { window.location.reload(); }, 1500); }
             })
-            .catch(function () { setStatus('Request failed.', false); });
+            .catch(function () { setStatus('Request failed.', false, playerActionId); });
     };
 
-    window.pteroResetPlayer = function (playerId, playerName) {
+    window.pteroResetPlayer = function (playerId, playerName, playerActionId) {
         var msg = 'Reset all tracked data for "' + playerName + '"?\n\nThis removes their last-seen position, health, inventory and timestamps from the panel database. They will reappear automatically the next time they connect.';
         if (!confirm(msg)) { return; }
-        setStatus('Resetting player data…');
+        setStatus('Resetting player data…', undefined, playerActionId);
         req('DELETE', '/dayz/player-actions/observed/' + encodeURIComponent(playerId), null)
             .then(function (d) {
-                setStatus(d.message || (d.status === 'reset' ? 'Player data reset.' : 'Reset failed.'), d.status === 'reset' ? undefined : false);
+                setStatus(d.message || (d.status === 'reset' ? 'Player data reset.' : 'Reset failed.'), d.status === 'reset' ? undefined : false, playerActionId);
                 if (d.status === 'reset') { setTimeout(function () { window.location.reload(); }, 900); }
             })
-            .catch(function () { setStatus('Reset request failed.', false); });
+            .catch(function () { setStatus('Reset request failed.', false, playerActionId); });
     };
 
-    window.pteroRestorePlayer = function (playerId, playerName, backupId, backupLabel) {
+    window.pteroRestorePlayer = function (playerId, playerName, backupId, backupLabel, playerActionId) {
         var label = backupLabel ? (' from ' + backupLabel) : '';
         if (!confirm('Restore tracked data for "' + playerName + '"' + label + '?')) { return; }
-        setStatus('Restoring player data…');
+        setStatus('Restoring player data…', undefined, playerActionId);
         req('POST', '/dayz/player-actions/observed/' + encodeURIComponent(playerId) + '/restore', { backup_id: backupId })
             .then(function (d) {
-                setStatus(d.message || (d.status === 'restored' ? 'Player data restored.' : 'Restore failed.'), d.status === 'restored' ? undefined : false);
+                setStatus(d.message || (d.status === 'restored' ? 'Player data restored.' : 'Restore failed.'), d.status === 'restored' ? undefined : false, playerActionId);
                 if (d.status === 'restored') { setTimeout(function () { window.location.reload(); }, 900); }
             })
-            .catch(function () { setStatus('Restore request failed.', false); });
+            .catch(function () { setStatus('Restore request failed.', false, playerActionId); });
     };
 
-    window.pteroGiveMoney = function (playerId, playerName, isOnline) {
+    window.pteroGiveMoney = function (playerId, playerName, isOnline, playerActionId) {
         var msg = (isOnline ? '⚠️  This player appears online. The queued reward may be delivered after they reconnect.\n\n' : '⚠️  Recommended: give money while the player is OFFLINE so it can be delivered reliably.\n\n')
             + 'Give money to "' + playerName + '"?\n\n'
             + 'Select denomination:\n'
@@ -408,33 +422,33 @@
         var qty = window.prompt('How many items of MoneyRuble' + denom + ' to give? (1–99)', '1');
         if (qty === null) { return; }
         qty = Math.max(1, Math.min(99, parseInt(qty, 10) || 1));
-        setStatus('Queueing give money…');
+        setStatus('Queueing give money…', undefined, playerActionId);
         req('POST', '/dayz/player-actions/give-money', { player_id: playerId, player_name: playerName, denomination: denom, quantity: qty })
             .then(function (d) {
                 var ok = d.status === 'queued';
-                setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false);
+                setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false, playerActionId);
             })
-            .catch(function () { setStatus('Give money request failed.', false); });
+            .catch(function () { setStatus('Give money request failed.', false, playerActionId); });
     };
 
-    window.pteroRemovePlayer = function (actionId, playerName, selectedPlayerId) {
+    window.pteroRemovePlayer = function (actionId, playerName, selectedPlayerId, playerActionId) {
         var msg = '⛔  PERMANENTLY REMOVE "' + playerName + '" from the players list?\n\n'
             + 'This action CANNOT be undone. The player will be hidden from the list permanently '
             + '(they will reappear if observed online again, but will be re-hidden immediately).';
         if (!confirm(msg)) { return; }
         var confirmInput = window.prompt('Type REMOVE to confirm permanent removal of "' + playerName + '":', '');
         if ((confirmInput || '').trim().toUpperCase() !== 'REMOVE') {
-            setStatus('Removal cancelled — type REMOVE to confirm.', false);
+            setStatus('Removal cancelled — type REMOVE to confirm.', false, playerActionId || actionId);
             return;
         }
-        setStatus('Removing player…');
+        setStatus('Removing player…', undefined, playerActionId || actionId);
         req('DELETE', '/dayz/player-actions/players/' + encodeURIComponent(actionId), { player_name: playerName, selected_player_id: selectedPlayerId || actionId })
             .then(function (d) {
                 var ok = d.status === 'removed';
-                setStatus(d.message || (ok ? 'Player removed.' : 'Removal failed.'), ok ? undefined : false);
+                setStatus(d.message || (ok ? 'Player removed.' : 'Removal failed.'), ok ? undefined : false, playerActionId || actionId);
                 if (ok) { window.location.reload(); }
             })
-            .catch(function () { setStatus('Remove request failed.', false); });
+            .catch(function () { setStatus('Remove request failed.', false, playerActionId || actionId); });
     };
 
     window.pteroViewInventory = function (playerName, inventoryJson) {

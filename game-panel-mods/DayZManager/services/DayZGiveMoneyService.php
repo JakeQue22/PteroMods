@@ -21,6 +21,8 @@ use Throwable;
  */
 final class DayZGiveMoneyService
 {
+    private const TABLE = 'dayz_give_money_queue';
+
     private const DENOMINATIONS = [1, 50, 100];
 
     private const CLASS_MAP = [
@@ -69,7 +71,7 @@ final class DayZGiveMoneyService
         $now = date('Y-m-d H:i:s');
 
         try {
-            \Illuminate\Support\Facades\DB::table('dayz_give_money_queue')->insert([
+            \Illuminate\Support\Facades\DB::table(self::TABLE)->insert([
                 'server_id'   => $serverId,
                 'player_id'   => $playerId,
                 'player_name' => $playerName !== '' ? $playerName : $playerId,
@@ -111,7 +113,7 @@ final class DayZGiveMoneyService
         }
 
         try {
-            return \Illuminate\Support\Facades\DB::table('dayz_give_money_queue')
+            return \Illuminate\Support\Facades\DB::table(self::TABLE)
                 ->where('server_id', $serverId)
                 ->orderByDesc('created_at')
                 ->limit(200)
@@ -164,14 +166,53 @@ final class DayZGiveMoneyService
 
     private function tableExists(): bool
     {
-        if (!class_exists('Illuminate\\Support\\Facades\\Schema')) {
+        try {
+            if (class_exists('Illuminate\\Support\\Facades\\Schema')
+                && \Illuminate\Support\Facades\Schema::hasTable(self::TABLE)
+            ) {
+                return true;
+            }
+        } catch (Throwable) {
+            // fall through
+        }
+
+        if (!class_exists('Illuminate\\Support\\Facades\\DB')) {
             return false;
         }
 
         try {
-            return \Illuminate\Support\Facades\Schema::hasTable('dayz_give_money_queue');
+            \Illuminate\Support\Facades\DB::statement($this->createTableSql());
+
+            return true;
+        } catch (Throwable) {
+            // fall through
+        }
+
+        try {
+            \Illuminate\Support\Facades\DB::table(self::TABLE)->limit(1)->get();
+
+            return true;
         } catch (Throwable) {
             return false;
         }
+    }
+
+    private function createTableSql(): string
+    {
+        return "CREATE TABLE IF NOT EXISTS `dayz_give_money_queue` (
+            `id`          INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+            `server_id`   VARCHAR(64)   NOT NULL,
+            `player_id`   VARCHAR(64)   NOT NULL,
+            `player_name` VARCHAR(255)  NOT NULL DEFAULT '',
+            `item_class`  VARCHAR(64)   NOT NULL,
+            `quantity`    SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+            `status`      VARCHAR(16)   NOT NULL DEFAULT 'pending',
+            `note`        VARCHAR(255)  NOT NULL DEFAULT '',
+            `created_at`  TIMESTAMP     NULL DEFAULT NULL,
+            `updated_at`  TIMESTAMP     NULL DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            KEY `idx_dayz_give_money_queue_server_player` (`server_id`, `player_id`),
+            KEY `idx_dayz_give_money_queue_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
     }
 }
