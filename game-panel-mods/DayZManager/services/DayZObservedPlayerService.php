@@ -418,14 +418,25 @@ final class DayZObservedPlayerService
                 'metadata_json'  => $this->encodeJson($snapshot['metadata_json'] ?? null),
                 'first_seen_at'  => $snapshot['first_seen_at'] ?? null,
                 'last_seen_at'   => $snapshot['last_seen_at'] ?? null,
-                'steam64'        => isset($snapshot['steam64']) ? trim((string) $snapshot['steam64']) : null,
                 'updated_at'     => $now,
             ];
+            $steam64 = isset($snapshot['steam64']) ? trim((string) $snapshot['steam64']) : null;
 
             \Illuminate\Support\Facades\DB::table('dayz_observed_players')->updateOrInsert(
                 ['server_id' => $serverId, 'player_id' => $playerId],
                 $payload + ['created_at' => $snapshot['created_at'] ?? $now],
             );
+
+            if ($steam64 !== null && $steam64 !== '') {
+                try {
+                    \Illuminate\Support\Facades\DB::table('dayz_observed_players')
+                        ->where('server_id', $serverId)
+                        ->where('player_id', $playerId)
+                        ->update(['steam64' => $steam64]);
+                } catch (Throwable) {
+                    // Older installs may not yet have the steam64 column.
+                }
+            }
 
             return [
                 'status'    => 'restored',
