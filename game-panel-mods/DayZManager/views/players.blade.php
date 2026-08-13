@@ -771,13 +771,6 @@
         return WIKI_API_BASE + '?' + search.toString();
     }
 
-    function wikiThumbUrl(title) {
-        var fileTitle = String(title || '').trim();
-        if (!fileTitle) { return ''; }
-        var enc = encodeURIComponent(fileTitle);
-        return 'https://dayz.wiki.gg/images/thumb/' + enc + '.png/245px-' + enc + '.png';
-    }
-
     function wikiFetchJson(params) {
         return fetch(wikiApiUrl(params)).then(function (res) {
             if (!res.ok) {
@@ -986,13 +979,12 @@
             var meta    = classWikiCandidates(cls);
             var label   = meta.label || cls;
             var pageUrl = WIKI_SEARCH_BASE + encodeURIComponent(meta.search || cls);
-            var guessedImageUrl = wikiThumbUrl((meta.fileCandidates && meta.fileCandidates[0]) || (meta.pageCandidates && meta.pageCandidates[0]) || meta.search || cls);
             var card = document.createElement('div');
             card.style.cssText = cardStyle;
 
             var imgWrap = document.createElement('div');
             imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;';
-            setCardImage(imgWrap, guessedImageUrl, label);
+            setCardImage(imgWrap, '', label);
             card.appendChild(imgWrap);
 
             var nameEl = document.createElement('div');

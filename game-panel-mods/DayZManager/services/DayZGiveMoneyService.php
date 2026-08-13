@@ -320,7 +320,7 @@ final class DayZGiveMoneyService
         }
 
         // Ensure the player_uid column exists (added in a later revision).
-        // This runs at most once per request thanks to the static flag.
+        // The static flag keeps this best-effort check to once per PHP worker.
         static $uidColumnChecked = false;
 
         if (!$uidColumnChecked) {
