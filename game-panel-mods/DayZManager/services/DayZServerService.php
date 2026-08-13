@@ -1159,13 +1159,12 @@ final class DayZServerService
     }
 
     /**
-     * @param array<string, string> $customMessages
-     */
-    /**
-     * @param int|null $remainingMinutes Actual remaining minutes to the restart;
-     *                                   when provided it replaces the threshold
-     *                                   value in the {time} placeholder so the
-     *                                   in-game countdown is always accurate.
+     * @param int                   $minutes         Warning threshold key (used for custom message lookup).
+     * @param array<string, string> $customMessages  Map of threshold → template string.
+     * @param int|null              $remainingMinutes Actual remaining minutes to the restart;
+     *                                               when provided it replaces the threshold
+     *                                               value in the {time} placeholder so the
+     *                                               in-game countdown is always accurate.
      */
     private function warningMessage(int $minutes, array $customMessages, ?int $remainingMinutes = null): string
     {
