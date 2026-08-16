@@ -89,19 +89,21 @@ final class DayZBackupService
             return ['status' => 'error', 'message' => 'Backup table not found — run the migrations.'];
         }
 
-        $payload = $this->buildPayload($serverId);
-
         try {
-            \Illuminate\Support\Facades\DB::table('dayz_backups')->insert([
+            $payload = $this->buildPayload($serverId);
+            $encodedPayload = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+            $backupId = (int) \Illuminate\Support\Facades\DB::table('dayz_backups')->insertGetId([
                 'server_id'  => $serverId,
                 'label'      => $label !== '' ? $label : date('Y-m-d H:i:s') . ' backup',
                 'trigger'    => $trigger,
-                'payload'    => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+                'payload'    => $encodedPayload,
                 'created_at' => date('Y-m-d H:i:s'),
             ]);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => 'Could not save backup: ' . $exception->getMessage()];
         }
+
+        $this->persistBackupFile($serverId, $backupId, $encodedPayload);
 
         $this->forgetListCache($serverId);
         $this->pruneOldBackups($serverId);
@@ -123,12 +125,22 @@ final class DayZBackupService
         }
 
         try {
+            $row = \Illuminate\Support\Facades\DB::table('dayz_backups')
+                ->where('id', $backupId)
+                ->where('server_id', $serverId)
+                ->first(['id', 'server_id']);
+
+            if ($row === null) {
+                return ['status' => 'error', 'message' => 'Backup not found or does not belong to this server.'];
+            }
+
             $deleted = \Illuminate\Support\Facades\DB::table('dayz_backups')
                 ->where('id', $backupId)
                 ->where('server_id', $serverId)
                 ->delete();
 
             if ($deleted > 0) {
+                $this->deleteBackupFile((string) ($row->server_id ?? $serverId), (int) ($row->id ?? $backupId));
                 $this->forgetListCache($serverId);
             }
 
@@ -284,10 +296,23 @@ final class DayZBackupService
                 ->where('server_id', $serverId)
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
-                ->get(['id', 'label', 'trigger', 'created_at'])
+                ->get(['id', 'server_id', 'label', 'trigger', 'created_at', 'payload'])
                 ->all();
 
-            return array_map(static fn (mixed $row): array => (array) $row, $rows);
+            return array_map(function (mixed $row): array {
+                $entry = (array) $row;
+                $file = $this->ensureBackupFile(
+                    (string) ($entry['server_id'] ?? ''),
+                    (int) ($entry['id'] ?? 0),
+                    (string) ($entry['payload'] ?? '')
+                );
+
+                unset($entry['payload']);
+
+                return $entry + $file + [
+                    'file_size_display' => $this->formatBytes((int) ($file['file_size'] ?? 0)),
+                ];
+            }, $rows);
         } catch (Throwable) {
             return [];
         }
@@ -307,6 +332,93 @@ final class DayZBackupService
         } catch (Throwable) {
             // Best-effort cache invalidation only.
         }
+    }
+
+    /**
+     * @return array{file_path:string, file_size:int}
+     */
+    private function ensureBackupFile(string $serverId, int $backupId, string $payload): array
+    {
+        if ($serverId === '' || $backupId <= 0) {
+            return ['file_path' => '', 'file_size' => strlen($payload)];
+        }
+
+        $path = $this->backupFilePath($serverId, $backupId);
+
+        if ($payload !== '' && !is_file($path)) {
+            $directory = dirname($path);
+
+            if (!is_dir($directory)) {
+                @mkdir($directory, 0775, true);
+            }
+
+            @file_put_contents($path, $payload);
+        }
+
+        clearstatcache(true, $path);
+        $size = is_file($path) ? @filesize($path) : false;
+
+        return [
+            'file_path' => $path,
+            'file_size' => $size === false ? strlen($payload) : (int) $size,
+        ];
+    }
+
+    private function persistBackupFile(string $serverId, int $backupId, string $payload): void
+    {
+        $this->ensureBackupFile($serverId, $backupId, $payload);
+    }
+
+    private function deleteBackupFile(string $serverId, int $backupId): void
+    {
+        $path = $this->backupFilePath($serverId, $backupId);
+
+        if (is_file($path)) {
+            @unlink($path);
+        }
+    }
+
+    private function backupFilePath(string $serverId, int $backupId): string
+    {
+        return rtrim($this->backupRootPath(), DIRECTORY_SEPARATOR)
+            . DIRECTORY_SEPARATOR
+            . $this->safePathSegment($serverId)
+            . DIRECTORY_SEPARATOR
+            . 'backup_' . $backupId . '.json';
+    }
+
+    private function backupRootPath(): string
+    {
+        if (function_exists('storage_path')) {
+            return storage_path('app/pteromods/dayz-backups');
+        }
+
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'pteromods-dayz-backups';
+    }
+
+    private function safePathSegment(string $value): string
+    {
+        $clean = preg_replace('/[^a-zA-Z0-9._-]/', '_', $value) ?? '';
+
+        return $clean !== '' ? $clean : 'server';
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes < 1024) {
+            return $bytes . ' B';
+        }
+
+        $units = ['KB', 'MB', 'GB', 'TB'];
+        $size = $bytes / 1024;
+        $unitIndex = 0;
+
+        while ($size >= 1024 && $unitIndex < count($units) - 1) {
+            $size /= 1024;
+            $unitIndex++;
+        }
+
+        return number_format($size, $size >= 10 ? 1 : 2) . ' ' . $units[$unitIndex];
     }
 
     /**

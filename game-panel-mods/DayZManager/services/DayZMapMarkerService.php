@@ -582,17 +582,8 @@ final class DayZMapMarkerService
 
     /**
      * Reads `/profiles/Trader/TraderObjects.txt` (Dr. Jones Trader mod) and
-     * adds each NPC object's position as a Trader marker.
-     *
-     * The file uses a Enfusion-derived text format where every entry is:
-     *
-     *   ClassName {
-     *       Position = {x, y, z};   // or: Position = x y z;
-     *       …
-     *   }
-     *
-     * DayZ world coordinates: x = east-west, y = height, z = north-south.
-     * The live map plots (x, z) — height (y) is ignored.
+     * adds one Trader marker per `Location:` section using that section's
+     * `TraderMarkerPosition`.
      *
      * @param array<string, list<array<string, mixed>>> $markers
      * @param list<string> $sources
@@ -611,37 +602,39 @@ final class DayZMapMarkerService
             return;
         }
 
-        // Match blocks of the form:
-        //   ClassName {
-        //       …
-        //       Position = {x, y, z};
-        //       …
-        //   }
-        // Handles both comma-separated and space-separated coordinate values,
-        // and both brace-wrapped ({x,y,z}) and bare (x y z) forms.
-        $pattern = '/^(\w+)\s*\{[^{}]*?Position\s*=\s*\{?\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)/im';
+        $sectionsPattern = '/^\s*Location\s*:\s*(.*?)\R(.*?)(?=^\s*Location\s*:|\z)/ims';
 
-        if (preg_match_all($pattern, $raw, $matches, PREG_SET_ORDER) === false
-            || $matches === []) {
+        if (preg_match_all($sectionsPattern, $raw, $sections, PREG_SET_ORDER) === false
+            || $sections === []) {
             return;
         }
 
         $added = 0;
 
-        foreach ($matches as $match) {
-            $className = trim($match[1]);
-            $x = (float) $match[2];
-            $z = (float) $match[4]; // index 3 = y (height), index 4 = z
+        foreach ($sections as $section) {
+            $locationName = trim((string) ($section[1] ?? ''));
+            $body = (string) ($section[2] ?? '');
+
+            if (!preg_match(
+                '/TraderMarkerPosition\s*=\s*\{?\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)/i',
+                $body,
+                $match
+            )) {
+                continue;
+            }
+
+            $x = (float) $match[1];
+            $z = (float) $match[3];
 
             if ($x === 0.0 && $z === 0.0) {
                 continue;
             }
 
             $markers['trader'][] = [
-                'name'   => $this->humanise($className),
+                'name'   => $locationName !== '' ? $locationName : 'Trader',
                 'x'      => $x,
                 'z'      => $z,
-                'detail' => 'Trader NPC',
+                'detail' => 'Trader location',
             ];
             $added++;
         }

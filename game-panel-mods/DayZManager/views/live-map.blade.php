@@ -30,7 +30,7 @@
     </p>
 </section>
 
-<section class="dz-card dz-live-map-layout">
+<section id="dz-live-map-shell" class="dz-card dz-live-map-layout">
     <div id="dz-live-map-canvas" class="dz-live-map-canvas" aria-label="DayZ live map viewer">
         <div id="dz-live-map-cursor" style="display:none;position:absolute;bottom:0.35rem;left:0.35rem;z-index:900;background:rgba(0,0,0,0.65);color:#e2e8f0;font-size:0.72rem;font-family:monospace;padding:0.15rem 0.4rem;border-radius:0.2rem;pointer-events:none;"></div>
     </div>
@@ -115,6 +115,7 @@
     };
 
     const root      = document.getElementById('dz-live-map-canvas');
+    const fullscreenTarget = document.getElementById('dz-live-map-shell') || root;
     const statusEl  = document.getElementById('dz-live-map-status');
     const listEl    = document.getElementById('dz-live-map-list');
     const detailEl  = document.getElementById('dz-live-map-player');
@@ -942,16 +943,48 @@
             return;
         }
 
-        state.leafletMap.fitBounds(worldBounds(state.mapDef));
+        state.selected = '';
+        state.focused = false;
+        state.leafletMap.closePopup();
+        state.leafletMap.invalidateSize(false);
+        state.leafletMap.fitBounds(worldBounds(state.mapDef), { padding: [16, 16], animate: false });
+        renderPlayerList();
+        renderSelection();
     }
 
     function toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            root.requestFullscreen && root.requestFullscreen();
+        if (!fullscreenTarget) {
             return;
         }
 
-        document.exitFullscreen && document.exitFullscreen();
+        const activeFullscreenElement = document.fullscreenElement
+            || document.webkitFullscreenElement
+            || document.msFullscreenElement;
+
+        if (!activeFullscreenElement) {
+            const request = fullscreenTarget.requestFullscreen
+                || fullscreenTarget.webkitRequestFullscreen
+                || fullscreenTarget.msRequestFullscreen;
+
+            if (request) {
+                request.call(fullscreenTarget);
+                window.setTimeout(function () {
+                    if (state.leafletMap) {
+                        state.leafletMap.invalidateSize(false);
+                    }
+                }, 150);
+            }
+
+            return;
+        }
+
+        const exit = document.exitFullscreen
+            || document.webkitExitFullscreen
+            || document.msExitFullscreen;
+
+        if (exit) {
+            exit.call(document);
+        }
     }
 
     function csrfToken() {

@@ -518,6 +518,29 @@ code { background: rgba(148, 163, 184, 0.15); border-radius: 4px; padding: 0.05r
   overflow: hidden;
 }
 
+.dz-live-map-layout:fullscreen,
+.dz-live-map-layout:-webkit-full-screen {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1rem;
+  background: var(--dz-surface, #111827);
+  box-sizing: border-box;
+  grid-template-columns: minmax(0, 1fr) 21rem;
+}
+
+.dz-live-map-layout:fullscreen .dz-live-map-canvas,
+.dz-live-map-layout:-webkit-full-screen .dz-live-map-canvas {
+  height: calc(100vh - 2rem);
+}
+
+.dz-live-map-layout:fullscreen .dz-live-map-sidebar,
+.dz-live-map-layout:-webkit-full-screen .dz-live-map-sidebar {
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+}
+
 .dz-live-map-fallback {
   width: 100%;
   height: 100%;

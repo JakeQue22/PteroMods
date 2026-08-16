@@ -7,7 +7,7 @@ namespace GamePanelMods\DayZManager\Services;
 use Throwable;
 
 /**
- * Queues a "give money" action for an offline DayZ player.
+ * Queues a "give money" action for a DayZ player.
  *
  * Supported denominations map to DayZ item class names:
  *   1   coin  → MoneyRuble1
@@ -16,8 +16,8 @@ use Throwable;
  *
  * When the action is queued, a JSON file is written to the server at
  * /profiles/PteroMods/give_money_<player_id>.json so a server-side mod can
- * read and fulfil it when the player next connects.  The row in the panel DB
- * acts as the authoritative record; the file is best-effort.
+ * read and fulfil it. The row in the panel DB acts as the authoritative
+ * record while the request is pending; fulfilled entries are removed.
  */
 final class DayZGiveMoneyService
 {
@@ -137,8 +137,7 @@ final class DayZGiveMoneyService
     }
 
     /**
-     * Marks a pending queue entry as 'delivered' (called by the server-side mod
-     * via the panel API, or manually from the UI).
+     * Removes a fulfilled queue entry after the server-side mod has delivered it.
      *
      * @return array<string, mixed>
      */
@@ -155,37 +154,37 @@ final class DayZGiveMoneyService
         }
 
         try {
-            $updated = \Illuminate\Support\Facades\DB::table(self::TABLE)
-                ->where('server_id', $serverId)
-                ->where('id', $queueId)
-                ->where('status', 'pending')
-                ->update(['status' => 'delivered', 'updated_at' => date('Y-m-d H:i:s')]);
-
-            if ($updated < 1) {
-                // Already delivered or not found — still a success from the caller's view.
-                return ['status' => 'ok', 'id' => $queueId, 'message' => 'Queue entry already marked as delivered.'];
-            }
-
-            // Re-sync the queue file for this player so it no longer contains
-            // this entry.
             $row = \Illuminate\Support\Facades\DB::table(self::TABLE)
                 ->where('server_id', $serverId)
                 ->where('id', $queueId)
                 ->first();
 
-            if ($row !== null) {
-                $entry = (array) $row;
-                $playerId = trim((string) ($entry['player_id'] ?? ''));
-                $playerUid = trim((string) ($entry['player_uid'] ?? ''));
+            if ($row === null) {
+                return ['status' => 'ok', 'id' => $queueId, 'message' => 'Queue entry already removed.'];
+            }
 
-                if ($playerId !== '') {
-                    $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
-                }
+            $entry = (array) $row;
+
+            $deleted = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('id', $queueId)
+                ->delete();
+
+            if ($deleted < 1) {
+                return ['status' => 'ok', 'id' => $queueId, 'message' => 'Queue entry already removed.'];
+            }
+
+            $playerId = trim((string) ($entry['player_id'] ?? ''));
+            $playerUid = trim((string) ($entry['player_uid'] ?? ''));
+
+            if ($playerId !== '') {
+                $this->syncQueueFile($server, $serverId, $playerId, $playerUid);
             }
 
             $this->forgetPendingCache($serverId);
+            $this->logFulfilledRemoval($serverId, $queueId, $entry);
 
-            return ['status' => 'delivered', 'id' => $queueId, 'message' => 'Queue entry marked as delivered.'];
+            return ['status' => 'removed', 'id' => $queueId, 'message' => 'Queue entry removed after delivery.'];
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
@@ -321,6 +320,7 @@ final class DayZGiveMoneyService
         try {
             return \Illuminate\Support\Facades\DB::table(self::TABLE)
                 ->where('server_id', $serverId)
+                ->where('status', 'pending')
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->limit(200)
@@ -374,6 +374,35 @@ final class DayZGiveMoneyService
         $time = strtotime($text);
 
         return $time === false ? $text : date('d-m-Y H:i:s', $time);
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     */
+    private function logFulfilledRemoval(string $serverId, int $queueId, array $entry): void
+    {
+        $context = [
+            'server_id' => $serverId,
+            'queue_id' => $queueId,
+            'player_id' => (string) ($entry['player_id'] ?? ''),
+            'player_uid' => (string) ($entry['player_uid'] ?? ''),
+            'player_name' => (string) ($entry['player_name'] ?? ''),
+            'item_class' => (string) ($entry['item_class'] ?? ''),
+            'quantity' => (int) ($entry['quantity'] ?? 1),
+        ];
+
+        try {
+            if (class_exists('Illuminate\\Support\\Facades\\Log')) {
+                \Illuminate\Support\Facades\Log::info('DayZ give money queue entry fulfilled and removed.', $context);
+
+                return;
+            }
+        } catch (Throwable) {
+            // Fall back to PHP's error log below.
+        }
+
+        $encoded = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        error_log('DayZ give money queue entry fulfilled and removed. ' . ($encoded !== false ? $encoded : ''));
     }
 
     private function tableExists(): bool

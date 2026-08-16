@@ -92,6 +92,12 @@
                             {{ $backup['created_at'] }}
                             &middot; {{ $backup['trigger'] === 'auto' ? 'automatic' : 'manual' }}
                         </span>
+                        <span class="dz-sub" style="display:block;font-size:0.75rem;">
+                            Size: {{ $backup['file_size_display'] ?? '—' }}
+                        </span>
+                        <span class="dz-sub" style="display:block;font-size:0.75rem;word-break:break-all;">
+                            File: <code>{{ $backup['file_path'] ?? '—' }}</code>
+                        </span>
                     </span>
                     <div style="display:flex;gap:0.4rem;flex-shrink:0;flex-wrap:wrap;">
                         <button class="dz-btn dz-btn-sm dz-btn-amber"
