@@ -211,10 +211,10 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
                     EntityAI subItem = EntityAI.Cast(attachCargo.GetItem(si));
                     if (!subItem)
                         continue;
-                    PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
-                    sub.slot = slotItem.slot + ".cargo";
-                    sub.className = subItem.GetType();
-                    slotItem.contents.Insert(sub);
+                    PteroMods_LiveMapItem subContainerItem = new PteroMods_LiveMapItem();
+                    subContainerItem.slot = slotItem.slot + ".cargo";
+                    subContainerItem.className = subItem.GetType();
+                    slotItem.contents.Insert(subContainerItem);
                 }
                 continue;
             }
@@ -240,10 +240,10 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
         EntityAI cargoItem = EntityAI.Cast(cargo.GetItem(ci));
         if (!cargoItem)
             continue;
-        PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
-        sub.slot = slotItem.slot + ".cargo";
-        sub.className = cargoItem.GetType();
-        slotItem.contents.Insert(sub);
+        PteroMods_LiveMapItem cargoSubItem = new PteroMods_LiveMapItem();
+        cargoSubItem.slot = slotItem.slot + ".cargo";
+        cargoSubItem.className = cargoItem.GetType();
+        slotItem.contents.Insert(cargoSubItem);
     }
 }
 
