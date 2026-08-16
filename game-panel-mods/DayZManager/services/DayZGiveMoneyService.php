@@ -288,80 +288,6 @@ final class DayZGiveMoneyService
             return [];
         }
 
-        private function reconcilePendingPlayers(mixed $server, string $serverId): void
-        {
-            try {
-                $players = \Illuminate\Support\Facades\DB::table(self::TABLE)
-                    ->where('server_id', $serverId)
-                    ->where('status', 'pending')
-                    ->select(['player_id', 'player_uid'])
-                    ->distinct()
-                    ->get();
-
-                foreach ($players as $player) {
-                    $playerId = trim((string) ($player->player_id ?? ''));
-                    $playerUid = trim((string) ($player->player_uid ?? ''));
-
-                    if ($playerId !== '') {
-                        $this->reconcileFulfilled($server, $serverId, $playerId, $playerUid);
-                    }
-                }
-            } catch (Throwable) {
-                // Best-effort reconciliation; the queue file remains authoritative.
-            }
-        }
-
-        private function reconcileFulfilled(
-            mixed $server,
-            string $serverId,
-            string $playerId,
-            string $playerUid,
-        ): void {
-            $key = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
-            $raw = $this->gateway->readFileFresh($server, $this->queueFilePath($key));
-
-            if ($raw === null) {
-                return;
-            }
-
-            $decoded = json_decode($raw, true);
-
-            if (!is_array($decoded)) {
-                return;
-            }
-
-            $activeIds = [];
-
-            foreach ($decoded as $entry) {
-                if (is_array($entry) && (int) ($entry['queue_id'] ?? 0) > 0) {
-                    $activeIds[] = (int) $entry['queue_id'];
-                }
-            }
-
-            try {
-                $query = \Illuminate\Support\Facades\DB::table(self::TABLE)
-                    ->where('server_id', $serverId)
-                    ->where('status', 'pending')
-                    ->where(function ($query) use ($playerId, $playerUid): void {
-                        $query->where('player_id', $playerId);
-
-                        if ($playerUid !== '' && $playerUid !== $playerId) {
-                            $query->orWhere('player_uid', $playerUid);
-                        }
-                    });
-
-                if ($activeIds !== []) {
-                    $query->whereNotIn('id', array_values(array_unique($activeIds)));
-                }
-
-                if ($query->delete() > 0) {
-                    $this->forgetPendingCache($serverId);
-                }
-            } catch (Throwable) {
-                // Best-effort reconciliation; retry on the next queue read/write.
-            }
-        }
-
         try {
             return \Illuminate\Support\Facades\DB::table(self::TABLE)
                 ->where('server_id', $serverId)
@@ -388,6 +314,80 @@ final class DayZGiveMoneyService
                 ->all();
         } catch (Throwable) {
             return [];
+        }
+    }
+
+    private function reconcilePendingPlayers(mixed $server, string $serverId): void
+    {
+        try {
+            $players = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('status', 'pending')
+                ->select(['player_id', 'player_uid'])
+                ->distinct()
+                ->get();
+
+            foreach ($players as $player) {
+                $playerId = trim((string) ($player->player_id ?? ''));
+                $playerUid = trim((string) ($player->player_uid ?? ''));
+
+                if ($playerId !== '') {
+                    $this->reconcileFulfilled($server, $serverId, $playerId, $playerUid);
+                }
+            }
+        } catch (Throwable) {
+            // Best-effort reconciliation; the queue file remains authoritative.
+        }
+    }
+
+    private function reconcileFulfilled(
+        mixed $server,
+        string $serverId,
+        string $playerId,
+        string $playerUid,
+    ): void {
+        $key = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
+        $raw = $this->gateway->readFileFresh($server, $this->queueFilePath($key));
+
+        if ($raw === null) {
+            return;
+        }
+
+        $decoded = json_decode($raw, true);
+
+        if (!is_array($decoded)) {
+            return;
+        }
+
+        $activeIds = [];
+
+        foreach ($decoded as $entry) {
+            if (is_array($entry) && (int) ($entry['queue_id'] ?? 0) > 0) {
+                $activeIds[] = (int) $entry['queue_id'];
+            }
+        }
+
+        try {
+            $query = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
+                ->where('status', 'pending')
+                ->where(function ($query) use ($playerId, $playerUid): void {
+                    $query->where('player_id', $playerId);
+
+                    if ($playerUid !== '' && $playerUid !== $playerId) {
+                        $query->orWhere('player_uid', $playerUid);
+                    }
+                });
+
+            if ($activeIds !== []) {
+                $query->whereNotIn('id', array_values(array_unique($activeIds)));
+            }
+
+            if ($query->delete() > 0) {
+                $this->forgetPendingCache($serverId);
+            }
+        } catch (Throwable) {
+            // Best-effort reconciliation; retry on the next queue read/write.
         }
     }
 
