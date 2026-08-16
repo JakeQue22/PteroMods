@@ -1115,7 +1115,10 @@ final class DayZInventoryItemResolverService
      */
     private function requestApi(array $params): ?array
     {
-        $cacheKey = 'api:' . md5(json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        $cacheKey = 'api:' . md5(
+            $this->wikiSource['api_url'] . '|'
+            . json_encode($params, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+        );
 
         if (isset($this->requestCache[$cacheKey])) {
             /** @var array<string, mixed>|null $cached */
