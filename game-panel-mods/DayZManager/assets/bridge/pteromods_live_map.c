@@ -77,7 +77,7 @@
  *   GameInventory.GetAttachmentFromIndex(int) → item in attachment slot
  *   GameInventory.GetCargo()                  → CargoBase (may be NULL)
  *   CargoBase.GetItemCount()                  → total cargo item count
- *   CargoBase.GetItem(int row, int col)        → item at cargo position
+ *   CargoBase.GetItem(int index)               → item at cargo index
  * FindAttachmentBySlotName returns null for empty slots and is safe to call on
  * every tick.
  */
@@ -208,7 +208,7 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
                 int subItemCount = attachCargo.GetItemCount();
                 for (int si = 0; si < subItemCount; si++)
                 {
-                    EntityAI subItem = EntityAI.Cast(attachCargo.GetItem(si, 0));
+                    EntityAI subItem = EntityAI.Cast(attachCargo.GetItem(si));
                     if (!subItem)
                         continue;
                     PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
@@ -229,8 +229,7 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
 
     // Direct cargo items (the main case for backpacks and holsters).
     // DayZ's CargoBase.GetItemCount() returns the number of distinct item entries;
-    // each is accessed via GetItem(rowIndex, 0) — the column parameter addresses
-    // quantity-stacked items, not a 2-D grid, so col=0 always retrieves the item.
+    // each is accessed via GetItem(index) using a zero-based index.
     CargoBase cargo = inv.GetCargo();
     if (!cargo)
         return;
@@ -238,7 +237,7 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
     int itemCount = cargo.GetItemCount();
     for (int ci = 0; ci < itemCount; ci++)
     {
-        EntityAI cargoItem = EntityAI.Cast(cargo.GetItem(ci, 0));
+        EntityAI cargoItem = EntityAI.Cast(cargo.GetItem(ci));
         if (!cargoItem)
             continue;
         PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
