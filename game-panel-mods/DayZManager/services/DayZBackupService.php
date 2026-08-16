@@ -398,7 +398,8 @@ final class DayZBackupService
 
     private function safePathSegment(string $value): string
     {
-        $clean = preg_replace('/[^a-zA-Z0-9._-]/', '_', $value) ?? '';
+        $clean = preg_replace('/[^a-zA-Z0-9_-]/', '_', $value) ?? '';
+        $clean = trim($clean, '_-');
 
         return $clean !== '' ? $clean : 'server';
     }
