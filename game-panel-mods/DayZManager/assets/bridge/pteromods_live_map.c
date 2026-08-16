@@ -73,7 +73,7 @@
  * one level deep and placed in the parent item's "contents" array.
  * PteroMods_LiveMap_CollectContainerContents uses:
  *   EntityAI.GetInventory()                  → GameInventory
- *   GameInventory.GetSlotCount()              → attachment slot count
+ *   GameInventory.GetAttachmentSlotsCount()   → attachment slot count
  *   GameInventory.GetAttachmentFromIndex(int) → item in attachment slot
  *   GameInventory.GetCargo()                  → CargoBase (may be NULL)
  *   CargoBase.GetItemCount()                  → total cargo item count
@@ -191,7 +191,7 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
     // directly so the panel sees the actual items rather than the pocket entity.
     // If it has no cargo it is a real item (optic, suppressor, etc.) and is
     // added as an attachment entry.
-    int attachCount = inv.GetSlotCount();
+    int attachCount = inv.GetAttachmentSlotsCount();
     for (int ai = 0; ai < attachCount; ai++)
     {
         EntityAI attached = inv.GetAttachmentFromIndex(ai);
