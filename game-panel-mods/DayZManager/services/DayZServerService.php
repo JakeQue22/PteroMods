@@ -361,7 +361,6 @@ final class DayZServerService
                 // retrospective warning messages that would spam global chat.
                 if ($now >= $timedNext) {
                     $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
-                    $this->gateway->power($server, 'restart');
                     $this->clearTimedRestart($serverId);
                     $this->storeLastRestart($serverId, $now);
 
@@ -380,6 +379,7 @@ final class DayZServerService
                     }
 
                     $this->syncRestartMessagesXml($server);
+                    $this->gateway->power($server, 'restart');
 
                     return [
                         'status'          => 'restarted',
@@ -461,7 +461,6 @@ final class DayZServerService
             // Restart time has passed; restart immediately without sending
             // any retrospective warning messages.
             $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
-            $restarted = $this->gateway->power($server, 'restart');
             $lastRestart = $now;
 
             // Advance in whole intervals (anchored to the configured start time
@@ -469,6 +468,9 @@ final class DayZServerService
             // tick cannot leave a due timestamp behind and restart in a loop.
             $next = $this->nextRestartTimestamp($startTime, $interval, max($now, $next));
             $warningsSent = [];
+            $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true, $lastRestart);
+            $this->syncRestartMessagesXml($server);
+            $restarted = $this->gateway->power($server, 'restart');
         } else {
             $warningsSent = $this->parseWarnings((string) ($schedule['warnings_sent'] ?? ''));
             $warning = $this->dueWarning($next, $now, $this->enabledWarningMinutes($schedule), $warningsSent);
@@ -483,10 +485,8 @@ final class DayZServerService
             }
         }
 
-        $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true, $lastRestart);
-
-        if ($restarted) {
-            $this->syncRestartMessagesXml($server);
+        if ($lastRestart === null) {
+            $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true, null);
         }
 
         $storedLastRestart = $lastRestart !== null

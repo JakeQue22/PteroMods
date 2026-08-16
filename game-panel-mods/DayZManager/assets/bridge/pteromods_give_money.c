@@ -278,7 +278,9 @@ class PteroMods_GiveMoneyBridge
         if (!context)
             return;
 
-        context.POST(new PteroMods_GiveMoneyFulfilCallback(), entry.callback_path, "");
+        // The callback is a one-time, queue-specific signed URL. GET avoids the
+        // panel's CSRF middleware, which mission-side REST requests cannot satisfy.
+        context.GET(new PteroMods_GiveMoneyFulfilCallback(), entry.callback_path);
     }
 }
 

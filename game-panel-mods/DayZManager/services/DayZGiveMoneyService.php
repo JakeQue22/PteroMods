@@ -211,9 +211,11 @@ final class DayZGiveMoneyService
      *
      * @return array<string, mixed>
      */
-    public function markFulfilledFromBridge(int $queueId, string $signature): array
+    public function markFulfilledFromBridge(string $serverId, int $queueId, string $signature): array
     {
-        if ($queueId <= 0 || !$this->tableExists()) {
+        $serverId = trim($serverId);
+
+        if ($serverId === '' || $queueId <= 0 || !$this->tableExists()) {
             return ['status' => 'error', 'message' => 'That give money queue entry could not be found.'];
         }
 
@@ -225,6 +227,7 @@ final class DayZGiveMoneyService
 
         try {
             $row = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
                 ->where('id', $queueId)
                 ->first();
 
@@ -239,14 +242,12 @@ final class DayZGiveMoneyService
                 return ['status' => 'error', 'message' => 'Invalid bridge signature.'];
             }
 
-            $serverId = trim((string) ($entry['server_id'] ?? ''));
             $deleted = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('server_id', $serverId)
                 ->where('id', $queueId)
                 ->delete();
 
-            if ($serverId !== '') {
-                $this->forgetPendingCache($serverId);
-            }
+            $this->forgetPendingCache($serverId);
 
             if ($deleted < 1) {
                 return ['status' => 'ok', 'id' => $queueId, 'message' => 'Queue entry already removed.'];

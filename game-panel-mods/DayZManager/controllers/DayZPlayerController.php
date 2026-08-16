@@ -290,10 +290,12 @@ final class DayZPlayerController
     public function bridgeFulfillGiveMoney(mixed $server = null, string $id = ''): array
     {
         try {
+            $resolved = $this->context->resolve($server);
+            $serverId = $this->context->attribute($resolved['model'], ['uuid', 'uuidShort', 'id']);
             $queueId = (int) ($id !== '' ? $id : $this->context->stringInput('id'));
             $signature = $this->context->stringInput('signature');
 
-            return $this->giveMoneySvc->markFulfilledFromBridge($queueId, $signature);
+            return $this->giveMoneySvc->markFulfilledFromBridge($serverId, $queueId, $signature);
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
