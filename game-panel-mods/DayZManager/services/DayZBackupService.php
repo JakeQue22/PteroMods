@@ -348,11 +348,19 @@ final class DayZBackupService
         if ($payload !== '' && !is_file($path)) {
             $directory = dirname($path);
 
-            if (!is_dir($directory)) {
-                @mkdir($directory, 0775, true);
+            if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+                $this->logBackupFileWarning('Could not create DayZ backup directory.', [
+                    'server_id' => $serverId,
+                    'backup_id' => $backupId,
+                    'directory' => $directory,
+                ]);
+            } elseif (file_put_contents($path, $payload) === false) {
+                $this->logBackupFileWarning('Could not write DayZ backup file.', [
+                    'server_id' => $serverId,
+                    'backup_id' => $backupId,
+                    'path' => $path,
+                ]);
             }
-
-            @file_put_contents($path, $payload);
         }
 
         clearstatcache(true, $path);
@@ -373,8 +381,12 @@ final class DayZBackupService
     {
         $path = $this->backupFilePath($serverId, $backupId);
 
-        if (is_file($path)) {
-            @unlink($path);
+        if (is_file($path) && !unlink($path) && is_file($path)) {
+            $this->logBackupFileWarning('Could not delete DayZ backup file.', [
+                'server_id' => $serverId,
+                'backup_id' => $backupId,
+                'path' => $path,
+            ]);
         }
     }
 
@@ -420,6 +432,25 @@ final class DayZBackupService
         }
 
         return number_format($size, $size >= 10 ? 1 : 2) . ' ' . $units[$unitIndex];
+    }
+
+    /**
+     * @param array<string, mixed> $context
+     */
+    private function logBackupFileWarning(string $message, array $context): void
+    {
+        try {
+            if (class_exists('Illuminate\\Support\\Facades\\Log')) {
+                \Illuminate\Support\Facades\Log::warning($message, $context);
+
+                return;
+            }
+        } catch (Throwable) {
+            // Fall back to PHP's error log below.
+        }
+
+        $encoded = json_encode($context, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        error_log($message . ' ' . ($encoded !== false ? $encoded : ''));
     }
 
     /**
