@@ -10,9 +10,12 @@ use Throwable;
  * Queues a "give money" action for a DayZ player.
  *
  * Supported denominations map to DayZ item class names:
- *   1   coin  → MoneyRuble1
- *   50  coins → MoneyRuble50
- *   100 coins → MoneyRuble100
+ *   1   coin   → MoneyRuble1
+ *   5   coins  → MoneyRuble5
+ *   10  coins  → MoneyRuble10
+ *   25  coins  → MoneyRuble25
+ *   50  coins  → MoneyRuble50
+ *   100 coins  → MoneyRuble100
  *
  * When the action is queued, JSON is written under
  * /profiles/PteroMods/give_money_<uid>.json (falling back to player_id, and
@@ -25,10 +28,13 @@ final class DayZGiveMoneyService
     private const TABLE = 'dayz_give_money_queue';
     private const CACHE_SECONDS = 120;
 
-    private const DENOMINATIONS = [1, 50, 100];
+    private const DENOMINATIONS = [1, 5, 10, 25, 50, 100];
 
     private const CLASS_MAP = [
         1   => 'MoneyRuble1',
+        5   => 'MoneyRuble5',
+        10  => 'MoneyRuble10',
+        25  => 'MoneyRuble25',
         50  => 'MoneyRuble50',
         100 => 'MoneyRuble100',
     ];
@@ -56,7 +62,7 @@ final class DayZGiveMoneyService
         }
 
         if (!in_array($denomination, self::DENOMINATIONS, true)) {
-            return ['status' => 'error', 'message' => 'Invalid denomination. Must be 1, 50, or 100.'];
+            return ['status' => 'error', 'message' => 'Invalid denomination. Must be 1, 5, 10, 25, 50, or 100.'];
         }
 
         $quantity = max(1, min(99, $quantity));
@@ -109,7 +115,7 @@ final class DayZGiveMoneyService
             'player_id'  => $playerId,
             'item_class' => $itemClass,
             'quantity'   => $quantity,
-            'message'    => $quantity . '× ' . $itemClass . ' queued for ' . ($playerName ?: $playerId) . '. The items will be awarded when the server processes the queue.',
+            'message'    => $quantity . '× ' . $itemClass . ' queued for ' . ($playerName ?: $playerId) . '. Online players receive it immediately; offline players receive it after reconnecting.',
         ];
     }
 
@@ -255,9 +261,7 @@ final class DayZGiveMoneyService
     private function syncQueueFile(mixed $server, string $serverId, string $playerId, string $playerUid): void
     {
         try {
-            $playerUid = trim($playerUid);
-            $uidKey = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
-            $fileKeys = array_values(array_unique([$uidKey, $playerId]));
+            $fileKeys = $this->queueFileKeys($playerId, $playerUid);
             $queue = $this->pendingQueueFileEntries($serverId, $playerId, $playerUid);
 
             foreach ($fileKeys as $key) {
@@ -306,7 +310,7 @@ final class DayZGiveMoneyService
                     'queue_id'   => (int) ($row->id ?? 0),
                     'server_id'  => (string) ($row->server_id ?? $serverId),
                     'player_id'  => (string) ($row->player_id ?? $playerId),
-                    'player_uid' => (string) (($row->player_uid ?? '') !== '' ? $row->player_uid : $playerId),
+                    'player_uid' => (string) (($row->player_uid ?? '') !== '' ? $row->player_uid : ($playerUid !== '' ? $playerUid : $playerId)),
                     'item_class' => (string) ($row->item_class ?? ''),
                     'quantity'   => max(1, (int) ($row->quantity ?? 1)),
                     'queued_at'  => (string) (($row->created_at ?? '') !== '' ? $row->created_at : date('Y-m-d H:i:s')),
@@ -346,16 +350,9 @@ final class DayZGiveMoneyService
         string $playerId,
         string $playerUid,
     ): void {
-        $key = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
-        $raw = $this->gateway->readFileFresh($server, $this->queueFilePath($key));
+        $decoded = $this->firstReadableQueueFile($server, $playerId, $playerUid);
 
-        if ($raw === null) {
-            return;
-        }
-
-        $decoded = json_decode($raw, true);
-
-        if (!is_array($decoded)) {
+        if ($decoded === null) {
             return;
         }
 
@@ -393,6 +390,40 @@ final class DayZGiveMoneyService
         } catch (Throwable) {
             // Best-effort reconciliation; retry on the next queue read/write.
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function queueFileKeys(string $playerId, string $playerUid): array
+    {
+        $playerId = trim($playerId);
+        $playerUid = trim($playerUid);
+        $primaryKey = $playerUid !== '' && $playerUid !== $playerId ? $playerUid : $playerId;
+
+        return array_values(array_filter(array_unique([$primaryKey, $playerId])));
+    }
+
+    /**
+     * @return array<int, mixed>|null
+     */
+    private function firstReadableQueueFile(mixed $server, string $playerId, string $playerUid): ?array
+    {
+        foreach ($this->queueFileKeys($playerId, $playerUid) as $key) {
+            $raw = $this->gateway->readFileFresh($server, $this->queueFilePath($key));
+
+            if ($raw === null) {
+                continue;
+            }
+
+            $decoded = json_decode($raw, true);
+
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return null;
     }
 
     /**

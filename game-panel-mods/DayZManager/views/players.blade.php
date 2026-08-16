@@ -179,7 +179,7 @@
                     @if ($resetBackupId > 0)
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
                     @endif
-                    @if (!$isOnline || in_array($steam64, $superadmin_ids ?? [], true))
+                    @if (!$isProtectedPlayer)
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
                     @endif
                 </div>
@@ -199,12 +199,59 @@
     <p id="dz-player-action-status" class="dz-status dz-hidden" style="margin-top:0.75rem;"></p>
 </section>
 
+<div id="dz-give-money-modal" class="dz-player-modal" style="display:none;">
+    <div class="dz-player-modal__dialog">
+        <button type="button" class="dz-player-modal__close" onclick="window.pteroCloseGiveMoneyModal && window.pteroCloseGiveMoneyModal()" aria-label="Close">✕</button>
+        <div class="dz-player-modal__header">
+            <p class="dz-player-modal__eyebrow">Give Money</p>
+            <h3 id="dz-give-money-modal-title" style="margin:0;">Queue money</h3>
+            <p class="dz-sub" style="margin:0;">Online players receive it instantly; offline players receive it after reconnecting.</p>
+        </div>
+        <form id="dz-give-money-form" class="dz-player-modal__form">
+            <label class="dz-player-modal__field">
+                <span>Denomination</span>
+                <select id="dz-give-money-denomination" class="dz-input">
+                    <option value="1">1 coin · MoneyRuble1</option>
+                    <option value="5">5 coins · MoneyRuble5</option>
+                    <option value="10">10 coins · MoneyRuble10</option>
+                    <option value="25">25 coins · MoneyRuble25</option>
+                    <option value="50">50 coins · MoneyRuble50</option>
+                    <option value="100" selected>100 coins · MoneyRuble100</option>
+                </select>
+            </label>
+            <label class="dz-player-modal__field">
+                <span>Quantity</span>
+                <input id="dz-give-money-quantity" class="dz-input" type="number" min="1" max="99" step="1" value="1" />
+            </label>
+            <div class="dz-player-modal__meta">
+                <div>
+                    <span class="dz-player-modal__meta-label">Item class</span>
+                    <strong id="dz-give-money-class">MoneyRuble100</strong>
+                </div>
+                <div>
+                    <span class="dz-player-modal__meta-label">Total value</span>
+                    <strong id="dz-give-money-total">100 coins</strong>
+                </div>
+            </div>
+            <p id="dz-give-money-modal-status" class="dz-status dz-hidden" style="margin:0;"></p>
+            <div class="dz-player-modal__actions">
+                <button type="button" class="dz-btn dz-btn-ghost" onclick="window.pteroCloseGiveMoneyModal && window.pteroCloseGiveMoneyModal()">Cancel</button>
+                <button id="dz-give-money-submit" type="submit" class="dz-btn" style="background:var(--dz-success,#10b981);border-color:var(--dz-success,#10b981);">Queue Money</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {{-- Inventory viewer modal --}}
-<div id="dz-inventory-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);overflow-y:auto;">
-    <div style="background:var(--dz-surface,#1a1f2e);border:1px solid var(--dz-border,#2d3348);border-radius:0.5rem;max-width:900px;margin:4rem auto;padding:1.5rem;position:relative;">
-        <button type="button" onclick="document.getElementById('dz-inventory-modal').style.display='none'" style="position:absolute;top:0.75rem;right:0.75rem;background:none;border:none;color:inherit;font-size:1.25rem;cursor:pointer;" aria-label="Close">✕</button>
-        <h3 id="dz-inventory-modal-title" style="margin:0 0 1rem;"></h3>
-        <div id="dz-inventory-modal-body"></div>
+<div id="dz-inventory-modal" class="dz-player-modal" style="display:none;">
+    <div class="dz-player-modal__dialog dz-player-modal__dialog--wide">
+        <button type="button" class="dz-player-modal__close" onclick="document.getElementById('dz-inventory-modal').style.display='none'" aria-label="Close">✕</button>
+        <div class="dz-player-modal__header">
+            <p class="dz-player-modal__eyebrow">Inventory</p>
+            <h3 id="dz-inventory-modal-title" style="margin:0;"></h3>
+            <p class="dz-sub" style="margin:0;">Equipped items and nested container contents from the latest player snapshot.</p>
+        </div>
+        <div id="dz-inventory-modal-body" class="dz-inventory-modal__body"></div>
     </div>
 </div>
 
@@ -294,6 +341,98 @@
     </table>
 </section>
 @endif
+
+<style>
+.dz-player-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(2, 6, 23, 0.82);
+    padding: 2rem 1rem;
+    overflow-y: auto;
+    align-items: flex-start;
+    justify-content: center;
+}
+.dz-player-modal__dialog {
+    position: relative;
+    width: min(560px, 100%);
+    margin: 0 auto;
+    padding: 1.4rem;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--dz-border, #2d3348) 78%, white 22%);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.03), transparent 18%),
+        var(--dz-surface, #1a1f2e);
+    box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+}
+.dz-player-modal__dialog--wide {
+    width: min(1040px, 100%);
+}
+.dz-player-modal__close {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--dz-border, #2d3348);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.04);
+    color: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+}
+.dz-player-modal__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 1.1rem;
+    padding-right: 2.5rem;
+}
+.dz-player-modal__eyebrow {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dz-accent, #60a5fa);
+}
+.dz-player-modal__form {
+    display: grid;
+    gap: 0.95rem;
+}
+.dz-player-modal__field {
+    display: grid;
+    gap: 0.4rem;
+}
+.dz-player-modal__field > span,
+.dz-player-modal__meta-label {
+    font-size: 0.78rem;
+    color: var(--dz-muted);
+}
+.dz-player-modal__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--dz-border, #2d3348);
+    border-radius: 0.8rem;
+    background: rgba(11, 15, 25, 0.55);
+}
+.dz-player-modal__meta > div {
+    display: grid;
+    gap: 0.2rem;
+}
+.dz-player-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    margin-top: 0.25rem;
+}
+.dz-inventory-modal__body {
+    display: grid;
+    gap: 1rem;
+}
+</style>
 
 <script>
 (function () {
@@ -451,32 +590,116 @@
             .catch(function () { setStatus('Restore request failed.', false, playerActionId); });
     };
 
-    window.pteroGiveMoney = function (playerId, playerName, isOnline, playerActionId, playerUid) {
-        var msg = (isOnline ? '⚠️  This player appears online. The queued reward may be delivered after they reconnect.\n\n' : '⚠️  Recommended: give money while the player is OFFLINE so it can be delivered reliably.\n\n')
-            + 'Give money to "' + playerName + '"?\n\n'
-            + 'Select denomination:\n'
-            + '  1   = MoneyRuble1  (1 coin)\n'
-            + '  50  = MoneyRuble50 (50 coins)\n'
-            + '  100 = MoneyRuble100 (100 coins)';
-        var denom = window.prompt(msg + '\n\nEnter denomination (1 / 50 / 100):', '100');
-        if (denom === null) { return; }
-        denom = parseInt(denom, 10);
-        if (denom !== 1 && denom !== 50 && denom !== 100) {
-            alert('Invalid denomination. Please enter 1, 50, or 100.');
+    var GIVE_MONEY_CLASSES = {
+        '1': 'MoneyRuble1',
+        '5': 'MoneyRuble5',
+        '10': 'MoneyRuble10',
+        '25': 'MoneyRuble25',
+        '50': 'MoneyRuble50',
+        '100': 'MoneyRuble100'
+    };
+    var giveMoneyModal = document.getElementById('dz-give-money-modal');
+    var giveMoneyForm = document.getElementById('dz-give-money-form');
+    var giveMoneyState = null;
+
+    function setGiveMoneyModalStatus(message, ok) {
+        var el = document.getElementById('dz-give-money-modal-status');
+        if (!el) { return; }
+        if (!message) {
+            el.textContent = '';
+            el.className = 'dz-status dz-hidden';
             return;
         }
-        var qty = window.prompt('How many items of MoneyRuble' + denom + ' to give? (1–99)', '1');
-        if (qty === null) { return; }
-        qty = Math.max(1, Math.min(99, parseInt(qty, 10) || 1));
-        setStatus('Queueing give money…', undefined, playerActionId);
-        req('POST', '/dayz/player-actions/give-money', { player_id: playerId, player_uid: playerUid || playerId, player_name: playerName, denomination: denom, quantity: qty })
-            .then(function (d) {
-                var ok = d.status === 'queued';
-                setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false, playerActionId);
-                if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
-            })
-            .catch(function () { setStatus('Give money request failed.', false, playerActionId); });
+        el.textContent = message;
+        el.className = 'dz-status' + (ok === false ? ' dz-status-error' : '');
+    }
+
+    function updateGiveMoneySummary() {
+        var denomEl = document.getElementById('dz-give-money-denomination');
+        var qtyEl = document.getElementById('dz-give-money-quantity');
+        var classEl = document.getElementById('dz-give-money-class');
+        var totalEl = document.getElementById('dz-give-money-total');
+        if (!denomEl || !qtyEl || !classEl || !totalEl) { return; }
+        var denom = String(denomEl.value || '100');
+        var quantity = Math.max(1, Math.min(99, parseInt(qtyEl.value, 10) || 1));
+        qtyEl.value = String(quantity);
+        classEl.textContent = GIVE_MONEY_CLASSES[denom] || 'Unknown';
+        totalEl.textContent = String((parseInt(denom, 10) || 0) * quantity) + ' coins';
+    }
+
+    window.pteroCloseGiveMoneyModal = function () {
+        if (!giveMoneyModal) { return; }
+        giveMoneyModal.style.display = 'none';
+        setGiveMoneyModalStatus('', undefined);
+        giveMoneyState = null;
     };
+
+    window.pteroGiveMoney = function (playerId, playerName, isOnline, playerActionId, playerUid) {
+        if (!giveMoneyModal) { return; }
+        giveMoneyState = {
+            playerId: playerId,
+            playerUid: playerUid || playerId,
+            playerName: playerName,
+            playerActionId: playerActionId,
+            isOnline: !!isOnline
+        };
+        var title = document.getElementById('dz-give-money-modal-title');
+        var denomEl = document.getElementById('dz-give-money-denomination');
+        var qtyEl = document.getElementById('dz-give-money-quantity');
+        if (title) { title.textContent = 'Give money to ' + playerName; }
+        if (denomEl) { denomEl.value = '100'; }
+        if (qtyEl) { qtyEl.value = '1'; }
+        updateGiveMoneySummary();
+        setGiveMoneyModalStatus('', undefined);
+        giveMoneyModal.style.display = 'block';
+    };
+
+    if (giveMoneyForm) {
+        giveMoneyForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            if (!giveMoneyState) { return; }
+            var denomEl = document.getElementById('dz-give-money-denomination');
+            var qtyEl = document.getElementById('dz-give-money-quantity');
+            var submitBtn = document.getElementById('dz-give-money-submit');
+            var denomination = parseInt((denomEl && denomEl.value) || '100', 10);
+            var quantity = Math.max(1, Math.min(99, parseInt((qtyEl && qtyEl.value) || '1', 10) || 1));
+            if (!GIVE_MONEY_CLASSES[String(denomination)]) {
+                setGiveMoneyModalStatus('Invalid denomination selected.', false);
+                return;
+            }
+            if (submitBtn) { submitBtn.disabled = true; }
+            setGiveMoneyModalStatus('Queueing give money…', undefined);
+            setStatus('Queueing give money…', undefined, giveMoneyState.playerActionId);
+            req('POST', '/dayz/player-actions/give-money', {
+                player_id: giveMoneyState.playerId,
+                player_uid: giveMoneyState.playerUid,
+                player_name: giveMoneyState.playerName,
+                denomination: denomination,
+                quantity: quantity
+            })
+                .then(function (d) {
+                    var ok = d.status === 'queued';
+                    setGiveMoneyModalStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false);
+                    setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false, giveMoneyState.playerActionId);
+                    if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
+                })
+                .catch(function () {
+                    setGiveMoneyModalStatus('Give money request failed.', false);
+                    setStatus('Give money request failed.', false, giveMoneyState.playerActionId);
+                })
+                .finally(function () {
+                    if (submitBtn) { submitBtn.disabled = false; }
+                });
+        });
+    }
+
+    ['dz-give-money-denomination', 'dz-give-money-quantity'].forEach(function (id) {
+        var field = document.getElementById(id);
+        if (field) {
+            field.addEventListener('input', updateGiveMoneySummary);
+            field.addEventListener('change', updateGiveMoneySummary);
+        }
+    });
 
     window.pteroRemoveGiveMoney = function (queueId, playerName, itemClass, quantity) {
         if (!queueId) { return; }
@@ -641,11 +864,23 @@
                     containerClass: parentClass || ''
                 });
             }
-            // Recurse into contents array (bridge v2 format with container contents).
-            var contents = Array.isArray(entry.contents) ? entry.contents : null;
-            if (contents && contents.length) {
-                contents.forEach(function (sub) { collectEntry(sub, slot || 'Unknown', cls); });
-            }
+            ['contents', 'cargo', 'inventory', 'items', 'children', 'attachments', 'attached', 'pockets', 'storage', 'containers'].forEach(function (key) {
+                var value = entry[key];
+                if (Array.isArray(value)) {
+                    value.forEach(function (sub) { collectEntry(sub, slot || parentSlot || 'Unknown', cls || parentClass || ''); });
+                    return;
+                }
+                if (value && typeof value === 'object') {
+                    Object.keys(value).forEach(function (subKey) {
+                        var nested = value[subKey];
+                        if (Array.isArray(nested)) {
+                            nested.forEach(function (sub) { collectEntry(sub, slot || parentSlot || subKey || 'Unknown', cls || parentClass || ''); });
+                        } else {
+                            collectEntry(nested, slot || parentSlot || subKey || 'Unknown', cls || parentClass || '');
+                        }
+                    });
+                }
+            });
         }
 
         if (Array.isArray(parsed)) {
@@ -660,9 +895,9 @@
 
         if (items.length === 0) {
             // Deep-walk fallback for any other inventory structure.
-            (function walk(obj, parentSlot) {
+            (function walk(obj, parentSlot, parentClass) {
                 if (!obj || typeof obj !== 'object') { return; }
-                if (Array.isArray(obj)) { obj.forEach(function (v) { walk(v, parentSlot); }); return; }
+                if (Array.isArray(obj)) { obj.forEach(function (v) { walk(v, parentSlot, parentClass); }); return; }
                 var cls = stringField(obj, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
                 if (cls && typeof cls === 'string') {
                     items.push({
@@ -670,11 +905,18 @@
                         className: cls,
                         itemId: stringField(obj, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']),
                         name: stringField(obj, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']),
-                        isContainerContent: !!parentSlot
+                        isContainerContent: !!parentSlot,
+                        containerSlot: parentSlot || '',
+                        containerClass: parentClass || ''
                     });
                 }
-                Object.values(obj).forEach(function (v) { if (v && typeof v === 'object') { walk(v, obj.slot || parentSlot || ''); } });
-            }(parsed, ''));
+                Object.keys(obj).forEach(function (key) {
+                    var value = obj[key];
+                    if (!value || typeof value !== 'object') { return; }
+                    var nextSlot = obj.slot || parentSlot || ((key === 'cargo' || key === 'contents' || key === 'inventory' || key === 'items' || key === 'attachments') ? 'Unknown' : key);
+                    walk(value, nextSlot, cls || parentClass || '');
+                });
+            }(parsed, '', ''));
         }
 
         if (items.length === 0) {
@@ -705,8 +947,22 @@
             if (orderedSlots.indexOf(s) === -1) { orderedSlots.push(s); }
         });
 
-        var cardStyle = 'background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.35rem;padding:0.6rem 0.5rem 0.5rem;font-size:0.78rem;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:0.35rem;';
-        var imgStyle  = 'width:80px;height:80px;object-fit:contain;display:block;';
+        var summary = document.createElement('div');
+        summary.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin-bottom:0.25rem;';
+        [
+            { label: 'Equipped', value: String(equippedItems.length) },
+            { label: 'Container items', value: String(containerItems.length) },
+            { label: 'Sections', value: String(orderedSlots.length + (containerItems.length ? 1 : 0)) }
+        ].forEach(function (meta) {
+            var box = document.createElement('div');
+            box.style.cssText = 'padding:0.9rem 1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.85rem;background:rgba(11,15,25,0.5);display:grid;gap:0.2rem;';
+            box.innerHTML = '<span style="font-size:0.74rem;color:var(--dz-muted);">' + escapeHtml(meta.label) + '</span><strong style="font-size:1.15rem;">' + escapeHtml(meta.value) + '</strong>';
+            summary.appendChild(box);
+        });
+        body.appendChild(summary);
+
+        var cardStyle = 'background:linear-gradient(180deg, rgba(255,255,255,0.03), transparent 24%), var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.85rem;padding:0.85rem 0.75rem 0.7rem;font-size:0.78rem;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:0.5rem;min-height:172px;box-shadow:0 12px 32px rgba(2,6,23,0.18);';
+        var imgStyle  = 'width:84px;height:84px;object-fit:contain;display:block;';
         var emojiStyle = 'font-size:2.5rem;text-align:center;line-height:1;';
 
         function setCardImage(imgWrap, imgUrl, label) {
@@ -758,14 +1014,19 @@
             card.appendChild(imgWrap);
 
             var nameEl = document.createElement('div');
-            nameEl.style.cssText = 'word-break:break-word;text-align:center;line-height:1.2;';
+            nameEl.style.cssText = 'word-break:break-word;text-align:center;line-height:1.25;font-weight:600;';
             nameEl.textContent = label;
             nameEl.title = item.className || label;
             card.appendChild(nameEl);
 
+            var metaEl = document.createElement('div');
+            metaEl.style.cssText = 'font-size:0.7rem;color:var(--dz-muted);text-align:center;line-height:1.3;';
+            metaEl.textContent = item.slot || item.containerSlot || 'Inventory';
+            card.appendChild(metaEl);
+
             var key = inventoryLookupKey(item);
             if (!cardsByLookup[key]) { cardsByLookup[key] = []; }
-            cardsByLookup[key].push({ item: item, imgWrap: imgWrap, nameEl: nameEl });
+            cardsByLookup[key].push({ item: item, imgWrap: imgWrap, nameEl: nameEl, metaEl: metaEl });
 
             return card;
         }
@@ -774,12 +1035,12 @@
 
         orderedSlots.forEach(function (slot) {
             var section = document.createElement('div');
-            section.style.cssText = 'margin-bottom:1rem;';
+            section.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.95rem;background:rgba(11,15,25,0.38);';
 
             if (slot !== '') {
                 var heading = document.createElement('p');
                 heading.textContent = slot;
-                heading.style.cssText = 'font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--dz-muted);margin:0 0 0.4rem;';
+                heading.style.cssText = 'font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--dz-muted);margin:0 0 0.6rem;';
                 section.appendChild(heading);
             }
 
@@ -795,11 +1056,11 @@
         // Container contents section (backpack/vest/pants cargo from bridge v2).
         if (containerItems.length > 0) {
             var contSec = document.createElement('div');
-            contSec.style.cssText = 'margin-bottom:1rem;';
+            contSec.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.95rem;background:rgba(11,15,25,0.38);';
 
             var contHead = document.createElement('p');
             contHead.textContent = 'Container Contents';
-            contHead.style.cssText = 'font-size:0.72rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--dz-muted);margin:0 0 0.4rem;border-top:1px solid var(--dz-border,#2d3348);padding-top:0.75rem;';
+            contHead.style.cssText = 'font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--dz-muted);margin:0 0 0.75rem;';
             contSec.appendChild(contHead);
 
             // Group container items by parent slot.
@@ -817,7 +1078,7 @@
                 var containerLabel = containerSlot === 'Back' ? 'Backpack' : (containerSlot === 'Legs' ? 'Pants' : containerSlot);
                 var subHead = document.createElement('p');
                 subHead.textContent = 'In ' + containerLabel + (containerClass ? ' (' + containerClass + ')' : '');
-                subHead.style.cssText = 'font-size:0.7rem;color:var(--dz-muted);margin:0.5rem 0 0.25rem;';
+                subHead.style.cssText = 'font-size:0.75rem;color:var(--dz-text);margin:0.7rem 0 0.4rem;font-weight:600;';
                 contSec.appendChild(subHead);
 
                 var subGrid = document.createElement('div');
@@ -859,6 +1120,11 @@
     };
 
     // Close modal on backdrop click.
+    if (giveMoneyModal) {
+        giveMoneyModal.addEventListener('click', function (e) {
+            if (e.target === this) { window.pteroCloseGiveMoneyModal(); }
+        });
+    }
     document.getElementById('dz-inventory-modal').addEventListener('click', function (e) {
         if (e.target === this) { this.style.display = 'none'; }
     });

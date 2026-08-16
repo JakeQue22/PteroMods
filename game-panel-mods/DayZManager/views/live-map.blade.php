@@ -89,6 +89,7 @@
     const INITIAL_MARKER_GROUPS = @json($initial_marker_groups ?? []);
     const INITIAL_PLAYER_DIRECTORY = @json($initial_player_directory ?? []);
     const INITIAL_BRIDGE_STATUS = @json($initial_bridge_status ?? null);
+    const INLINE_MARKER_LABEL_ZOOM = 3;
 
     const state = {
         mapDef: @json($map_definition),
@@ -106,12 +107,14 @@
         gridLayer: null,
         playerLayer: null,
         markerLayers: {},
+        markerGroupsData: [],
         layerControl: null,
         directory: new Map(),  // steam64/uid → persisted player record
         focused: false,
         tileError: false,
         notice: '',
         statusText: '',
+        inlineLabelsPermanent: false,
     };
 
     const root      = document.getElementById('dz-live-map-canvas');
@@ -270,6 +273,13 @@
             state.leafletMap.fitBounds(worldBounds(state.mapDef));
         });
 
+        state.leafletMap.on('zoomend', function () {
+            const shouldBePermanent = shouldShowInlineMarkerLabels();
+            if (shouldBePermanent !== state.inlineLabelsPermanent) {
+                applyMarkerGroups(state.markerGroupsData);
+            }
+        });
+
         // The canvas is laid out by CSS grid, and fullscreen changes its size,
         // so Leaflet needs to re-measure or it renders an empty viewport.
         window.addEventListener('resize', function () {
@@ -409,6 +419,14 @@
         state.locationLayer.addTo(state.leafletMap);
     }
 
+    function shouldShowInlineMarkerLabels() {
+        return !!(state.leafletMap && state.leafletMap.getZoom() >= INLINE_MARKER_LABEL_ZOOM);
+    }
+
+    function groupUsesInlineLabel(key) {
+        return key === 'town' || key === 'village';
+    }
+
     // ── Marker overlays ───────────────────────────────────────────────────
     // Categories (animals, infected, loot, vehicles, helicopter crashes,
     // player spawns, named locations, …) come from the panel, which reads the
@@ -440,6 +458,7 @@
 
     function applyMarkerGroups(groups) {
         clearMarkerLayers();
+        state.markerGroupsData = Array.isArray(groups) ? groups : [];
 
         if (!Array.isArray(groups) || groups.length === 0) {
             // Nothing came back from the server, so fall back to the built-in
@@ -453,10 +472,13 @@
             state.locationLayer = null;
         }
 
+        state.inlineLabelsPermanent = shouldShowInlineMarkerLabels();
+
         groups.forEach(function (group) {
             const layer   = L.layerGroup();
             const icon    = categoryIcon(group.icon || '📍', group.color || '#fbbf24');
             const markers = Array.isArray(group.markers) ? group.markers : [];
+            const permanentLabel = state.inlineLabelsPermanent && groupUsesInlineLabel(group.key);
 
             markers.forEach(function (marker) {
                 const latlng = dayzToLatLng(Number(marker.x || 0), Number(marker.z || 0));
@@ -464,7 +486,13 @@
                 const detail = escapeHtml(marker.detail || group.label);
 
                 L.marker(latlng, { icon: icon })
-                    .bindTooltip(name, { direction: 'top' })
+                    .bindTooltip(name, {
+                        direction: 'top',
+                        permanent: permanentLabel,
+                        opacity: permanentLabel ? 1 : 0.95,
+                        offset: permanentLabel ? [0, -12] : [0, 0],
+                        className: permanentLabel ? 'dz-map-inline-label' : '',
+                    })
                     .bindPopup('<strong>' + name + '</strong><br>' + detail
                         + '<br>' + Number(marker.x || 0).toFixed(0) + ', ' + Number(marker.z || 0).toFixed(0)
                         + (marker.radius ? '<br>Radius: ' + Number(marker.radius).toFixed(0) + ' m' : ''))
@@ -1293,5 +1321,22 @@
     white-space: nowrap;
     text-shadow: 1px 1px 2px #0b0f19, -1px -1px 2px #0b0f19;
     pointer-events: none;
+}
+.leaflet-tooltip.dz-map-inline-label {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+}
+.leaflet-tooltip.dz-map-inline-label .leaflet-tooltip-content,
+.dz-map-inline-label {
+    color: rgba(241, 245, 249, 0.96);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 3px #0b0f19, -1px -1px 3px #0b0f19;
+    white-space: nowrap;
+}
+.leaflet-tooltip-top.dz-map-inline-label:before {
+    display: none;
 }
 </style>

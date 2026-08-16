@@ -50,6 +50,7 @@ final class DayZMapMarkerService
         'village'         => ['label' => 'Villages',            'icon' => '🏠', 'color' => '#fde68a', 'default' => true],
         'military'        => ['label' => 'Military',            'icon' => '🎖️', 'color' => '#4ade80', 'default' => true],
         'airfield'        => ['label' => 'Airfields',           'icon' => '✈️', 'color' => '#38bdf8', 'default' => true],
+        'trader'          => ['label' => 'Traders',              'icon' => '🛒', 'color' => '#34d399', 'default' => true],
         'landmark'        => ['label' => 'Landmarks',           'icon' => '⛰️', 'color' => '#a78bfa', 'default' => false],
         'player_spawn'    => ['label' => 'Player spawns',       'icon' => '🚩', 'color' => '#f472b6', 'default' => false],
         'heli_crash'      => ['label' => 'Helicopter crashes',  'icon' => '🚁', 'color' => '#f97316', 'default' => false],
@@ -70,7 +71,6 @@ final class DayZMapMarkerService
         'animal_hare'     => ['label' => 'Hares',               'icon' => '🐇', 'color' => '#ddd6fe', 'default' => false],
         'animal_other'    => ['label' => 'Other animals',       'icon' => '🐾', 'color' => '#cbd5e1', 'default' => false],
         'event'           => ['label' => 'Other events',         'icon' => '📍', 'color' => '#e879f9', 'default' => false],
-        'trader'          => ['label' => 'Traders',              'icon' => '🛒', 'color' => '#34d399', 'default' => true],
     ];
 
     /**

@@ -390,7 +390,7 @@ The players page also includes a **Give Money** queue. The panel writes one JSON
 
 Persisted players include last-known coordinates and a bounds check against the active map size; live players show current online position/health from the bridge. `{list_type}` must be one of `ban`, `whitelist`, or `priority`.
 
-To activate the bundled give-money bridge, copy `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c` into the active mission folder, include it from `init.c`, and call `PteroMods_GiveMoney_Init();` inside `main()`. The bridge reads the queued JSON and creates the requested `MoneyRuble1`, `MoneyRuble50`, or `MoneyRuble100` items in the matching online player's inventory.
+To activate the bundled give-money bridge, copy `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c` into the active mission folder, include it from `init.c`, and call `PteroMods_GiveMoney_Init();` inside `main()`. The bridge reads the queued JSON and creates the requested `MoneyRuble1`, `MoneyRuble5`, `MoneyRuble10`, `MoneyRuble25`, `MoneyRuble50`, or `MoneyRuble100` items in the matching online player's inventory.
 
 The persistence database is copied from the container via Wings and read with the first SQLite implementation available in the panel runtime: the `sqlite3` extension, PDO's `sqlite` driver, or the bundled dependency-free `DayZSqliteFileReader`, which parses the SQLite file format directly. **No PHP SQLite extension is required.** Table and column names are matched heuristically, so both vanilla and community persistence layouts are supported.
 
