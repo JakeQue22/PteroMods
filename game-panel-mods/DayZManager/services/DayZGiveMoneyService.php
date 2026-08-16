@@ -16,9 +16,9 @@ use Throwable;
  *
  * When the action is queued, JSON is written under
  * /profiles/PteroMods/give_money_<uid>.json (falling back to player_id, and
- * mirrored to both keys when they differ) so a server-side mod can read and
- * fulfil it. The row in the panel DB acts as the authoritative record while
- * the request is pending; fulfilled entries are removed.
+ * mirrored to both keys when they differ) so a server-side bridge can read and
+ * fulfil it. The bundled mission script lives at
+ * game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c.
  */
 final class DayZGiveMoneyService
 {

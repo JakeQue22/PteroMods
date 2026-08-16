@@ -379,6 +379,8 @@ URL: `GET /servers/{server}/dayz/players`
 
 The **Players** tab shows a single merged player directory: persisted DayZ records loaded from `characters.db` / `players.db` are combined with the currently online players from the live-map bridge snapshot, so each player appears once with their nickname, Steam64 (linked to their Steam profile), DayZ UID, last seen time, position and list membership. Each entry links straight to that player on the Live Map. Ban/whitelist/priority list changes are persisted to `dayz_player_lists`.
 
+The players page also includes a **Give Money** queue. The panel writes one JSON queue file per player under `/profiles/PteroMods/give_money_<uid>.json` (mirrored to the Steam64 key when the two ids differ). The bundled server-side mission bridge for consuming those files lives at `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c`.
+
 | Action | Method | Endpoint |
 |---|---|---|
 | List entries | GET | `/api/servers/{server}/dayz/players/{list_type}` |
@@ -387,6 +389,8 @@ The **Players** tab shows a single merged player directory: persisted DayZ recor
 | Kick live player | POST | `/api/servers/{server}/dayz/player-actions/kick` |
 
 Persisted players include last-known coordinates and a bounds check against the active map size; live players show current online position/health from the bridge. `{list_type}` must be one of `ban`, `whitelist`, or `priority`.
+
+To activate the bundled give-money bridge, copy `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c` into the active mission folder, include it from `init.c`, and call `PteroMods_GiveMoney_Init();` inside `main()`. The bridge reads the queued JSON and creates the requested `MoneyRuble1`, `MoneyRuble50`, or `MoneyRuble100` items in the matching online player's inventory.
 
 The persistence database is copied from the container via Wings and read with the first SQLite implementation available in the panel runtime: the `sqlite3` extension, PDO's `sqlite` driver, or the bundled dependency-free `DayZSqliteFileReader`, which parses the SQLite file format directly. **No PHP SQLite extension is required.** Table and column names are matched heuristically, so both vanilla and community persistence layouts are supported.
 

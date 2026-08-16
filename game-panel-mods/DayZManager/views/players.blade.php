@@ -256,7 +256,7 @@
 @if (!empty($give_money_queue))
 <section class="dz-card">
     <h2>Give Money Queue</h2>
-    <p class="dz-sub">Pending give-money requests. The server-side mod reads <code>/profiles/PteroMods/give_money_&lt;uid&gt;.json</code>, delivers the items, then removes fulfilled entries automatically.</p>
+    <p class="dz-sub">Pending give-money requests. The bundled mission bridge template lives at <code>game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c</code> and reads <code>/profiles/PteroMods/give_money_&lt;uid&gt;.json</code> to add the requested MoneyRuble items to the player's inventory.</p>
     <p id="dz-give-money-queue-status" class="dz-status" style="margin:0 0 0.75rem;"></p>
     <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
         <thead>

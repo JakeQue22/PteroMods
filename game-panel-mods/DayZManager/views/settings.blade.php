@@ -60,7 +60,7 @@
     <p id="dz-settings-status" class="dz-status dz-hidden" style="margin-top:0.75rem;"></p>
     <div class="dz-form" style="margin-top:0.75rem;">
         <button class="dz-btn" type="button" onclick="pteroDzRefreshCachesNow()">Update Cache</button>
-        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroDzClearLogsNow()">Clear now</button>
+        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroDzClearLogsNow()">Prune Logs</button>
     </div>
 </section>
 
@@ -160,7 +160,7 @@ window.pteroDzClearLogsNow = function () {
     }
 
     status.className = 'dz-status';
-    status.textContent = 'Cleaning old logs now…';
+    status.textContent = 'Pruning old logs now…';
 
     fetch('/api/server/' + encodeURIComponent(match[1]) + '/dayz/server/log-scrub/tick', {
         method: 'POST',
@@ -177,10 +177,10 @@ window.pteroDzClearLogsNow = function () {
         if (data.status === 'scrubbed' || data.status === 'throttled') {
             var deleted = Number(data.deleted || 0);
             var scanned = Number(data.scanned || 0);
-            status.textContent = 'Log cleanup complete. Scanned ' + scanned + ' file(s), deleted ' + deleted + '.';
+            status.textContent = 'Log pruning complete. Scanned ' + scanned + ' file(s), deleted ' + deleted + '.';
             status.className = 'dz-status';
         } else {
-            status.textContent = data.message || 'Could not clean logs.';
+            status.textContent = data.message || 'Could not prune logs.';
             status.className = 'dz-status dz-status-error';
         }
     })

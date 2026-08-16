@@ -581,9 +581,12 @@ final class DayZMapMarkerService
     }
 
     /**
-     * Reads `/profiles/Trader/TraderObjects.txt` (Dr. Jones Trader mod) and
-     * adds one Trader marker per `Location:` section using that section's
-     * `TraderMarkerPosition`.
+     * Reads `/profiles/Trader/TraderObjects.txt` (Dr. Jones Trader mod).
+     *
+     * Supports both the common tagged format:
+     *   // Main Airfield:
+     *   <TraderMarkerPosition> 5833, 74, 3806
+     * and older/custom `Location:` blocks with `TraderMarkerPosition = ...`.
      *
      * @param array<string, list<array<string, mixed>>> $markers
      * @param list<string> $sources
@@ -602,11 +605,81 @@ final class DayZMapMarkerService
             return;
         }
 
+        $added = $this->collectTaggedTraders($raw, $markers);
+
+        if ($added < 1) {
+            $added = $this->collectSectionTraders($raw, $markers);
+        }
+
+        if ($added > 0) {
+            $sources[] = $path;
+        }
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $markers
+     */
+    private function collectTaggedTraders(string $raw, array &$markers): int
+    {
+        $added = 0;
+        $locationName = 'Trader';
+        $lines = preg_split('/\R/', $raw) ?: [];
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if (str_starts_with($trimmed, '//')) {
+                $comment = trim(substr($trimmed, 2));
+
+                if ($comment !== '' && !str_starts_with($comment, '<')) {
+                    $locationName = rtrim($comment, " \t\n\r\0\x0B:");
+                }
+
+                continue;
+            }
+
+            if (!preg_match('/^<TraderMarkerPosition>\s*([^\r\n]+)/i', $trimmed, $lineMatch)) {
+                continue;
+            }
+
+            if (preg_match_all('/[-+]?\d*\.?\d+/', (string) ($lineMatch[1] ?? ''), $numbers) === false
+                || count($numbers[0] ?? []) < 3) {
+                continue;
+            }
+
+            $x = (float) $numbers[0][0];
+            $z = (float) $numbers[0][2];
+
+            if ($x === 0.0 && $z === 0.0) {
+                continue;
+            }
+
+            $markers['trader'][] = [
+                'name'   => $locationName !== '' ? $locationName : 'Trader',
+                'x'      => $x,
+                'z'      => $z,
+                'detail' => 'Trader location',
+            ];
+            $added++;
+        }
+
+        return $added;
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $markers
+     */
+    private function collectSectionTraders(string $raw, array &$markers): int
+    {
         $sectionsPattern = '/^\s*Location\s*:\s*(.*?)(?:\r\n|\r|\n)([\s\S]*?)(?=^\s*Location\s*:|\z)/im';
 
         if (preg_match_all($sectionsPattern, $raw, $sections, PREG_SET_ORDER) === false
             || $sections === []) {
-            return;
+            return 0;
         }
 
         $added = 0;
@@ -640,9 +713,7 @@ final class DayZMapMarkerService
             $added++;
         }
 
-        if ($added > 0) {
-            $sources[] = $path;
-        }
+        return $added;
     }
 
     private function missionPath(mixed $server): string
