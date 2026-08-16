@@ -142,6 +142,22 @@ final class DayZPanelGateway
     }
 
     /**
+     * Reads a file without using the short-lived panel cache.
+     */
+    public function readFileFresh(mixed $server, string $path): ?string
+    {
+        if ($server === null) {
+            return null;
+        }
+
+        $path = $this->normalizePath($path);
+        $this->forget($this->cacheKey('file', $server, $path));
+        $contents = $this->fetchFile($server, $path);
+
+        return is_string($contents) ? $contents : null;
+    }
+
+    /**
      * Writes a file inside the server container.
      */
     public function writeFile(mixed $server, string $path, string $content): bool

@@ -25,11 +25,9 @@
  *       ...
  *   }
  *
- * LIMITATION
- * This bridge consumes the queue JSON inside the game server. It does not call
- * back into the panel to mark the database row fulfilled, so the panel queue
- * should still be cleared manually (or via a later callback bridge) after the
- * items have been delivered.
+ * The panel treats the queue file as the delivery acknowledgement. Once this
+ * bridge removes a granted entry from the file, the panel removes the matching
+ * database row the next time the queue is read or another grant is queued.
  *
  * VERIFIED API USED BY THIS FILE
  *   3_game/global/game.c      ScriptCallQueue GetCallQueue(int call_category)
