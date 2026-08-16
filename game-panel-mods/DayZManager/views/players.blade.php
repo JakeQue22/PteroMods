@@ -179,9 +179,7 @@
                     @if ($resetBackupId > 0)
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
                     @endif
-                    @if (!$isProtectedPlayer)
-                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
-                    @endif
+                    <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
                 </div>
                 <p class="dz-status dz-hidden dz-player-action-status" style="margin-top:0.75rem;"></p>
             </div>
@@ -1055,41 +1053,38 @@
             frag.appendChild(section);
         });
 
-        // Container contents section (backpack/vest/pants cargo from bridge v2).
+        // Container contents — one dedicated section per container (backpack, pants, etc.).
         if (containerItems.length > 0) {
-            var contSec = document.createElement('div');
-            contSec.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.95rem;background:rgba(11,15,25,0.38);';
-
-            var contHead = document.createElement('p');
-            contHead.textContent = 'Container Contents';
-            contHead.style.cssText = 'font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--dz-muted);margin:0 0 0.75rem;';
-            contSec.appendChild(contHead);
-
-            // Group container items by parent slot.
+            // Group container items by parent slot + class.
             var byContainer = {};
+            var containerOrder = [];
             containerItems.forEach(function (item) {
                 var k = [item.containerSlot || item.slot || 'Unknown', item.containerClass || ''].join('|');
-                if (!byContainer[k]) { byContainer[k] = []; }
+                if (!byContainer[k]) { byContainer[k] = []; containerOrder.push(k); }
                 byContainer[k].push(item);
             });
 
-            Object.keys(byContainer).forEach(function (containerKey) {
+            containerOrder.forEach(function (containerKey) {
                 var keyParts = containerKey.split('|');
                 var containerSlot = keyParts[0];
                 var containerClass = keyParts.slice(1).join('|');
                 var containerLabel = containerSlot === 'Back' ? 'Backpack' : (containerSlot === 'Legs' ? 'Pants' : containerSlot);
-                var subHead = document.createElement('p');
-                subHead.textContent = 'In ' + containerLabel + (containerClass ? ' (' + containerClass + ')' : '');
-                subHead.style.cssText = 'font-size:0.75rem;color:var(--dz-text);margin:0.7rem 0 0.4rem;font-weight:600;';
-                contSec.appendChild(subHead);
 
-                var subGrid = document.createElement('div');
-                subGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
-                byContainer[containerKey].forEach(function (item) { subGrid.appendChild(makeItemCard(item)); });
-                contSec.appendChild(subGrid);
+                var contSec = document.createElement('div');
+                contSec.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.95rem;background:rgba(11,15,25,0.38);';
+
+                var contHead = document.createElement('p');
+                contHead.textContent = containerLabel + (containerClass ? ' — ' + containerClass : '');
+                contHead.style.cssText = 'font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--dz-muted);margin:0 0 0.75rem;';
+                contSec.appendChild(contHead);
+
+                var grid = document.createElement('div');
+                grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
+                byContainer[containerKey].forEach(function (item) { grid.appendChild(makeItemCard(item)); });
+                contSec.appendChild(grid);
+
+                frag.appendChild(contSec);
             });
-
-            frag.appendChild(contSec);
         }
 
         var footer = document.createElement('p');
