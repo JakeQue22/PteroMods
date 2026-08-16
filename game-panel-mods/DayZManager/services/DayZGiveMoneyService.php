@@ -14,10 +14,11 @@ use Throwable;
  *   50  coins → MoneyRuble50
  *   100 coins → MoneyRuble100
  *
- * When the action is queued, a JSON file is written to the server at
- * /profiles/PteroMods/give_money_<player_id>.json so a server-side mod can
- * read and fulfil it. The row in the panel DB acts as the authoritative
- * record while the request is pending; fulfilled entries are removed.
+ * When the action is queued, JSON is written under
+ * /profiles/PteroMods/give_money_<uid>.json (falling back to player_id, and
+ * mirrored to both keys when they differ) so a server-side mod can read and
+ * fulfil it. The row in the panel DB acts as the authoritative record while
+ * the request is pending; fulfilled entries are removed.
  */
 final class DayZGiveMoneyService
 {
