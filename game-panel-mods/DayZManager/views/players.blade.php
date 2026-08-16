@@ -344,6 +344,8 @@
 
 <style>
 .dz-player-modal {
+    display: flex;
+    flex-direction: column;
     position: fixed;
     inset: 0;
     z-index: 9999;
