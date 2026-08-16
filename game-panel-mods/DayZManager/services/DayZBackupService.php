@@ -340,7 +340,7 @@ final class DayZBackupService
     private function ensureBackupFile(string $serverId, int $backupId, string $payload): array
     {
         if ($serverId === '' || $backupId <= 0) {
-            return ['file_path' => '', 'file_size' => strlen($payload)];
+            return ['file_path' => '', 'file_size' => 0];
         }
 
         $path = $this->backupFilePath($serverId, $backupId);
@@ -366,8 +366,12 @@ final class DayZBackupService
         clearstatcache(true, $path);
         $size = is_file($path) ? @filesize($path) : false;
 
+        if ($size === false && $payload === '') {
+            return ['file_path' => '', 'file_size' => 0];
+        }
+
         return [
-            'file_path' => $path,
+            'file_path' => is_file($path) || $payload !== '' ? $path : '',
             'file_size' => $size === false ? strlen($payload) : (int) $size,
         ];
     }

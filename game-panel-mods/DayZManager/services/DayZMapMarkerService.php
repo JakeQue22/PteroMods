@@ -602,7 +602,7 @@ final class DayZMapMarkerService
             return;
         }
 
-        $sectionsPattern = '/^\s*Location\s*:\s*(.*?)\R(.*?)(?=^\s*Location\s*:|\z)/ims';
+        $sectionsPattern = '/^\s*Location\s*:\s*(.*?)(?:\r\n|\r|\n)([\s\S]*?)(?=^\s*Location\s*:|\z)/im';
 
         if (preg_match_all($sectionsPattern, $raw, $sections, PREG_SET_ORDER) === false
             || $sections === []) {
