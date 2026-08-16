@@ -73,13 +73,13 @@
  * one level deep and placed in the parent item's "contents" array.
  * PteroMods_LiveMap_CollectContainerContents uses:
  *   EntityAI.GetInventory()                  → GameInventory
- *   GameInventory.GetAttachmentSlotsCount()   → attachment slot count
- *   GameInventory.GetAttachmentFromIndex(int) → item in attachment slot
- *   GameInventory.GetCargo()                  → CargoBase (may be NULL)
  *   CargoBase.GetItemCount()                  → total cargo item count
  *   CargoBase.GetItem(int index)               → item at cargo index
- * FindAttachmentBySlotName returns null for empty slots and is safe to call on
- * every tick.
+ * Items are cast to ItemBase (not EntityAI) so that only real inventory items
+ * are collected; expansion proxy objects do not extend ItemBase and will cast to
+ * null safely.
+ * GetAttachmentSlotsCount / GetAttachmentFromIndex are intentionally NOT used:
+ * calling GetInventory() on slot attachments crashes with Expansion/VPP mods.
  */
 
 // ---- Configuration ---------------------------------------------------------
@@ -162,21 +162,18 @@ float PteroMods_LiveMap_Round2(float value)
     return scaled / 100.0;
 }
 
-// Enumerates items stored inside a container (backpack, vest, pants pocket, belt …)
-// and appends them to slotItem.contents.  Covers:
-//   - direct cargo (food, ammo, clothes stored in a backpack's main compartment)
-//   - sub-container cargo (items inside pants pockets, vest internal pockets, etc.)
-//   - attachment-slot items that are not sub-containers (weapon rail attachments)
+// Enumerates direct cargo items stored inside a container (backpack, vest, pants …)
+// and appends them to slotItem.contents.
 //
-// Two levels of nesting are collected to keep the snapshot bounded but still reach
-// items inside pants pockets, which are attached as pocket entities whose cargo
-// holds the actual items (rather than being stored in the pants' own cargo).
+// Only direct cargo (CargoBase) is enumerated.  Attachment-slot sub-containers
+// are intentionally skipped: calling GetInventory() on a slot attachment is
+// unsafe when DayZExpansion, VPP, or other mods register proxy/virtual attachment
+// objects that pass the null check at script level but are not fully-initialised
+// ItemBase instances, which causes an engine-level segfault.
 //
-// Attachment handling:
-//   If an attachment has its own cargo (GetCargo() != null), it is a sub-container
-//   (e.g. a pants pocket or vest pouch).  Its cargo items are collected directly.
-//   If GetCargo() is null the attachment is a plain item (optic, suppressor, mag)
-//   and is reported as-is.
+// Items are cast to ItemBase (not EntityAI) so that only true inventory items
+// are collected; expansion proxy objects do not extend ItemBase and will cast to
+// null, which the guard below catches safely.
 void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_LiveMapItem slotItem)
 {
     if (!container)
@@ -186,50 +183,7 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
     if (!inv)
         return;
 
-    // Attachment-slot children.  For each attachment we check whether it is a
-    // sub-container (has its own cargo).  If so we collect its cargo items
-    // directly so the panel sees the actual items rather than the pocket entity.
-    // If it has no cargo it is a real item (optic, suppressor, etc.) and is
-    // added as an attachment entry.
-    int attachCount = inv.GetAttachmentSlotsCount();
-    for (int ai = 0; ai < attachCount; ai++)
-    {
-        EntityAI attached = inv.GetAttachmentFromIndex(ai);
-        if (!attached)
-            continue;
-
-        GameInventory attachInv = attached.GetInventory();
-        if (attachInv)
-        {
-            CargoBase attachCargo = attachInv.GetCargo();
-            if (attachCargo)
-            {
-                // Sub-container (e.g. pants pocket, vest pouch): collect its items.
-                int subItemCount = attachCargo.GetItemCount();
-                for (int si = 0; si < subItemCount; si++)
-                {
-                    EntityAI subItem = EntityAI.Cast(attachCargo.GetItem(si));
-                    if (!subItem)
-                        continue;
-                    PteroMods_LiveMapItem subContainerItem = new PteroMods_LiveMapItem();
-                    subContainerItem.slot = slotItem.slot + ".cargo";
-                    subContainerItem.className = subItem.GetType();
-                    slotItem.contents.Insert(subContainerItem);
-                }
-                continue;
-            }
-        }
-
-        // Plain attached item (optic, suppressor, magazine, etc.).
-        PteroMods_LiveMapItem attachSub = new PteroMods_LiveMapItem();
-        attachSub.slot = slotItem.slot + ".attach";
-        attachSub.className = attached.GetType();
-        slotItem.contents.Insert(attachSub);
-    }
-
     // Direct cargo items (the main case for backpacks and holsters).
-    // DayZ's CargoBase.GetItemCount() returns the number of distinct item entries;
-    // each is accessed via GetItem(index) using a zero-based index.
     CargoBase cargo = inv.GetCargo();
     if (!cargo)
         return;
@@ -237,7 +191,7 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
     int itemCount = cargo.GetItemCount();
     for (int ci = 0; ci < itemCount; ci++)
     {
-        EntityAI cargoItem = EntityAI.Cast(cargo.GetItem(ci));
+        ItemBase cargoItem = ItemBase.Cast(cargo.GetItem(ci));
         if (!cargoItem)
             continue;
         PteroMods_LiveMapItem cargoSubItem = new PteroMods_LiveMapItem();
@@ -379,13 +333,17 @@ class PteroMods_LiveMapBridge
                     entry.inventory.Insert(slotItem);
                 }
             }
-            EntityAI heldEnt = man.GetHumanInventory().GetEntityInHands();
-            if (heldEnt)
+            HumanInventory humanInv = man.GetHumanInventory();
+            if (humanInv)
             {
-                PteroMods_LiveMapItem handItem = new PteroMods_LiveMapItem();
-                handItem.slot = "Hands";
-                handItem.className = heldEnt.GetType();
-                entry.inventory.Insert(handItem);
+                EntityAI heldEnt = humanInv.GetEntityInHands();
+                if (heldEnt)
+                {
+                    PteroMods_LiveMapItem handItem = new PteroMods_LiveMapItem();
+                    handItem.slot = "Hands";
+                    handItem.className = heldEnt.GetType();
+                    entry.inventory.Insert(handItem);
+                }
             }
 
             snapshot.players.Insert(entry);
