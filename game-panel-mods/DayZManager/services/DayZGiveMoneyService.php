@@ -405,7 +405,7 @@ final class DayZGiveMoneyService
     }
 
     /**
-     * @return array<int, mixed>|null
+     * @return array<int, mixed>|null  null = no file found; [] = file found but empty/cleared; non-empty = active entries
      */
     private function firstReadableQueueFile(mixed $server, string $playerId, string $playerUid): ?array
     {
@@ -416,11 +416,12 @@ final class DayZGiveMoneyService
                 continue;
             }
 
+            // The file exists on disk.  DayZ's JsonSaveFile writes `null` (not `[]`)
+            // when serialising an empty typed array, so treat non-array decoded content
+            // as an empty queue rather than skipping to the next key.
             $decoded = json_decode($raw, true);
 
-            if (is_array($decoded)) {
-                return $decoded;
-            }
+            return is_array($decoded) ? $decoded : [];
         }
 
         return null;
