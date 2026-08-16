@@ -364,7 +364,7 @@ final class DayZGiveMoneyService
         $safe = trim((string) preg_replace('/[^a-zA-Z0-9_\-]/', '_', $raw), '_');
 
         if ($safe === '') {
-            $safe = $raw !== '' ? substr(md5($raw), 0, 16) : 'unknown';
+            $safe = $raw !== '' ? md5($raw) : 'unknown';
         }
 
         return self::QUEUE_FILE_DIR . '/give_money_' . $safe . '.json';
