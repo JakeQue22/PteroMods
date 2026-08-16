@@ -1068,7 +1068,7 @@
                 var keyParts = containerKey.split('|');
                 var containerSlot = keyParts[0];
                 var containerClass = keyParts.slice(1).join('|');
-                var containerLabel = containerSlot === 'Back' ? 'Backpack' : (containerSlot === 'Legs' ? 'Pants' : containerSlot);
+                var containerLabel = containerSlot === 'Back' ? 'Backpack' : (containerSlot === 'Legs' ? 'Pants' : (containerSlot === 'Body' ? 'Vest' : (containerSlot === 'Hips' ? 'Holster / Belt' : containerSlot)));
 
                 var contSec = document.createElement('div');
                 contSec.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.95rem;background:rgba(11,15,25,0.38);';

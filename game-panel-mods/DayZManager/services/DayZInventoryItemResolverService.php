@@ -18,6 +18,7 @@ final class DayZInventoryItemResolverService
     private const WIKI_BASE_URL = 'https://dayz.wiki.gg';
     private const WIKI_API_URL = 'https://dayz.wiki.gg/api.php';
     private const CACHE_REFRESH_SECONDS = 604800; // 7 days
+    private const NEGATIVE_CACHE_TTL = 86400;     // 1 day — re-try failed lookups after this
     private const SEARCH_LIMIT = 6;
     private const PAGE_IMAGE_WIDTH = 320;
 
@@ -129,10 +130,20 @@ final class DayZInventoryItemResolverService
 
             $cached = $this->lookupCachedResolution($normalized, $forceRefresh);
 
+            // Return cached positive hit (resolved + has image, not stale).
             if ($cached !== null
                 && ($cached['resolved'] ?? false)
                 && trim((string) ($cached['image_url'] ?? '')) !== ''
                 && !$this->isStaleResolution($cached)
+            ) {
+                $resolved[$lookupKey] = $cached;
+                continue;
+            }
+
+            // Return cached negative hit — skip the wiki fetch until the short TTL expires.
+            if ($cached !== null
+                && !($cached['resolved'] ?? false)
+                && !$this->isStaleResolution($cached, self::NEGATIVE_CACHE_TTL)
             ) {
                 $resolved[$lookupKey] = $cached;
                 continue;
@@ -145,6 +156,9 @@ final class DayZInventoryItemResolverService
                 $resolved[$lookupKey] = $fresh;
                 continue;
             }
+
+            // Persist negative result so repeated requests do not re-hit the wiki.
+            $this->persistResolution($normalized, $fresh);
 
             $resolved[$lookupKey] = $cached !== null ? $this->mergeFallbackResolution($normalized, $cached) : $fresh;
         }
@@ -182,7 +196,7 @@ final class DayZInventoryItemResolverService
         return null;
     }
 
-    private function isStaleResolution(array $resolution): bool
+    private function isStaleResolution(array $resolution, int $ttl = self::CACHE_REFRESH_SECONDS): bool
     {
         $refreshedAt = trim((string) ($resolution['refreshed_at'] ?? ''));
 
@@ -192,7 +206,7 @@ final class DayZInventoryItemResolverService
 
         $timestamp = strtotime($refreshedAt);
 
-        return $timestamp === false || (time() - $timestamp) >= self::CACHE_REFRESH_SECONDS;
+        return $timestamp === false || (time() - $timestamp) >= $ttl;
     }
 
     /**
@@ -625,56 +639,102 @@ final class DayZInventoryItemResolverService
             $candidates[] = $clean;
         }
 
-        if ($candidates === []) {
-            $fallbackUrl = trim((string) (($page['thumbnail'] ?? '') ?: ($page['original'] ?? '')));
+        // Helper: return URL for the page thumbnail or original.
+        $pageThumbnailUrl = static function () use ($page): string {
+            return trim((string) (($page['thumbnail'] ?? '') ?: ($page['original'] ?? '')));
+        };
 
-            if ($pageimage !== '' && $fallbackUrl !== '') {
-                return ['name' => $pageimage, 'url' => $fallbackUrl];
+        // Helper: fetch a direct URL for a named image file via the API.
+        $fetchImageUrl = function (string $name): string {
+            $info = $this->queryImageInfo([$name]);
+            $img = $info[$name] ?? null;
+
+            if (!is_array($img)) {
+                return '';
+            }
+
+            return trim((string) (($img['thumburl'] ?? '') ?: ($img['url'] ?? '')));
+        };
+
+        if ($candidates === []) {
+            // No usable named image candidates — use the page thumbnail when available,
+            // or query image info for the pageimage as a last resort.
+            $url = $pageThumbnailUrl();
+
+            if ($url !== '') {
+                return ['name' => $pageimage, 'url' => $url];
+            }
+
+            if ($pageimage !== '') {
+                $url = $fetchImageUrl($pageimage);
+
+                return $url !== '' ? ['name' => $pageimage, 'url' => $url] : [];
             }
 
             return [];
         }
 
+        // Score all candidates; sort best-first.
         $scored = [];
 
         foreach ($candidates as $name) {
             $score = $this->scoreImageCandidate($name, $page, $context);
-
-            if ($score < 45) {
-                continue;
-            }
-
             $scored[] = ['name' => $name, 'score' => $score];
         }
 
         usort($scored, static fn (array $left, array $right): int => $right['score'] <=> $left['score']);
 
-        if ($scored === []) {
-            $fallbackUrl = trim((string) (($page['thumbnail'] ?? '') ?: ($page['original'] ?? '')));
+        // Accept any candidate that clears the confidence bar.
+        $confident = array_filter($scored, static fn (array $c): bool => $c['score'] >= 45);
+        $best = !empty($confident) ? reset($confident) : null;
 
-            if ($pageimage !== '' && $fallbackUrl !== '') {
-                return ['name' => $pageimage, 'url' => $fallbackUrl];
+        // No confident image: fall back to the page thumbnail (fast path),
+        // then try the highest-scored candidate via the API,
+        // then try the pageimage as a last resort.
+        if ($best === null) {
+            $url = $pageThumbnailUrl();
+
+            if ($pageimage !== '' && $url !== '') {
+                return ['name' => $pageimage, 'url' => $url];
+            }
+
+            // Try the top candidate even without high confidence.
+            $topCandidate = reset($scored);
+
+            if ($topCandidate !== false && $topCandidate['score'] >= 10) {
+                $url = $fetchImageUrl($topCandidate['name']);
+
+                if ($url !== '') {
+                    return ['name' => $topCandidate['name'], 'url' => $url];
+                }
+            }
+
+            if ($pageimage !== '') {
+                $url = $pageThumbnailUrl() ?: $fetchImageUrl($pageimage);
+
+                return $url !== '' ? ['name' => $pageimage, 'url' => $url] : [];
             }
 
             return [];
         }
 
-        $best = $scored[0];
-
+        // Confident best candidate — prefer the page thumbnail when the file is the pageimage.
         if ($pageimage !== '' && strcasecmp($this->cleanImageName($pageimage), $best['name']) === 0) {
-            $url = trim((string) (($page['thumbnail'] ?? '') ?: ($page['original'] ?? '')));
+            $url = $pageThumbnailUrl();
 
-            return $url !== '' ? ['name' => $best['name'], 'url' => $url] : [];
+            if ($url !== '') {
+                return ['name' => $best['name'], 'url' => $url];
+            }
         }
 
-        $info = $this->queryImageInfo([$best['name']]);
-        $image = $info[$best['name']] ?? null;
+        $url = $fetchImageUrl($best['name']);
 
-        if (!is_array($image)) {
-            return [];
+        if ($url !== '') {
+            return ['name' => $best['name'], 'url' => $url];
         }
 
-        $url = trim((string) (($image['thumburl'] ?? '') ?: ($image['url'] ?? '')));
+        // queryImageInfo failed; last resort: page thumbnail mapped to the best name.
+        $url = $pageThumbnailUrl();
 
         return $url !== '' ? ['name' => $best['name'], 'url' => $url] : [];
     }

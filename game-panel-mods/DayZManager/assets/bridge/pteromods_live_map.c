@@ -164,9 +164,19 @@ float PteroMods_LiveMap_Round2(float value)
 
 // Enumerates items stored inside a container (backpack, vest, pants pocket, belt …)
 // and appends them to slotItem.contents.  Covers:
-//   - attachment-slot sub-items (e.g. weapon attachments inside a vest)
-//   - cargo items (clothes, food, ammo stored in a backpack or pants pocket)
-// Only one level of nesting is collected to keep the snapshot size bounded.
+//   - direct cargo (food, ammo, clothes stored in a backpack's main compartment)
+//   - sub-container cargo (items inside pants pockets, vest internal pockets, etc.)
+//   - attachment-slot items that are not sub-containers (weapon rail attachments)
+//
+// Two levels of nesting are collected to keep the snapshot bounded but still reach
+// items inside pants pockets, which are attached as pocket entities whose cargo
+// holds the actual items (rather than being stored in the pants' own cargo).
+//
+// Attachment handling:
+//   If an attachment has its own cargo (GetCargo() != null), it is a sub-container
+//   (e.g. a pants pocket or vest pouch).  Its cargo items are collected directly.
+//   If GetCargo() is null the attachment is a plain item (optic, suppressor, mag)
+//   and is reported as-is.
 void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_LiveMapItem slotItem)
 {
     if (!container)
@@ -176,20 +186,48 @@ void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_Li
     if (!inv)
         return;
 
-    // Attachment-slot sub-items (vest pockets, weapon rail attachments, etc.).
+    // Attachment-slot children.  For each attachment we check whether it is a
+    // sub-container (has its own cargo).  If so we collect its cargo items
+    // directly so the panel sees the actual items rather than the pocket entity.
+    // If it has no cargo it is a real item (optic, suppressor, etc.) and is
+    // added as an attachment entry.
     int attachCount = inv.GetSlotCount();
     for (int ai = 0; ai < attachCount; ai++)
     {
         EntityAI attached = inv.GetAttachmentFromIndex(ai);
         if (!attached)
             continue;
-        PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
-        sub.slot = slotItem.slot + ".attach";
-        sub.className = attached.GetType();
-        slotItem.contents.Insert(sub);
+
+        GameInventory attachInv = attached.GetInventory();
+        if (attachInv)
+        {
+            CargoBase attachCargo = attachInv.GetCargo();
+            if (attachCargo)
+            {
+                // Sub-container (e.g. pants pocket, vest pouch): collect its items.
+                int subItemCount = attachCargo.GetItemCount();
+                for (int si = 0; si < subItemCount; si++)
+                {
+                    EntityAI subItem = EntityAI.Cast(attachCargo.GetItem(si, 0));
+                    if (!subItem)
+                        continue;
+                    PteroMods_LiveMapItem sub = new PteroMods_LiveMapItem();
+                    sub.slot = slotItem.slot + ".cargo";
+                    sub.className = subItem.GetType();
+                    slotItem.contents.Insert(sub);
+                }
+                continue;
+            }
+        }
+
+        // Plain attached item (optic, suppressor, magazine, etc.).
+        PteroMods_LiveMapItem attachSub = new PteroMods_LiveMapItem();
+        attachSub.slot = slotItem.slot + ".attach";
+        attachSub.className = attached.GetType();
+        slotItem.contents.Insert(attachSub);
     }
 
-    // Cargo items (the most important case: food/ammo/clothes in a backpack).
+    // Direct cargo items (the main case for backpacks and holsters).
     // DayZ's CargoBase.GetItemCount() returns the number of distinct item entries;
     // each is accessed via GetItem(rowIndex, 0) — the column parameter addresses
     // quantity-stacked items, not a 2-D grid, so col=0 always retrieves the item.
