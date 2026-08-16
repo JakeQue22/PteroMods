@@ -290,8 +290,9 @@ final class DayZPlayerController
     public function bridgeFulfillGiveMoney(mixed $server = null, string $id = ''): array
     {
         try {
-            $resolved = $this->context->resolve($server);
-            $serverId = $this->context->attribute($resolved['model'], ['uuid', 'uuidShort', 'id']);
+            $serverId = is_scalar($server)
+                ? trim((string) $server)
+                : $this->context->routeServerParameter();
             $queueId = (int) ($id !== '' ? $id : $this->context->stringInput('id'));
             $signature = $this->context->stringInput('signature');
 

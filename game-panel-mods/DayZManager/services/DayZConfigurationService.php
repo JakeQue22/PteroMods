@@ -29,7 +29,7 @@ final class DayZConfigurationService
     ];
 
     /** Extensions considered configuration/content files. */
-    private const CONFIG_EXTENSIONS = ['cfg', 'xml', 'txt', 'json', 'ini', 'conf', 'bat', 'sh', 'log', 'c'];
+    private const CONFIG_EXTENSIONS = ['cfg', 'xml', 'txt', 'json', 'ini', 'conf', 'bat', 'sh', 'c'];
 
     private const MAX_FILES_PER_DIRECTORY = 200;
 

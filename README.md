@@ -379,7 +379,7 @@ URL: `GET /servers/{server}/dayz/players`
 
 The **Players** tab shows a single merged player directory: persisted DayZ records loaded from `characters.db` / `players.db` are combined with the currently online players from the live-map bridge snapshot, so each player appears once with their nickname, Steam64 (linked to their Steam profile), DayZ UID, last seen time, position and list membership. Each entry links straight to that player on the Live Map. Ban/whitelist/priority list changes are persisted to `dayz_player_lists`.
 
-The players page also includes a **Give Money** queue. The panel writes one JSON queue file per player under `/profiles/PteroMods/give_money_<uid>.json` (mirrored to the Steam64 key when the two ids differ). The bundled server-side mission bridge for consuming those files lives at `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c`.
+The players page also includes a **Give Money** queue. The panel writes one JSON queue file per player under `/profiles/PteroMods/give_money_<uid>.json` (mirrored to the Steam64 key when the two ids differ). The bundled server-side mission bridge for consuming those files lives at `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c`; each fulfilled grant calls its queue-specific signed URL so the pending database row is removed immediately.
 
 | Action | Method | Endpoint |
 |---|---|---|
@@ -393,6 +393,8 @@ Persisted players include last-known coordinates and a bounds check against the 
 To activate the bundled give-money bridge, copy `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c` into the active mission folder, include it from `init.c`, and call `PteroMods_GiveMoney_Init();` inside `main()`. The bridge reads the queued JSON and creates the requested `MoneyRuble1`, `MoneyRuble5`, `MoneyRuble10`, `MoneyRuble25`, `MoneyRuble50`, or `MoneyRuble100` items in the matching online player's inventory.
 
 The persistence database is copied from the container via Wings and read with the first SQLite implementation available in the panel runtime: the `sqlite3` extension, PDO's `sqlite` driver, or the bundled dependency-free `DayZSqliteFileReader`, which parses the SQLite file format directly. **No PHP SQLite extension is required.** Table and column names are matched heuristically, so both vanilla and community persistence layouts are supported.
+
+Inventory item metadata and thumbnails are resolved and cached from DayZ Wiki, with explicit fallbacks to DayZ Fandom and the DayZ Archive. Variant searches include both `Item Variant` and `Item (Variant)` forms and prefer matching variant image filenames.
 
 **Add payload:**
 
@@ -467,9 +469,11 @@ The `ConfigurationCatalog` service groups files into three operator-facing categ
 
 | Category | Files |
 |---|---|
-| **Default** | `serverDZ.cfg`, `BEServer.cfg`, `messages.xml`, `priority.txt`, `ban.txt`, `whitelist.txt`, `scripts.log`, `storage_1`, `storage_2`, and any `.bat`, `.cfg`, `.xml`, or `.txt` |
+| **Default** | `serverDZ.cfg`, `BEServer.cfg`, `messages.xml`, `priority.txt`, `ban.txt`, `whitelist.txt`, `storage_1`, `storage_2`, and any `.bat`, `.cfg`, `.xml`, or `.txt` |
 | **Server Messages** | `Messages.bat`, `messages.cfg`, `settings.cfg` |
 | **Admin Tools** | `credentials.txt`, `SuperAdmins.txt`, `admins.xml` |
+
+The separate **Logs** tab lists `.log` and `.rpt` files from `/profiles`, `/profiles/VPPAdminTools/Logging`, `/profiles/CodeLock/Logs` (including action subdirectories), and `/profiles/Airdrop/Logs` under Error, Server, Admin, Code Lock, and Airdrop sections.
 
 Saving through the API writes the file back to the container through the daemon,
 and the previous contents are stored in `dayz_configuration_backups` first.

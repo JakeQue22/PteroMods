@@ -7,7 +7,7 @@ namespace GamePanelMods\DayZManager\Services;
 use Throwable;
 
 /**
- * Resolves DayZ inventory items to verified dayz.wiki.gg pages and images.
+ * Resolves DayZ inventory items to verified DayZ wiki pages and images.
  *
  * The resolver prefers deterministic identifiers (class names, internal ids and
  * canonical names) and only falls back to a tightly-scoped fuzzy match when it
@@ -15,8 +15,11 @@ use Throwable;
  */
 final class DayZInventoryItemResolverService
 {
-    private const WIKI_BASE_URL = 'https://dayz.wiki.gg';
-    private const WIKI_API_URL = 'https://dayz.wiki.gg/api.php';
+    private const WIKI_SOURCES = [
+        ['name' => 'DayZ Wiki', 'api_url' => 'https://dayz.wiki.gg/api.php'],
+        ['name' => 'DayZ Fandom', 'api_url' => 'https://dayz.fandom.com/api.php'],
+        ['name' => 'DayZ Archive', 'api_url' => 'https://dayz-archive.fandom.com/api.php'],
+    ];
     private const CACHE_REFRESH_SECONDS = 604800; // 7 days
     private const NEGATIVE_CACHE_TTL = 86400;     // 1 day — re-try failed lookups after this
     private const SEARCH_LIMIT = 6;
@@ -24,6 +27,9 @@ final class DayZInventoryItemResolverService
 
     /** @var array<string, mixed> */
     private array $requestCache = [];
+
+    /** @var array{name:string,api_url:string} */
+    private array $wikiSource = self::WIKI_SOURCES[0];
 
     private ?bool $tableExists = null;
 
@@ -215,6 +221,33 @@ final class DayZInventoryItemResolverService
      */
     private function resolveFresh(array $item): array
     {
+        $best = null;
+
+        foreach (self::WIKI_SOURCES as $source) {
+            $this->wikiSource = $source;
+            $this->requestCache = [];
+            $candidate = $this->resolveFreshFromSource($item);
+
+            if (($candidate['resolved'] ?? false) && trim((string) ($candidate['image_url'] ?? '')) !== '') {
+                return $candidate;
+            }
+
+            if (($candidate['resolved'] ?? false)
+                && ($best === null || (int) ($candidate['confidence'] ?? 0) > (int) ($best['confidence'] ?? 0))
+            ) {
+                $best = $candidate;
+            }
+        }
+
+        return $best ?? $this->unresolved($item, 'No supported DayZ wiki matched this item.');
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array<string, mixed>
+     */
+    private function resolveFreshFromSource(array $item): array
+    {
         $context = $this->buildContext($item);
         $candidateTitles = $this->discoverCandidateTitles($context);
 
@@ -298,6 +331,7 @@ final class DayZInventoryItemResolverService
             'matched_by' => (string) ($best['matched_by'] ?? 'unknown'),
             'confidence' => $bestScore,
             'verification' => [
+                'wiki_source' => $this->wikiSource['name'],
                 'score' => $bestScore,
                 'runner_up_score' => $runnerScore,
                 'title_match' => $best['title_match'] ?? '',
@@ -437,14 +471,20 @@ final class DayZInventoryItemResolverService
             [$className, str_replace('_', ' ', $className), $classLabel, $baseClass, $baseLabel, $name, $internalId],
             $variantAliases === [] || $baseLabel === ''
                 ? []
-                : array_map(static fn (string $variant): string => trim($baseLabel . ' ' . $variant), $variantAliases)
+                : array_merge(
+                    array_map(static fn (string $variant): string => trim($baseLabel . ' ' . $variant), $variantAliases),
+                    array_map(static fn (string $variant): string => trim($baseLabel . ' (' . $variant . ')'), $variantAliases),
+                )
         ));
 
         $directTitles = $this->dedupeStrings(array_merge(
             [$name, $classLabel, $baseLabel],
             $variantAliases === [] || $baseLabel === ''
                 ? []
-                : array_map(static fn (string $variant): string => trim($baseLabel . ' ' . $variant), $variantAliases)
+                : array_merge(
+                    array_map(static fn (string $variant): string => trim($baseLabel . ' ' . $variant), $variantAliases),
+                    array_map(static fn (string $variant): string => trim($baseLabel . ' (' . $variant . ')'), $variantAliases),
+                )
         ));
 
         return [
@@ -1086,7 +1126,7 @@ final class DayZInventoryItemResolverService
 
         $resolver = function () use ($params): ?array {
             $query = http_build_query($params + ['format' => 'json', 'origin' => '*'], '', '&', PHP_QUERY_RFC3986);
-            $url = self::WIKI_API_URL . '?' . $query;
+            $url = $this->wikiSource['api_url'] . '?' . $query;
 
             try {
                 if (class_exists('Illuminate\\Support\\Facades\\Http')) {
@@ -1426,6 +1466,10 @@ final class DayZInventoryItemResolverService
     private function extractImageFileName(string $value): string
     {
         if (preg_match('/File:([^|\]\n]+?\.(?:png|jpe?g|webp|gif))/i', $value, $matches) === 1) {
+            return $this->cleanImageName((string) $matches[1]);
+        }
+
+        if (preg_match('/(?:^|[|=\s])([^|=\[\]\n]+?\.(?:png|jpe?g|webp|gif))(?:$|[|\]\s])/i', $value, $matches) === 1) {
             return $this->cleanImageName((string) $matches[1]);
         }
 
