@@ -624,19 +624,27 @@
             return '';
         }
 
-        function collectEntry(entry, parentSlot) {
+        function collectEntry(entry, parentSlot, parentClass) {
             if (!entry || typeof entry !== 'object') { return; }
             var cls = stringField(entry, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
             var itemId = stringField(entry, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']);
             var itemName = stringField(entry, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']);
             var slot = typeof entry.slot === 'string' ? entry.slot : (parentSlot || '');
             if (cls !== '') {
-                items.push({ slot: slot, className: cls, itemId: itemId, name: itemName, isContainerContent: !!parentSlot });
+                items.push({
+                    slot: slot,
+                    className: cls,
+                    itemId: itemId,
+                    name: itemName,
+                    isContainerContent: !!parentSlot,
+                    containerSlot: parentSlot || '',
+                    containerClass: parentClass || ''
+                });
             }
             // Recurse into contents array (bridge v2 format with container contents).
             var contents = Array.isArray(entry.contents) ? entry.contents : null;
             if (contents && contents.length) {
-                contents.forEach(function (sub) { collectEntry(sub, slot || 'Unknown'); });
+                contents.forEach(function (sub) { collectEntry(sub, slot || 'Unknown', cls); });
             }
         }
 
@@ -645,7 +653,7 @@
                 if (typeof entry === 'string' && entry !== '') {
                     items.push({ slot: '', className: entry, itemId: '', name: '', isContainerContent: false });
                 } else {
-                    collectEntry(entry, '');
+                    collectEntry(entry, '', '');
                 }
             });
         }
@@ -722,29 +730,17 @@
 
         function applyResolvedMeta(cardBits, resolved, fallbackLabel) {
             if (!cardBits) { return; }
-            var label = resolved && resolved.display_name ? resolved.display_name : fallbackLabel;
+            var label = fallbackLabel;
 
             cardBits.nameEl.innerHTML = '';
-
-            if (resolved && resolved.resolved && resolved.wiki_url) {
-                var link = document.createElement('a');
-                link.href = resolved.wiki_url;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-                link.textContent = label;
-                link.style.cssText = 'color:var(--dz-accent);text-decoration:none;';
-                link.title = [
-                    resolved.classname || cardBits.item.className || '',
-                    resolved.variant || '',
-                    resolved.type || resolved.category || ''
-                ].filter(Boolean).join(' · ');
-                cardBits.nameEl.appendChild(link);
-            } else {
-                var span = document.createElement('span');
-                span.textContent = label;
-                span.title = (cardBits.item.className || label);
-                cardBits.nameEl.appendChild(span);
-            }
+            var span = document.createElement('span');
+            span.textContent = label;
+            span.title = [
+                cardBits.item.className || label,
+                resolved && resolved.variant ? resolved.variant : '',
+                resolved && (resolved.type || resolved.category) ? (resolved.type || resolved.category) : ''
+            ].filter(Boolean).join(' · ');
+            cardBits.nameEl.appendChild(span);
 
             if (resolved && resolved.image_url) {
                 setCardImage(cardBits.imgWrap, resolved.image_url, label);
@@ -809,20 +805,24 @@
             // Group container items by parent slot.
             var byContainer = {};
             containerItems.forEach(function (item) {
-                var k = item.slot || 'Unknown';
+                var k = [item.containerSlot || item.slot || 'Unknown', item.containerClass || ''].join('|');
                 if (!byContainer[k]) { byContainer[k] = []; }
                 byContainer[k].push(item);
             });
 
-            Object.keys(byContainer).forEach(function (containerSlot) {
+            Object.keys(byContainer).forEach(function (containerKey) {
+                var keyParts = containerKey.split('|');
+                var containerSlot = keyParts[0];
+                var containerClass = keyParts.slice(1).join('|');
+                var containerLabel = containerSlot === 'Back' ? 'Backpack' : (containerSlot === 'Legs' ? 'Pants' : containerSlot);
                 var subHead = document.createElement('p');
-                subHead.textContent = 'In: ' + containerSlot;
+                subHead.textContent = 'In ' + containerLabel + (containerClass ? ' (' + containerClass + ')' : '');
                 subHead.style.cssText = 'font-size:0.7rem;color:var(--dz-muted);margin:0.5rem 0 0.25rem;';
                 contSec.appendChild(subHead);
 
                 var subGrid = document.createElement('div');
                 subGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
-                byContainer[containerSlot].forEach(function (item) { subGrid.appendChild(makeItemCard(item)); });
+                byContainer[containerKey].forEach(function (item) { subGrid.appendChild(makeItemCard(item)); });
                 contSec.appendChild(subGrid);
             });
 

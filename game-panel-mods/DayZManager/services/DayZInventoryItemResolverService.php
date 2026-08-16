@@ -129,7 +129,11 @@ final class DayZInventoryItemResolverService
 
             $cached = $this->lookupCachedResolution($normalized, $forceRefresh);
 
-            if ($cached !== null && ($cached['resolved'] ?? false) && !$this->isStaleResolution($cached)) {
+            if ($cached !== null
+                && ($cached['resolved'] ?? false)
+                && trim((string) ($cached['image_url'] ?? '')) !== ''
+                && !$this->isStaleResolution($cached)
+            ) {
                 $resolved[$lookupKey] = $cached;
                 continue;
             }
@@ -622,6 +626,12 @@ final class DayZInventoryItemResolverService
         }
 
         if ($candidates === []) {
+            $fallbackUrl = trim((string) (($page['thumbnail'] ?? '') ?: ($page['original'] ?? '')));
+
+            if ($pageimage !== '' && $fallbackUrl !== '') {
+                return ['name' => $pageimage, 'url' => $fallbackUrl];
+            }
+
             return [];
         }
 
@@ -640,8 +650,10 @@ final class DayZInventoryItemResolverService
         usort($scored, static fn (array $left, array $right): int => $right['score'] <=> $left['score']);
 
         if ($scored === []) {
-            if ($pageimage !== '' && trim((string) ($page['thumbnail'] ?? '')) !== '') {
-                return ['name' => $pageimage, 'url' => (string) ($page['thumbnail'] ?? $page['original'] ?? '')];
+            $fallbackUrl = trim((string) (($page['thumbnail'] ?? '') ?: ($page['original'] ?? '')));
+
+            if ($pageimage !== '' && $fallbackUrl !== '') {
+                return ['name' => $pageimage, 'url' => $fallbackUrl];
             }
 
             return [];
@@ -650,7 +662,7 @@ final class DayZInventoryItemResolverService
         $best = $scored[0];
 
         if ($pageimage !== '' && strcasecmp($this->cleanImageName($pageimage), $best['name']) === 0) {
-            $url = trim((string) ($page['thumbnail'] ?? $page['original'] ?? ''));
+            $url = trim((string) (($page['thumbnail'] ?? '') ?: ($page['original'] ?? '')));
 
             return $url !== '' ? ['name' => $best['name'], 'url' => $url] : [];
         }
