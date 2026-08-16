@@ -16,6 +16,7 @@
     var LABEL = 'DayZ Manager';
     var support = {};
     var schedulerServer = '';
+    var schedulerInterval = null;
 
     function tickRestartSchedule(id) {
         var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
@@ -40,8 +41,11 @@
         }
 
         schedulerServer = id;
+        if (schedulerInterval !== null) {
+            window.clearInterval(schedulerInterval);
+        }
         tickRestartSchedule(id);
-        window.setInterval(function () {
+        schedulerInterval = window.setInterval(function () {
             var current = context();
 
             if (current && current.id === id) {

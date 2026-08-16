@@ -367,6 +367,10 @@ final class DayZGiveMoneyService
             }
         }
 
+        if ($decoded !== [] && $activeIds === []) {
+            return;
+        }
+
         try {
             $query = \Illuminate\Support\Facades\DB::table(self::TABLE)
                 ->where('server_id', $serverId)
