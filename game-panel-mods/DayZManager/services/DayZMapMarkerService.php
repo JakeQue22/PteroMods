@@ -615,16 +615,17 @@ final class DayZMapMarkerService
             $locationName = trim((string) ($section[1] ?? ''));
             $body = (string) ($section[2] ?? '');
 
-            if (!preg_match(
-                '/TraderMarkerPosition\s*=\s*\{?\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)/i',
-                $body,
-                $match
-            )) {
+            if (!preg_match('/TraderMarkerPosition(?:\[\])?\s*=\s*([^\r\n;]+)/i', $body, $line)) {
                 continue;
             }
 
-            $x = (float) $match[1];
-            $z = (float) $match[3];
+            if (preg_match_all('/[-+]?\d*\.?\d+/', (string) ($line[1] ?? ''), $numbers) === false
+                || count($numbers[0] ?? []) < 3) {
+                continue;
+            }
+
+            $x = (float) $numbers[0][0];
+            $z = (float) $numbers[0][2];
 
             if ($x === 0.0 && $z === 0.0) {
                 continue;

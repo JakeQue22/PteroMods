@@ -69,6 +69,11 @@ final class DayZManagerSettingsController
                 continue;
             }
 
+            if ((string) $key === 'cache_fetch_timer_seconds') {
+                $normalised[(string) $key] = max(5, min(3600, (int) $value));
+                continue;
+            }
+
             $bool = filter_var($value, FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
             $normalised[(string) $key] = $bool !== null ? $bool : $value;
         }
@@ -79,5 +84,27 @@ final class DayZManagerSettingsController
             'status'   => 'saved',
             'settings' => $this->settings->all(),
         ];
+    }
+
+    /**
+     * Forces DayZ Manager cache refreshes for all supported DayZ data.
+     *
+     * @return array<string, mixed>
+     */
+    public function refreshCache(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+        $this->context->authorizeManage($resolved['model']);
+
+        try {
+            $result = $this->warmer->forceRefreshAll($resolved['model']);
+
+            return ['status' => 'refreshed'] + $result;
+        } catch (Throwable $exception) {
+            return [
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ];
+        }
     }
 }

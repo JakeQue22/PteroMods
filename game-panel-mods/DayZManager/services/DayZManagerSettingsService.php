@@ -151,6 +151,11 @@ final class DayZManagerSettingsService
          * pruned automatically after every create (manual or auto).
          */
         'auto_backup_keep' => 10,
+
+        /**
+         * Interval (in seconds) between DayZ Manager background cache refreshes.
+         */
+        'cache_fetch_timer_seconds' => 60,
     ];
 
     /**
@@ -180,6 +185,7 @@ final class DayZManagerSettingsService
         'dzserver_rpt_log_retention_days' => 'DayZServer_*.RPT retention (days)',
         'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
         'live_map_tile_url' => 'Live Map tile URL template',
+        'cache_fetch_timer_seconds' => 'Cache fetch timer (seconds)',
     ];
 
     /**
@@ -248,6 +254,9 @@ final class DayZManagerSettingsService
             . 'Use the raw tile template URL here, not the public viewer URL (`https://dayz.xam.nu/#...`). '
             . 'Default uses the current xam.nu official-map satellite template (`.../1.27/satellite/{z}/{x}/{y}.webp`). '
             . 'Leave empty to disable tile loading (shows a plain dark background).',
+        'cache_fetch_timer_seconds' =>
+            'How often DayZ Manager refreshes cached DayZ data in the background (seconds). '
+            . 'Lower values refresh more often but increase panel/API load.',
     ];
 
     public function __construct(

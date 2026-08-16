@@ -71,6 +71,7 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/browse', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@browse'];
     $routes[] = ['method' => 'GET',    'uri' => $prefix . '/settings',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@index'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/settings/save',           'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@save'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/settings/cache-refresh',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@refreshCache'];
     $routes[] = ['method' => 'GET',    'uri' => $prefix . '/backups',                 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@index'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/create',          'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@create'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/restore',         'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@restore'];

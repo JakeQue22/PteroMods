@@ -360,7 +360,14 @@ final class DayZGiveMoneyService
 
     private function queueFilePath(string $key): string
     {
-        return self::QUEUE_FILE_DIR . '/give_money_' . preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key) . '.json';
+        $raw = trim($key);
+        $safe = trim((string) preg_replace('/[^a-zA-Z0-9_\-]/', '_', $raw), '_');
+
+        if ($safe === '') {
+            $safe = $raw !== '' ? substr(md5($raw), 0, 16) : 'unknown';
+        }
+
+        return self::QUEUE_FILE_DIR . '/give_money_' . $safe . '.json';
     }
 
     private function displayTimestamp(mixed $timestamp): ?string
