@@ -282,6 +282,24 @@ final class DayZPlayerController
     }
 
     /**
+     * Bridge-only give-money fulfilment callback. It is authenticated by the
+     * queue-specific HMAC in the callback URL instead of panel session auth.
+     *
+     * @return array<string, mixed>
+     */
+    public function bridgeFulfillGiveMoney(mixed $server = null, string $id = ''): array
+    {
+        try {
+            $queueId = (int) ($id !== '' ? $id : $this->context->stringInput('id'));
+            $signature = $this->context->stringInput('signature');
+
+            return $this->giveMoneySvc->markFulfilledFromBridge($queueId, $signature);
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
      * Permanently removes a player from the players list.
      * Only the configured REMOVE_PLAYER_EMAIL account may call this.
      *

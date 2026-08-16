@@ -20,13 +20,17 @@ use Throwable;
  * When the action is queued, JSON is written under
  * /profiles/PteroMods/give_money_<uid>.json (falling back to player_id, and
  * mirrored to both keys when they differ) so a server-side bridge can read and
- * fulfil it. The bundled mission script lives at
+ * fulfil it. Queue entries also carry an optional signed callback path so the
+ * in-game bridge can acknowledge delivery immediately instead of waiting for
+ * the panel to reconcile the JSON file on the next read. The bundled mission
+ * script lives at
  * game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c.
  */
 final class DayZGiveMoneyService
 {
     private const TABLE = 'dayz_give_money_queue';
     private const CACHE_SECONDS = 120;
+    private const BRIDGE_FULFIL_PATH_TEMPLATE = '/api/server/%s/dayz/player-actions/give-money/%d/bridge-fulfil?signature=%s';
 
     private const DENOMINATIONS = [1, 5, 10, 25, 50, 100];
 
@@ -202,6 +206,61 @@ final class DayZGiveMoneyService
     }
 
     /**
+     * Fulfilment callback for the in-game bridge. This skips panel auth and
+     * only accepts a queue-specific signature embedded into the queue file.
+     *
+     * @return array<string, mixed>
+     */
+    public function markFulfilledFromBridge(int $queueId, string $signature): array
+    {
+        if ($queueId <= 0 || !$this->tableExists()) {
+            return ['status' => 'error', 'message' => 'That give money queue entry could not be found.'];
+        }
+
+        $signature = strtolower(trim($signature));
+
+        if ($signature === '') {
+            return ['status' => 'error', 'message' => 'Missing bridge signature.'];
+        }
+
+        try {
+            $row = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('id', $queueId)
+                ->first();
+
+            if ($row === null) {
+                return ['status' => 'ok', 'id' => $queueId, 'message' => 'Queue entry already removed.'];
+            }
+
+            $entry = (array) $row;
+            $expected = $this->bridgeCallbackSignature($entry);
+
+            if ($expected === '' || !hash_equals($expected, $signature)) {
+                return ['status' => 'error', 'message' => 'Invalid bridge signature.'];
+            }
+
+            $serverId = trim((string) ($entry['server_id'] ?? ''));
+            $deleted = \Illuminate\Support\Facades\DB::table(self::TABLE)
+                ->where('id', $queueId)
+                ->delete();
+
+            if ($serverId !== '') {
+                $this->forgetPendingCache($serverId);
+            }
+
+            if ($deleted < 1) {
+                return ['status' => 'ok', 'id' => $queueId, 'message' => 'Queue entry already removed.'];
+            }
+
+            $this->logFulfilledRemoval($serverId, $queueId, $entry);
+
+            return ['status' => 'removed', 'id' => $queueId, 'message' => 'Queue entry removed after delivery.'];
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
      * Removes a pending queue entry and rewrites the server-side queue file.
      *
      * @return array<string, mixed>
@@ -306,15 +365,25 @@ final class DayZGiveMoneyService
                 ->orderBy('created_at')
                 ->orderBy('id')
                 ->get()
-                ->map(fn ($row): array => [
-                    'queue_id'   => (int) ($row->id ?? 0),
-                    'server_id'  => (string) ($row->server_id ?? $serverId),
-                    'player_id'  => (string) ($row->player_id ?? $playerId),
-                    'player_uid' => (string) (($row->player_uid ?? '') !== '' ? $row->player_uid : ($playerUid !== '' ? $playerUid : $playerId)),
-                    'item_class' => (string) ($row->item_class ?? ''),
-                    'quantity'   => max(1, (int) ($row->quantity ?? 1)),
-                    'queued_at'  => (string) (($row->created_at ?? '') !== '' ? $row->created_at : date('Y-m-d H:i:s')),
-                ])
+                ->map(function ($row) use ($serverId, $playerId, $playerUid): array {
+                    $entry = [
+                        'queue_id'   => (int) ($row->id ?? 0),
+                        'server_id'  => (string) ($row->server_id ?? $serverId),
+                        'player_id'  => (string) ($row->player_id ?? $playerId),
+                        'player_uid' => (string) (($row->player_uid ?? '') !== '' ? $row->player_uid : ($playerUid !== '' ? $playerUid : $playerId)),
+                        'item_class' => (string) ($row->item_class ?? ''),
+                        'quantity'   => max(1, (int) ($row->quantity ?? 1)),
+                        'queued_at'  => (string) (($row->created_at ?? '') !== '' ? $row->created_at : date('Y-m-d H:i:s')),
+                    ];
+                    $callback = $this->bridgeCallbackTarget($entry);
+
+                    if ($callback !== null) {
+                        $entry['callback_base_url'] = $callback['base_url'];
+                        $entry['callback_path'] = $callback['path'];
+                    }
+
+                    return $entry;
+                })
                 ->all();
         } catch (Throwable) {
             return [];
@@ -496,6 +565,130 @@ final class DayZGiveMoneyService
         $time = strtotime($text);
 
         return $time === false ? $text : date('d-m-Y H:i:s', $time);
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     * @return array{base_url:string, path:string}|null
+     */
+    private function bridgeCallbackTarget(array $entry): ?array
+    {
+        $baseUrl = $this->bridgeCallbackBaseUrl();
+        $queueId = (int) ($entry['queue_id'] ?? $entry['id'] ?? 0);
+        $serverId = trim((string) ($entry['server_id'] ?? ''));
+        $clientServerId = $serverId !== ''
+            ? $this->context->clientIdentifier(['uuidShort' => $serverId], $serverId)
+            : '';
+        $signature = $this->bridgeCallbackSignature($entry);
+
+        if ($baseUrl === '' || $queueId <= 0 || $clientServerId === '' || $signature === '') {
+            return null;
+        }
+
+        return [
+            'base_url' => $baseUrl,
+            'path' => sprintf(self::BRIDGE_FULFIL_PATH_TEMPLATE, rawurlencode($clientServerId), $queueId, rawurlencode($signature)),
+        ];
+    }
+
+    private function bridgeCallbackBaseUrl(): string
+    {
+        $candidates = [];
+
+        try {
+            if (function_exists('request')) {
+                $request = request();
+
+                if (is_object($request) && method_exists($request, 'getSchemeAndHttpHost')) {
+                    $base = trim((string) $request->getSchemeAndHttpHost(), '/');
+
+                    if ($base !== '') {
+                        $basePath = '';
+
+                        if (method_exists($request, 'getBasePath')) {
+                            $basePath = trim((string) $request->getBasePath(), '/');
+                        }
+
+                        $candidates[] = $base . ($basePath !== '' ? '/' . $basePath : '');
+                    }
+                }
+            }
+        } catch (Throwable) {
+            // Fall through to config()/env() below.
+        }
+
+        try {
+            if (function_exists('config')) {
+                $configured = trim((string) config('app.url', ''), '/');
+
+                if ($configured !== '') {
+                    $candidates[] = $configured;
+                }
+            }
+        } catch (Throwable) {
+            // Ignore config() failures.
+        }
+
+        $env = trim((string) getenv('APP_URL'), '/');
+
+        if ($env !== '') {
+            $candidates[] = $env;
+        }
+
+        foreach ($candidates as $candidate) {
+            if ($candidate !== '' && preg_match('#^https?://#i', $candidate) === 1) {
+                return $candidate;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, mixed> $entry
+     */
+    private function bridgeCallbackSignature(array $entry): string
+    {
+        $secret = $this->bridgeCallbackSecret();
+        $queueId = (int) ($entry['queue_id'] ?? $entry['id'] ?? 0);
+        $serverId = trim((string) ($entry['server_id'] ?? ''));
+        $playerId = trim((string) ($entry['player_id'] ?? ''));
+        $playerUid = trim((string) ($entry['player_uid'] ?? ''));
+        $itemClass = trim((string) ($entry['item_class'] ?? ''));
+        $quantity = max(1, (int) ($entry['quantity'] ?? 1));
+
+        if ($secret === '' || $queueId <= 0 || $serverId === '' || $playerId === '' || $itemClass === '') {
+            return '';
+        }
+
+        $payload = implode(':', [$queueId, $serverId, $playerId, $playerUid, $itemClass, $quantity]);
+
+        return hash_hmac('sha256', $payload, $secret);
+    }
+
+    private function bridgeCallbackSecret(): string
+    {
+        $secret = trim((string) getenv('PTEROMODS_GIVE_MONEY_BRIDGE_SECRET'));
+
+        if ($secret !== '') {
+            return $secret;
+        }
+
+        $secret = '';
+
+        try {
+            if (function_exists('config')) {
+                $secret = trim((string) config('app.key', ''));
+            }
+        } catch (Throwable) {
+            $secret = '';
+        }
+
+        if ($secret === '') {
+            $secret = trim((string) getenv('APP_KEY'));
+        }
+
+        return $secret;
     }
 
     /**

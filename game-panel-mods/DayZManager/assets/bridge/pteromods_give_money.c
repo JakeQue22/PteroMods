@@ -57,6 +57,23 @@ class PteroMods_GiveMoneyEntry
     string item_class;
     int quantity;
     string queued_at;
+    string callback_base_url;
+    string callback_path;
+}
+
+class PteroMods_GiveMoneyFulfilCallback : RestCallback
+{
+    override void OnSuccess(string data, int dataSize)
+    {
+    }
+
+    override void OnError(int errorCode)
+    {
+    }
+
+    override void OnTimeout()
+    {
+    }
 }
 
 bool PteroMods_GiveMoney_EntryTargetsPlayer(PteroMods_GiveMoneyEntry entry, string playerId, string playerUid)
@@ -235,7 +252,33 @@ class PteroMods_GiveMoneyBridge
                 return quantity - i;
         }
 
+        NotifyFulfilled(entry);
+
         return 0;
+    }
+
+    void NotifyFulfilled(PteroMods_GiveMoneyEntry entry)
+    {
+        if (!entry)
+            return;
+
+        if (entry.queue_id <= 0)
+            return;
+
+        if (entry.callback_base_url == "" || entry.callback_path == "")
+            return;
+
+        RestApi restApi = GetRestApi();
+
+        if (!restApi)
+            return;
+
+        RestContext context = restApi.GetRestContext(entry.callback_base_url);
+
+        if (!context)
+            return;
+
+        context.POST(new PteroMods_GiveMoneyFulfilCallback(), entry.callback_path, "");
     }
 }
 
