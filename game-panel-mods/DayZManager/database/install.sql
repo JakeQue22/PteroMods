@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS `dayz_restart_schedules` (
     `timed_restart_at` TIMESTAMP     NULL DEFAULT NULL,
     `timed_warnings_sent` VARCHAR(255) NOT NULL DEFAULT '',
     `warnings_sent`    VARCHAR(255)  NOT NULL DEFAULT '',
-    `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1',
+    `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,15,10,5,2,1',
     `warning_messages` TEXT           NULL,
     `created_at`       TIMESTAMP     NULL DEFAULT NULL,
     `updated_at`       TIMESTAMP     NULL DEFAULT NULL,
@@ -99,10 +99,18 @@ CREATE TABLE IF NOT EXISTS `dayz_manager_settings` (
 ALTER TABLE `dayz_restart_schedules`
     ADD COLUMN IF NOT EXISTS `timed_restart_at`      TIMESTAMP     NULL DEFAULT NULL AFTER `next_restart_at`,
     ADD COLUMN IF NOT EXISTS `timed_warnings_sent`   VARCHAR(255)  NOT NULL DEFAULT '' AFTER `timed_restart_at`,
-    ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1' AFTER `warnings_sent`,
+    ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,15,10,5,2,1' AFTER `warnings_sent`,
     ADD COLUMN IF NOT EXISTS `warning_messages`      TEXT          NULL AFTER `warning_minutes_enabled`,
     ADD COLUMN IF NOT EXISTS `start_time`             VARCHAR(5)    NOT NULL DEFAULT '' AFTER `interval_minutes`,
     ADD COLUMN IF NOT EXISTS `last_restart_at`        TIMESTAMP     NULL DEFAULT NULL AFTER `next_restart_at`;
+
+UPDATE `dayz_restart_schedules`
+SET `warning_minutes_enabled` = '180,120,60,30,20,15,10,5,2,1'
+WHERE `warning_minutes_enabled` = '180,120,60,30,20,10,5,2,1';
+
+ALTER TABLE `dayz_restart_schedules`
+    ALTER COLUMN `warning_minutes_enabled`
+    SET DEFAULT '180,120,60,30,20,15,10,5,2,1';
 
 CREATE TABLE IF NOT EXISTS `dayz_dzsa_pending` (
     `id`           INT UNSIGNED  NOT NULL AUTO_INCREMENT,

@@ -15,6 +15,40 @@
     var LINK_ID = 'pteromods-dayz-tab';
     var LABEL = 'DayZ Manager';
     var support = {};
+    var schedulerServer = '';
+
+    function tickRestartSchedule(id) {
+        var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+        return fetch('/api/server/' + encodeURIComponent(id) + '/dayz/server/restart-schedule/tick', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrf,
+                Accept: 'application/json',
+            },
+            body: '{}',
+        }).catch(function () {
+            // The next 30-second tick retries transient panel or Wings failures.
+        });
+    }
+
+    function startRestartScheduler(id) {
+        if (schedulerServer === id) {
+            return;
+        }
+
+        schedulerServer = id;
+        tickRestartSchedule(id);
+        window.setInterval(function () {
+            var current = context();
+
+            if (current && current.id === id) {
+                tickRestartSchedule(id);
+            }
+        }, 30000);
+    }
 
     function context() {
         var path = window.location.pathname;
@@ -146,6 +180,8 @@
             if (!supported) {
                 return;
             }
+
+            startRestartScheduler(current.id);
 
             if (current.admin) {
                 injectAdmin(current.url);

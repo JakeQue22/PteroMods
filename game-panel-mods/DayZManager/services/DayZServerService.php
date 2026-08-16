@@ -303,6 +303,39 @@ final class DayZServerService
     public function tickRestartSchedule(mixed $server): array
     {
         $serverId = $this->serverIdentifier($server);
+        $lockKey = 'pteromods.dayz.restart_schedule.tick.' . md5($serverId);
+        $locked = false;
+
+        if ($serverId !== '' && class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            try {
+                $locked = \Illuminate\Support\Facades\Cache::add($lockKey, 1, 25);
+
+                if (!$locked) {
+                    return ['status' => 'idle', 'message' => 'Restart schedule is already being checked.'];
+                }
+            } catch (Throwable) {
+                // Continue without a lock when the configured cache is unavailable.
+            }
+        }
+
+        try {
+            return $this->tickRestartScheduleUnlocked($server, $serverId);
+        } finally {
+            if ($locked) {
+                try {
+                    \Illuminate\Support\Facades\Cache::forget($lockKey);
+                } catch (Throwable) {
+                    // The short lock TTL safely releases it if cache cleanup fails.
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function tickRestartScheduleUnlocked(mixed $server, string $serverId): array
+    {
         $schedule = $this->scheduleRow($serverId);
 
         if ($schedule === null) {
