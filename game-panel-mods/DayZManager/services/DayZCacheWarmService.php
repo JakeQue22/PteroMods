@@ -78,6 +78,7 @@ final class DayZCacheWarmService
                     $this->workshop->installedMods($server);
                     $this->workshop->settings($server);
                     $this->server->launchParameters($server);
+                    $this->server->tickRestartSchedule($server);
                     $this->query->query($server);
                     $this->configuration->groups($server, $this->serverId($server));
                     $this->persistence->snapshot($server);

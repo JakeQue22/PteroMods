@@ -250,9 +250,12 @@ final class DayZServerService
         // Pre-mark warnings whose window has already opened for the first cycle
         // so the next tick does not fire them all at once. Warnings that are due
         // later in the cycle will still fire at the appropriate times.
+        // Use strict `>` (not `>=`) so a warning whose threshold equals the
+        // remaining time right now (e.g. 180-min warning for a 180-min interval)
+        // is NOT pre-marked — it should still fire on the first tick.
         $preFilledWarnings = $nextTimestamp === null ? [] : array_values(array_filter(
             $warningMinutesEnabled,
-            static fn (int $m): bool => $now >= ($nextTimestamp - ($m * 60)),
+            static fn (int $m): bool => $now > ($nextTimestamp - ($m * 60)),
         ));
 
         $update = [

@@ -27,6 +27,14 @@ final class DayZMapMarkerService
 {
     private const CACHE_SECONDS = 300;
 
+    /**
+     * How long marker data is kept as stale-but-servable after a background
+     * refresh stops happening (e.g. panel idle overnight).  The warmer
+     * refreshes every 60 s during active use, so this ceiling only matters
+     * when nobody has visited any DayZ page for many hours.
+     */
+    private const CACHE_STALE_SECONDS = self::CACHE_SECONDS * 288; // 24 h
+
     private const MAX_MARKERS_PER_GROUP = 1500;
 
     /**
@@ -61,7 +69,8 @@ final class DayZMapMarkerService
         'animal_hen'      => ['label' => 'Hens',                'icon' => '🐔', 'color' => '#fda4af', 'default' => false],
         'animal_hare'     => ['label' => 'Hares',               'icon' => '🐇', 'color' => '#ddd6fe', 'default' => false],
         'animal_other'    => ['label' => 'Other animals',       'icon' => '🐾', 'color' => '#cbd5e1', 'default' => false],
-        'event'           => ['label' => 'Other events',        'icon' => '📍', 'color' => '#e879f9', 'default' => false],
+        'event'           => ['label' => 'Other events',         'icon' => '📍', 'color' => '#e879f9', 'default' => false],
+        'trader'          => ['label' => 'Traders',              'icon' => '🛒', 'color' => '#34d399', 'default' => true],
     ];
 
     /**
@@ -197,7 +206,7 @@ final class DayZMapMarkerService
             $result = $this->staleCache->remember(
                 $cacheKey,
                 self::CACHE_SECONDS,
-                self::CACHE_SECONDS * 20,
+                self::CACHE_STALE_SECONDS,
                 fn (): array => $this->buildMarkers($server, $mapName),
             );
 
@@ -228,6 +237,8 @@ final class DayZMapMarkerService
             $this->collectEventSpawns($server, $missionPath, $markers, $sources);
             $this->collectPlayerSpawns($server, $missionPath, $markers, $sources);
         }
+
+        $this->collectTraders($server, $markers, $sources);
 
         $result = [
             'status' => $missionPath === '' ? 'mission_not_found' : 'ok',
@@ -567,6 +578,77 @@ final class DayZMapMarkerService
         $text = preg_replace('/(?<=[a-z])(?=[A-Z])/', ' ', $text) ?? $text;
 
         return ucwords(trim(preg_replace('/\s+/', ' ', $text) ?? $text));
+    }
+
+    /**
+     * Reads `/profiles/Trader/TraderObjects.txt` (Dr. Jones Trader mod) and
+     * adds each NPC object's position as a Trader marker.
+     *
+     * The file uses a Enfusion-derived text format where every entry is:
+     *
+     *   ClassName {
+     *       Position = {x, y, z};   // or: Position = x y z;
+     *       …
+     *   }
+     *
+     * DayZ world coordinates: x = east-west, y = height, z = north-south.
+     * The live map plots (x, z) — height (y) is ignored.
+     *
+     * @param array<string, list<array<string, mixed>>> $markers
+     * @param list<string> $sources
+     */
+    private function collectTraders(mixed $server, array &$markers, array &$sources): void
+    {
+        $path = '/profiles/Trader/TraderObjects.txt';
+
+        try {
+            $raw = $this->gateway->readFile($server, $path);
+        } catch (Throwable) {
+            return;
+        }
+
+        if (!is_string($raw) || trim($raw) === '') {
+            return;
+        }
+
+        // Match blocks of the form:
+        //   ClassName {
+        //       …
+        //       Position = {x, y, z};
+        //       …
+        //   }
+        // Handles both comma-separated and space-separated coordinate values,
+        // and both brace-wrapped ({x,y,z}) and bare (x y z) forms.
+        $pattern = '/^(\w+)\s*\{[^{}]*?Position\s*=\s*\{?\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)\s*[,\s]\s*([\d.+-]+)/im';
+
+        if (preg_match_all($pattern, $raw, $matches, PREG_SET_ORDER) === false
+            || $matches === []) {
+            return;
+        }
+
+        $added = 0;
+
+        foreach ($matches as $match) {
+            $className = trim($match[1]);
+            $x = (float) $match[2];
+            $z = (float) $match[4]; // index 3 = y (height), index 4 = z
+
+            if ($x === 0.0 && $z === 0.0) {
+                continue;
+            }
+
+            $markers['trader'][] = [
+                'name'   => $this->humanise($className),
+                'x'      => $x,
+                'z'      => $z,
+                'detail' => 'Trader NPC',
+            ];
+            $added++;
+        }
+
+        if ($added > 0) {
+            $sources[] = $path;
+        }
     }
 
     private function missionPath(mixed $server): string
