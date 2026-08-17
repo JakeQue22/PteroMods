@@ -30,8 +30,8 @@
                         </span>
                         <span class="dz-text-muted">
                             {{ $entry['size_display'] }}
-                            @if ($entry['modified'] !== '')
-                                · {{ $entry['modified'] }}
+                            @if (($entry['modified_display'] ?? '') !== '')
+                                · {{ $entry['modified_display'] }}
                             @endif
                         </span>
                     </li>

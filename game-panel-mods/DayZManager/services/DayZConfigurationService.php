@@ -23,7 +23,7 @@ final class DayZConfigurationService
     private const SCAN_DIRECTORIES = [
         '/'          => 'Server root',
         '/config'    => 'Config',
-        '/profiles'  => 'Profiles',
+        '/profiles'  => 'Mods',
         '/battleye'  => 'BattlEye',
         '/mpmissions' => 'Missions',
     ];
@@ -152,7 +152,7 @@ final class DayZConfigurationService
         foreach ($this->directories($model) as $directory => $label) {
             $entries = $this->entriesIn($model, $directory, $serverId);
 
-            if ($entries === [] && !str_starts_with($directory, '/profiles')) {
+            if ($entries === []) {
                 continue;
             }
 
@@ -297,7 +297,7 @@ final class DayZConfigurationService
                 $seen[$path] = true;
                 $pending[] = $path;
                 $relative = trim(substr($path, strlen('/profiles')), '/');
-                $directories[$path] = 'Profiles · ' . str_replace('/', ' · ', $relative);
+                $directories[$path] = 'Mods · ' . str_replace('/', ' · ', $relative);
 
                 if (count($seen) >= self::MAX_PROFILE_DIRECTORIES) {
                     break;

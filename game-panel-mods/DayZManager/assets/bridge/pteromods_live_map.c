@@ -317,6 +317,8 @@ class PteroMods_LiveMapBridge
             slotNames.Insert("Hips");
             slotNames.Insert("Feet");
             slotNames.Insert("Legs");
+            slotNames.Insert("Shoulder");
+            slotNames.Insert("Melee");
             foreach (string slotName : slotNames)
             {
                 EntityAI attachment = man.FindAttachmentBySlotName(slotName);

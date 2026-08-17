@@ -169,6 +169,7 @@ final class DayZLogsService
     {
         return $file + [
             'directory' => rtrim(dirname($file['path']), '/') ?: '/',
+            'modified_display' => $this->formatModified((string) ($file['modified'] ?? '')),
             'size_display' => $this->formatBytes($file['size']),
             'edit_url' => '/server/' . rawurlencode($serverId) . '/files/edit#' . $this->encodePath($file['path']),
         ];
@@ -196,5 +197,18 @@ final class DayZLogsService
         $power = min((int) floor(log((float) $bytes, 1024)), count($units) - 1);
 
         return sprintf('%.1f %s', $bytes / (1024 ** $power), $units[$power]);
+    }
+
+    private function formatModified(string $value): string
+    {
+        $value = trim($value);
+
+        if ($value === '') {
+            return '';
+        }
+
+        $timestamp = strtotime($value);
+
+        return $timestamp === false ? $value : date('d-m-Y H:i', $timestamp);
     }
 }

@@ -953,7 +953,7 @@
         var containerItems = items.filter(function (i) { return i.isContainerContent; });
 
         // Group items by slot for readability.
-        var slotOrder = ['Hands', 'Headgear', 'Mask', 'Eyewear', 'Gloves', 'Armband', 'Body', 'Legs', 'Vest', 'Hips', 'Back', 'Feet', 'Shoulder', ''];
+        var slotOrder = ['Hands', 'Headgear', 'Mask', 'Eyewear', 'Gloves', 'Armband', 'Body', 'Legs', 'Vest', 'Hips', 'Back', 'Feet', 'Shoulder', 'Melee', ''];
         var bySlot = {};
         equippedItems.forEach(function (item) {
             var s = item.slot || '';
