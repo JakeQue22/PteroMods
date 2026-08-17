@@ -104,7 +104,7 @@ final class DayZLogsService
     /**
      * @return list<array{name:string,path:string,size:int,modified:string}>
      */
-    private function filesIn(mixed $server, string $root, bool $recursive, array $extensions = ['log', 'rpt']): array
+    private function filesIn(mixed $server, string $root, bool $recursive, array $extensions = ['log', 'rpt', 'adm']): array
     {
         $files = [];
         $pending = [rtrim($root, '/') ?: '/'];
