@@ -631,6 +631,9 @@ final class DayZMapMarkerService
             return;
         }
 
+        // Strip UTF-8 BOM if present; json_decode fails silently on BOM-prefixed input.
+        $raw = ltrim($raw, "\xef\xbb\xbf");
+
         $decoded = json_decode($raw, true);
 
         if (!is_array($decoded)) {

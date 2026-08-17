@@ -360,7 +360,6 @@ final class DayZServerService
                 // delayed), fire the restart immediately without sending
                 // retrospective warning messages that would spam global chat.
                 if ($now >= $timedNext) {
-                    $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
                     $this->clearTimedRestart($serverId);
                     $this->storeLastRestart($serverId, $now);
 
@@ -402,12 +401,7 @@ final class DayZServerService
                 );
 
                 if ($warning !== null) {
-                    $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule), $warning['remaining_minutes']);
-
-                    if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
-                        $results[] = $message;
-                        $timedWarningsSent = $warning['sent'];
-                    }
+                    $timedWarningsSent = $warning['sent'];
                 }
 
                 if ($timedWarningsSent !== $this->parseWarnings((string) ($schedule['timed_warnings_sent'] ?? ''))) {
@@ -458,9 +452,7 @@ final class DayZServerService
         $lastRestart = null;
 
         if ($now >= $next) {
-            // Restart time has passed; restart immediately without sending
-            // any retrospective warning messages.
-            $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
+            // Restart time has passed; restart immediately.
             $lastRestart = $now;
 
             // Advance in whole intervals (anchored to the configured start time
@@ -476,12 +468,7 @@ final class DayZServerService
             $warning = $this->dueWarning($next, $now, $this->enabledWarningMinutes($schedule), $warningsSent);
 
             if ($warning !== null) {
-                $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule), $warning['remaining_minutes']);
-
-                if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
-                    $results[] = $message;
-                    $warningsSent = $warning['sent'];
-                }
+                $warningsSent = $warning['sent'];
             }
         }
 
@@ -1303,24 +1290,33 @@ final class DayZServerService
 
         $warnings = $this->enabledWarningMinutes($schedule);
         $messages = $this->warningMessages($schedule);
-        $remainingMinutes = max(0, (int) ceil(($targetTimestamp - time()) / 60));
+
+        // Use last_restart_at as the server start anchor so delays are
+        // computed as seconds from when the server actually booted, which is
+        // what DayZ's messages.xml <delay> field expects.  Fall back to the
+        // current time when no restart has been recorded yet (first cycle).
+        $serverStartedAt = $this->hasScheduleColumn('last_restart_at')
+            ? strtotime((string) ($schedule['last_restart_at'] ?? ''))
+            : false;
+        $serverStartTime = ($serverStartedAt !== false && $serverStartedAt > 0) ? $serverStartedAt : time();
+
         $entries = [];
 
         foreach ($warnings as $warningMinutes) {
-            $delayMinutes = $remainingMinutes - $warningMinutes;
+            $delaySeconds = $targetTimestamp - $warningMinutes * 60 - $serverStartTime;
 
-            if ($delayMinutes < 0) {
+            if ($delaySeconds < 0) {
                 continue;
             }
 
             $entries[] = [
-                'delay' => $delayMinutes,
+                'delay' => (int) $delaySeconds,
                 'text' => $this->plainRestartMessage($warningMinutes, $messages),
             ];
         }
 
         $entries[] = [
-            'delay' => $remainingMinutes,
+            'delay' => max(0, (int) ($targetTimestamp - $serverStartTime)),
             'text' => 'Server restarting now.',
         ];
 
