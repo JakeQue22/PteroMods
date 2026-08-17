@@ -122,6 +122,13 @@
                             N/A
                         @endif
                     </dd></div>
+                    <div><dt>Money</dt><dd>
+                        @if (($player['bank_money'] ?? null) !== null)
+                            {{ number_format((float) $player['bank_money'], 2) }}
+                        @else
+                            —
+                        @endif
+                    </dd></div>
                     @if (!empty($player['first_seen_at']))
                         <div><dt>First seen</dt><dd>{{ $fmtDate($player['first_seen_at']) }}</dd></div>
                     @endif
@@ -145,7 +152,7 @@
                         <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroViewInventory({{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($inventoryJson, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">View Inventory</button>
                     @endif
                     @if (!$isProtectedPlayer && !empty($player['online']) && $kickId)
-                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $kickId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
+                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $kickId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
                     @endif
                     @if (!$isProtectedPlayer)
                         @if (!empty($listFlags['ban']) && !empty($listEntryIds['ban']))
@@ -180,6 +187,9 @@
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
                     @endif
                     <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
+                    @if ($steam64)
+                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroAlterBankMoney({{ json_encode((string) $steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode(($player['bank_money'] ?? null) !== null ? (string) $player['bank_money'] : '', JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Alter Bank Money</button>
+                    @endif
                 </div>
                 <p class="dz-status dz-hidden dz-player-action-status" style="margin-top:0.75rem;"></p>
             </div>
@@ -523,10 +533,10 @@
             .catch(function () { setStatus('Request failed.', false, playerActionId); });
     };
 
-    window.pteroKickPlayer = function (playerId, playerActionId) {
+    window.pteroKickPlayer = function (playerId, playerActionId, playerName) {
         if (!confirm('Kick this player from the server now?')) { return; }
         setStatus('Sending kick command…', undefined, playerActionId);
-        req('POST', '/dayz/player-actions/kick', { player_id: playerId })
+        req('POST', '/dayz/player-actions/kick', { player_id: playerId, player_name: playerName || '' })
             .then(function (d) { setStatus(d.message || (d.status === 'dispatched' ? 'Kick command sent.' : 'Kick failed.'), d.status === 'dispatched' ? undefined : false, playerActionId); })
             .catch(function () { setStatus('Kick request failed.', false, playerActionId); });
     };
@@ -701,8 +711,32 @@
         }
     });
 
-    window.pteroRemoveGiveMoney = function (queueId, playerName, itemClass, quantity) {
-        if (!queueId) { return; }
+    window.pteroAlterBankMoney = function (steam64, playerName, currentMoney, playerActionId) {
+        if (!steam64) { return; }
+        var current = (currentMoney === null || currentMoney === undefined) ? '' : String(currentMoney);
+        var answer = window.prompt('Set LB Banking money for "' + playerName + '"'
+            + (current !== '' ? '\n\nCurrent balance: ' + current : '\n\nNo balance could be read from LB Banking.'), current);
+        if (answer === null) { return; }
+        answer = String(answer).trim();
+        if (answer === '' || isNaN(Number(answer))) {
+            setStatus('Enter a numeric bank money amount.', false, playerActionId);
+            return;
+        }
+        setStatus('Updating bank money…', undefined, playerActionId);
+        req('POST', '/dayz/player-actions/bank-money', {
+            steam64: steam64,
+            player_name: playerName,
+            amount: Number(answer)
+        })
+            .then(function (d) {
+                var ok = d.status === 'saved';
+                setStatus(d.message || (ok ? 'Bank money updated.' : 'Failed to update bank money.'), ok ? undefined : false, playerActionId);
+                if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
+            })
+            .catch(function () { setStatus('Bank money request failed.', false, playerActionId); });
+    };
+
+    window.pteroRemoveGiveMoney = function (queueId, playerName, itemClass, quantity) {        if (!queueId) { return; }
         if (!confirm('Remove ' + quantity + '× ' + itemClass + ' queued for "' + playerName + '"?')) { return; }
         setStatus('Removing queued give money…', undefined, 'give-money-queue');
         req('DELETE', '/dayz/player-actions/give-money/' + encodeURIComponent(queueId), null)

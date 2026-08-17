@@ -43,6 +43,7 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/players/superadmin',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@addSuperadmin'];
     $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/players/superadmin/{id}',   'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removeSuperadmin'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@giveMoney'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/bank-money', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@alterBankMoney'];
     $routes[] = ['method' => 'GET',    'uri' => $prefix . '/player-actions/give-money/{id}/bridge-fulfil',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@bridgeFulfillGiveMoney', 'signed_public' => true];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money/{id}/bridge-fulfil',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@bridgeFulfillGiveMoney', 'signed_public' => true];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money/{id}/fulfil',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@fulfillGiveMoney'];

@@ -27,6 +27,7 @@ final class DayZPlayerDirectoryService
         private readonly DayZPersistencePlayerService $persistence = new DayZPersistencePlayerService(),
         private readonly DayZObservedPlayerService $observed = new DayZObservedPlayerService(),
         private readonly DayZPlayerService $lists = new DayZPlayerService(),
+        private readonly DayZBankingService $banking = new DayZBankingService(),
     ) {
     }
 
@@ -40,6 +41,7 @@ final class DayZPlayerDirectoryService
         $observed = $this->observed->activity($server, $livePlayers);
         $removedIds = $this->observed->removedIdsForServer($server);
         $listFlags = $this->listFlags();
+        $bankBalances = $this->banking->balances($server);
 
         $players = [];
         $byName = [];
@@ -255,6 +257,11 @@ final class DayZPlayerDirectoryService
             ];
             $players[$key]['steam_profile_url'] = ($player['steam64'] ?? null) !== null
                 ? 'https://steamcommunity.com/profiles/' . $player['steam64']
+                : null;
+
+            $steam64 = trim((string) ($player['steam64'] ?? ''));
+            $players[$key]['bank_money'] = $steam64 !== '' && array_key_exists($steam64, $bankBalances)
+                ? $bankBalances[$steam64]
                 : null;
         }
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
+use GamePanelMods\DayZManager\Services\DayZAdminActionLogService;
+use GamePanelMods\DayZManager\Services\DayZBankingService;
 use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZGiveMoneyService;
 use GamePanelMods\DayZManager\Services\DayZInventoryItemResolverService;
@@ -34,6 +36,8 @@ final class DayZPlayerController
         private readonly DayZVppAdminService $vppAdmin = new DayZVppAdminService(),
         private readonly DayZGiveMoneyService $giveMoneySvc = new DayZGiveMoneyService(),
         private readonly DayZInventoryItemResolverService $inventoryResolver = new DayZInventoryItemResolverService(),
+        private readonly DayZBankingService $banking = new DayZBankingService(),
+        private readonly DayZAdminActionLogService $adminLog = new DayZAdminActionLogService(),
     ) {
     }
 
@@ -107,7 +111,15 @@ final class DayZPlayerController
         $addedBy = $addedBy !== '' ? $addedBy : $this->actorName($this->context->stringInput('added_by'));
         $nickname = $this->context->stringInput('nickname');
 
-        return $this->service->add($listType, $playerId, $note, $addedBy, $nickname, $model);
+        $result = $this->service->add($listType, $playerId, $note, $addedBy, $nickname, $model);
+
+        if ($listType === 'ban' && ($result['status'] ?? '') === 'saved') {
+            $this->adminLog->log($model, 'Ban', $this->actorName(), $nickname, $playerId, array_filter([
+                'Note' => $note,
+            ], static fn (string $value): bool => $value !== ''));
+        }
+
+        return $result;
     }
 
     /**
@@ -161,7 +173,13 @@ final class DayZPlayerController
             $model = $this->authoriseManage($server);
             $playerId = $this->context->stringInput('player_id');
 
-            return $this->observedPlayers->kick($model, $playerId);
+            $result = $this->observedPlayers->kick($model, $playerId);
+
+            if (($result['status'] ?? '') === 'dispatched') {
+                $this->adminLog->log($model, 'Kick', $this->actorName(), $this->context->stringInput('player_name'), $playerId);
+            }
+
+            return $result;
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
@@ -217,7 +235,49 @@ final class DayZPlayerController
             $playerName   = $this->context->stringInput('player_name');
             $playerUid    = $this->context->stringInput('player_uid');
 
-            return $this->giveMoneySvc->give($model, $playerId, $denomination, $playerName, $quantity, $playerUid);
+            $result = $this->giveMoneySvc->give($model, $playerId, $denomination, $playerName, $quantity, $playerUid);
+
+            if (($result['status'] ?? '') === 'queued') {
+                $this->adminLog->log($model, 'Give Money', $this->actorName(), $playerName, $playerId, [
+                    'Item' => (string) ($result['item_class'] ?? ''),
+                    'Quantity' => (string) ($result['quantity'] ?? $quantity),
+                    'Denomination' => (string) $denomination,
+                ]);
+            }
+
+            return $result;
+        } catch (Throwable $exception) {
+            return ['status' => 'error', 'message' => $exception->getMessage()];
+        }
+    }
+
+    /**
+     * Sets a player's LB Banking balance to a new amount.
+     *
+     * @return array<string, mixed>
+     */
+    public function alterBankMoney(mixed $server = null): array
+    {
+        try {
+            $model = $this->authoriseManage($server);
+            $steam64 = $this->context->stringInput('steam64');
+            $playerName = $this->context->stringInput('player_name');
+            $amountInput = trim($this->context->stringInput('amount'));
+
+            if ($amountInput === '' || !is_numeric($amountInput)) {
+                return ['status' => 'error', 'message' => 'A numeric bank money amount is required.'];
+            }
+
+            $result = $this->banking->setBalance($model, $steam64, (float) $amountInput);
+
+            if (($result['status'] ?? '') === 'saved') {
+                $this->adminLog->log($model, 'Alter Bank Money', $this->actorName(), $playerName, $steam64, [
+                    'Previous currentMoney' => $result['previous_money'] ?? 'unknown',
+                    'New currentMoney' => $result['current_money'] ?? '',
+                ]);
+            }
+
+            return $result;
         } catch (Throwable $exception) {
             return ['status' => 'error', 'message' => $exception->getMessage()];
         }
