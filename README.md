@@ -502,7 +502,7 @@ the client application re-renders its navigation.
 
 ### Live Map
 
-The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable.
+The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable. VPP airdrops from `/profiles/VPPMapAirdrop.json` are shown using `M_MARKER_NAME` and `M_POSITION`.
 
 #### How it works
 
