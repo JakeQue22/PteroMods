@@ -37,6 +37,14 @@ final class DayZMapMarkerService
 
     private const MAX_MARKERS_PER_GROUP = 1500;
 
+    /** Known airdrop marker/location files, probed before scanning `/profiles`. */
+    private const AIRDROP_PATHS = [
+        '/profiles/VPPMapAirdrop.json',
+        '/profiles/VPPAdminTools/VPPMapAirdrop.json',
+        '/profiles/VPPAdminTools/Config/VPPMapAirdrop.json',
+        '/profiles/Airdrop/AirdropSettings.json',
+    ];
+
     /**
      * Marker categories, in the order they are listed in the layer control.
      *
@@ -624,52 +632,150 @@ final class DayZMapMarkerService
      */
     private function collectAirdrops(mixed $server, array &$markers, array &$sources): void
     {
-        $path = '/profiles/VPPMapAirdrop.json';
-        $raw = $this->gateway->readFile($server, $path);
+        $seen = [];
 
-        if ($raw === null || trim($raw) === '') {
-            return;
-        }
+        foreach ($this->airdropFilePaths($server) as $path) {
+            try {
+                $raw = $this->gateway->readFile($server, $path);
+            } catch (Throwable) {
+                continue;
+            }
 
-        // Strip UTF-8 BOM if present; json_decode fails silently on BOM-prefixed input.
-        if (str_starts_with($raw, "\xef\xbb\xbf")) {
-            $raw = substr($raw, 3);
-        }
+            if (!is_string($raw) || trim($raw) === '') {
+                continue;
+            }
 
-        $decoded = json_decode($raw, true);
+            // Strip UTF-8 BOM if present; json_decode fails silently on BOM-prefixed input.
+            if (str_starts_with($raw, "\xef\xbb\xbf")) {
+                $raw = substr($raw, 3);
+            }
 
-        if (!is_array($decoded)) {
-            return;
-        }
+            $decoded = json_decode($raw, true);
 
-        $added = 0;
-        $walk = function (array $node) use (&$walk, &$markers, &$added): void {
-            if (array_key_exists('M_MARKER_NAME', $node) && array_key_exists('M_POSITION', $node)) {
-                $position = $this->airdropPosition($node['M_POSITION']);
+            if (!is_array($decoded)) {
+                continue;
+            }
+
+            $added = 0;
+            $walk = function (array $node) use (&$walk, &$markers, &$added, &$seen): void {
+                $position = $this->airdropNodePosition($node);
 
                 if ($position !== null) {
-                    $name = trim((string) $node['M_MARKER_NAME']);
-                    $markers['airdrop'][] = [
-                        'name' => $name !== '' ? $name : 'Airdrop',
-                        'x' => $position[0],
-                        'z' => $position[1],
-                        'detail' => 'VPP airdrop',
-                    ];
-                    $added++;
-                }
-            }
+                    $name = $this->airdropNodeName($node);
+                    $key = strtolower($name) . '|' . round($position[0], 1) . '|' . round($position[1], 1);
 
-            foreach ($node as $value) {
-                if (is_array($value)) {
-                    $walk($value);
+                    if (!isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $markers['airdrop'][] = [
+                            'name' => $name,
+                            'x' => $position[0],
+                            'z' => $position[1],
+                            'detail' => 'Airdrop location',
+                        ];
+                        $added++;
+                    }
                 }
-            }
-        };
-        $walk($decoded);
 
-        if ($added > 0) {
-            $sources[] = $path;
+                foreach ($node as $value) {
+                    if (is_array($value)) {
+                        $walk($value);
+                    }
+                }
+            };
+            $walk($decoded);
+
+            if ($added > 0) {
+                $sources[] = $path;
+            }
         }
+    }
+
+    /**
+     * Airdrop mods write their marker/location file to several different places
+     * (VPP Admin Tools, the standalone Airdrop mod, custom mod folders), so the
+     * known paths are probed first and `/profiles` is then scanned (two levels
+     * deep) for any other JSON file whose name mentions "airdrop".
+     *
+     * @return list<string>
+     */
+    private function airdropFilePaths(mixed $server): array
+    {
+        $paths = self::AIRDROP_PATHS;
+        $pending = ['/profiles'];
+        $depth = 0;
+
+        while ($pending !== [] && $depth < 2) {
+            $next = [];
+
+            foreach ($pending as $directory) {
+                try {
+                    $entries = $this->gateway->listDirectory($server, $directory);
+                } catch (Throwable) {
+                    continue;
+                }
+
+                foreach ($entries as $entry) {
+                    $name = trim((string) ($entry['name'] ?? ''));
+
+                    if ($name === '') {
+                        continue;
+                    }
+
+                    $path = rtrim($directory, '/') . '/' . $name;
+
+                    if ($entry['directory'] ?? false) {
+                        $next[] = $path;
+                        continue;
+                    }
+
+                    if (stripos($name, 'airdrop') !== false
+                        && strtolower((string) pathinfo($name, PATHINFO_EXTENSION)) === 'json'
+                    ) {
+                        $paths[] = $path;
+                    }
+                }
+            }
+
+            $pending = $next;
+            $depth++;
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
+     * @param array<mixed> $node
+     * @return array{0:float,1:float}|null
+     */
+    private function airdropNodePosition(array $node): ?array
+    {
+        foreach (['M_POSITION', 'Position', 'position', 'POSITION', 'pos', 'Pos', 'Coordinates', 'coordinates'] as $key) {
+            if (array_key_exists($key, $node)) {
+                $position = $this->airdropPosition($node[$key]);
+
+                if ($position !== null) {
+                    return $position;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<mixed> $node
+     */
+    private function airdropNodeName(array $node): string
+    {
+        foreach (['M_MARKER_NAME', 'MarkerName', 'markerName', 'Name', 'name', 'Location', 'location', 'Title', 'title'] as $key) {
+            $value = $node[$key] ?? null;
+
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return 'Airdrop';
     }
 
     /**

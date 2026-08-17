@@ -24,6 +24,7 @@ final class DayZLogsService
         $groups = [
             'errors' => $this->group('errors', 'Error Logs', '/profiles', $serverId),
             'server' => $this->group('server', 'Server Logs', '/profiles', $serverId),
+            'script' => $this->group('script', 'Script Logs', '/profiles', $serverId),
             'admin' => $this->group('admin', 'Admin Logs', '/profiles/VPPAdminTools/Logging', $serverId),
             'trader' => $this->group('trader', 'Trader Logs', '/profiles', $serverId),
             'airdrop' => $this->group('airdrop', 'Airdrop Logs', '/profiles/Airdrop/Logs', $serverId),
@@ -34,7 +35,11 @@ final class DayZLogsService
                 continue;
             }
 
-            $key = $this->isErrorLog($entry['name']) ? 'errors' : 'server';
+            $key = match (true) {
+                $this->isErrorLog($entry['name']) => 'errors',
+                $this->isScriptLog($entry['name']) => 'script',
+                default => 'server',
+            };
             $groups[$key]['entries'][] = $this->entry($entry, $serverId);
         }
 
@@ -159,6 +164,11 @@ final class DayZLogsService
     private function isTraderLog(string $name): bool
     {
         return str_starts_with(strtoupper($name), 'TM');
+    }
+
+    private function isScriptLog(string $name): bool
+    {
+        return str_starts_with(strtolower($name), 'script');
     }
 
     /**

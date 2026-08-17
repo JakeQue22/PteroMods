@@ -30,7 +30,7 @@ final class DayZConfigurationService
 
     /** Extensions considered configuration/content files. */
     private const CONFIG_EXTENSIONS = ['cfg', 'xml', 'txt', 'json', 'ini', 'conf', 'bat', 'sh', 'c'];
-    private const PROFILE_EXCLUDED_EXTENSIONS = ['log', 'mdmp', 'rpt', 'adm'];
+    private const PROFILE_EXCLUDED_EXTENSIONS = ['log', 'mdmp', 'rpt', 'adm', 'ch', 'bin', 'vpp'];
 
     private const MAX_FILES_PER_DIRECTORY = 200;
     private const MAX_PROFILE_DIRECTORIES = 500;
@@ -288,6 +288,11 @@ final class DayZConfigurationService
                     continue;
                 }
 
+                // Log folders belong on the Logs tab; hide them (and their children) here.
+                if ($this->isLogDirectory((string) $entry['name'])) {
+                    continue;
+                }
+
                 $path = rtrim($parent, '/') . '/' . $entry['name'];
 
                 if (isset($seen[$path])) {
@@ -362,12 +367,22 @@ final class DayZConfigurationService
     private function isVisibleFile(string $directory, string $name): bool
     {
         if (!str_starts_with($directory, '/profiles')) {
-            return $this->isConfigurationFile($name);
+            return $this->isConfigurationFile($name) && !$this->isExcludedExtension($name);
         }
 
+        return !$this->isExcludedExtension($name);
+    }
+
+    private function isExcludedExtension(string $name): bool
+    {
         $extension = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
 
-        return !in_array($extension, self::PROFILE_EXCLUDED_EXTENSIONS, true);
+        return in_array($extension, self::PROFILE_EXCLUDED_EXTENSIONS, true);
+    }
+
+    private function isLogDirectory(string $name): bool
+    {
+        return stripos($name, 'log') !== false;
     }
 
     /**

@@ -66,6 +66,43 @@ final class DayZInventoryItemResolverService
         'worms' => 'Worm',
     ];
 
+    /**
+     * Items the wikis do not resolve reliably, pinned to a verified page/image.
+     *
+     * Keys are normalised class names, internal ids or item names.
+     *
+     * @var array<string, array{display_name:string,wiki_title:string,wiki_url:string,image_url:string,image_name:string,category:string,type:string}>
+     */
+    private const MANUAL_RESOLUTIONS = [
+        'worm' => [
+            'display_name' => 'Earthworm',
+            'wiki_title' => 'Earthworm',
+            'wiki_url' => 'https://dayz.fandom.com/wiki/Earthworm',
+            'image_url' => 'https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f5/Earthworm.png',
+            'image_name' => 'Earthworm.png',
+            'category' => 'Bait',
+            'type' => 'Item',
+        ],
+        'worms' => [
+            'display_name' => 'Earthworm',
+            'wiki_title' => 'Earthworm',
+            'wiki_url' => 'https://dayz.fandom.com/wiki/Earthworm',
+            'image_url' => 'https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f5/Earthworm.png',
+            'image_name' => 'Earthworm.png',
+            'category' => 'Bait',
+            'type' => 'Item',
+        ],
+        'earthworm' => [
+            'display_name' => 'Earthworm',
+            'wiki_title' => 'Earthworm',
+            'wiki_url' => 'https://dayz.fandom.com/wiki/Earthworm',
+            'image_url' => 'https://static.wikia.nocookie.net/dayz_gamepedia/images/f/f5/Earthworm.png',
+            'image_name' => 'Earthworm.png',
+            'category' => 'Bait',
+            'type' => 'Item',
+        ],
+    ];
+
     /** @var list<string> */
     private const GENERIC_IMAGE_TERMS = [
         'logo',
@@ -142,6 +179,13 @@ final class DayZInventoryItemResolverService
             $lookupKey = $normalized['lookup_key'];
 
             if (isset($resolved[$lookupKey])) {
+                continue;
+            }
+
+            $manual = $this->manualResolution($normalized);
+
+            if ($manual !== null) {
+                $resolved[$lookupKey] = $manual;
                 continue;
             }
 
@@ -353,6 +397,53 @@ final class DayZInventoryItemResolverService
             ],
             'refreshed_at' => date('Y-m-d H:i:s'),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     * @return array<string, mixed>|null
+     */
+    private function manualResolution(array $item): ?array
+    {
+        $candidates = [
+            (string) ($item['class_name'] ?? ''),
+            (string) ($item['base_class_name'] ?? ''),
+            (string) ($item['name'] ?? ''),
+            (string) ($item['fallback_name'] ?? ''),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $key = $this->normalizeLookupValue($candidate);
+
+            if ($key === '' || !isset(self::MANUAL_RESOLUTIONS[$key])) {
+                continue;
+            }
+
+            $manual = self::MANUAL_RESOLUTIONS[$key];
+
+            return [
+                'lookup_key' => $item['lookup_key'],
+                'resolved' => true,
+                'display_name' => $manual['display_name'],
+                'canonical_name' => $manual['display_name'],
+                'wiki_title' => $manual['wiki_title'],
+                'wiki_url' => $manual['wiki_url'],
+                'image_url' => $manual['image_url'],
+                'image_name' => $manual['image_name'],
+                'variant' => (string) ($item['variant_label'] ?? ''),
+                'classname' => (string) ($item['class_name'] ?? ''),
+                'internal_id' => (string) ($item['internal_id'] ?? ''),
+                'category' => $manual['category'],
+                'type' => $manual['type'],
+                'aliases' => $this->dedupeStrings([$manual['display_name'], $candidate]),
+                'matched_by' => 'manual',
+                'confidence' => 100,
+                'verification' => ['reason' => 'Pinned by the DayZ Manager item override list.'],
+                'refreshed_at' => date('Y-m-d H:i:s'),
+            ];
+        }
+
+        return null;
     }
 
     /**
