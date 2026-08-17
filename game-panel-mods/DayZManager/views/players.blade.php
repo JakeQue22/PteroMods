@@ -847,7 +847,11 @@
             return '';
         }
 
-        function collectEntry(entry, parentSlot, parentClass) {
+        function isContainerKey(key) {
+            return ['contents', 'cargo', 'inventory', 'items', 'children', 'attachments', 'attached', 'pockets', 'storage', 'containers'].indexOf(String(key || '').toLowerCase()) !== -1;
+        }
+
+        function collectEntry(entry, parentSlot, parentClass, inContainer) {
             if (!entry || typeof entry !== 'object') { return; }
             var cls = stringField(entry, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
             var itemId = stringField(entry, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']);
@@ -859,7 +863,7 @@
                     className: cls,
                     itemId: itemId,
                     name: itemName,
-                    isContainerContent: !!parentSlot,
+                    isContainerContent: !!inContainer,
                     containerSlot: parentSlot || '',
                     containerClass: parentClass || ''
                 });
@@ -867,19 +871,32 @@
             ['contents', 'cargo', 'inventory', 'items', 'children', 'attachments', 'attached', 'pockets', 'storage', 'containers'].forEach(function (key) {
                 var value = entry[key];
                 if (Array.isArray(value)) {
-                    value.forEach(function (sub) { collectEntry(sub, slot || parentSlot || 'Unknown', cls || parentClass || ''); });
+                    value.forEach(function (sub) { collectEntry(sub, slot || parentSlot || 'Unknown', cls || parentClass || '', true); });
                     return;
                 }
                 if (value && typeof value === 'object') {
                     Object.keys(value).forEach(function (subKey) {
                         var nested = value[subKey];
                         if (Array.isArray(nested)) {
-                            nested.forEach(function (sub) { collectEntry(sub, slot || parentSlot || subKey || 'Unknown', cls || parentClass || ''); });
+                            nested.forEach(function (sub) { collectEntry(sub, slot || parentSlot || subKey || 'Unknown', cls || parentClass || '', true); });
                         } else {
-                            collectEntry(nested, slot || parentSlot || subKey || 'Unknown', cls || parentClass || '');
+                            collectEntry(nested, slot || parentSlot || subKey || 'Unknown', cls || parentClass || '', true);
                         }
                     });
                 }
+            });
+
+            Object.keys(entry).forEach(function (key) {
+                if (isContainerKey(key) || key === 'slot') { return; }
+                var value = entry[key];
+                if (!value || typeof value !== 'object') { return; }
+                if (Array.isArray(value)) {
+                    value.forEach(function (sub) {
+                        collectEntry(sub, slot || parentSlot || key || 'Unknown', cls || parentClass || '', !!inContainer);
+                    });
+                    return;
+                }
+                collectEntry(value, slot || parentSlot || key || 'Unknown', cls || parentClass || '', !!inContainer);
             });
         }
 
@@ -888,16 +905,16 @@
                 if (typeof entry === 'string' && entry !== '') {
                     items.push({ slot: '', className: entry, itemId: '', name: '', isContainerContent: false });
                 } else {
-                    collectEntry(entry, '', '');
+                    collectEntry(entry, '', '', false);
                 }
             });
         }
 
         if (items.length === 0) {
             // Deep-walk fallback for any other inventory structure.
-            (function walk(obj, parentSlot, parentClass) {
+            (function walk(obj, parentSlot, parentClass, inContainer) {
                 if (!obj || typeof obj !== 'object') { return; }
-                if (Array.isArray(obj)) { obj.forEach(function (v) { walk(v, parentSlot, parentClass); }); return; }
+                if (Array.isArray(obj)) { obj.forEach(function (v) { walk(v, parentSlot, parentClass, inContainer); }); return; }
                 var cls = stringField(obj, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
                 if (cls && typeof cls === 'string') {
                     items.push({
@@ -905,7 +922,7 @@
                         className: cls,
                         itemId: stringField(obj, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']),
                         name: stringField(obj, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']),
-                        isContainerContent: !!parentSlot,
+                        isContainerContent: !!inContainer,
                         containerSlot: parentSlot || '',
                         containerClass: parentClass || ''
                     });
@@ -913,10 +930,12 @@
                 Object.keys(obj).forEach(function (key) {
                     var value = obj[key];
                     if (!value || typeof value !== 'object') { return; }
-                    var nextSlot = obj.slot || parentSlot || ((key === 'cargo' || key === 'contents' || key === 'inventory' || key === 'items' || key === 'attachments') ? 'Unknown' : key);
-                    walk(value, nextSlot, cls || parentClass || '');
+                    var keyName = String(key || '').toLowerCase();
+                    var nextContainer = !!inContainer || isContainerKey(keyName);
+                    var nextSlot = obj.slot || parentSlot || (nextContainer ? 'Unknown' : key);
+                    walk(value, nextSlot, cls || parentClass || '', nextContainer);
                 });
-            }(parsed, '', ''));
+            }(parsed, '', '', false));
         }
 
         if (items.length === 0) {

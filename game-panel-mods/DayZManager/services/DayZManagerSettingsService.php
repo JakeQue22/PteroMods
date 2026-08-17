@@ -107,6 +107,11 @@ final class DayZManagerSettingsService
         'tm_general_log_retention_days' => 14,
 
         /**
+         * Number of days Trader (`TM*`) log files are kept before auto-scrub deletes them.
+         */
+        'trader_log_retention_days' => 14,
+
+        /**
          * Number of days `DayZServer_*.ADM` files are kept before auto-scrub deletes them.
          */
         'dzserver_adm_log_retention_days' => 14,
@@ -115,6 +120,21 @@ final class DayZManagerSettingsService
          * Number of days `DayZServer_*.RPT` files are kept before auto-scrub deletes them.
          */
         'dzserver_rpt_log_retention_days' => 14,
+
+        /**
+         * Number of days Admin log files are kept before auto-scrub deletes them.
+         */
+        'admin_log_retention_days' => 14,
+
+        /**
+         * Number of days Airdrop log files are kept before auto-scrub deletes them.
+         */
+        'airdrop_log_retention_days' => 14,
+
+        /**
+         * Number of days Code Lock log files are kept before auto-scrub deletes them.
+         */
+        'codelock_log_retention_days' => 14,
 
         /**
          * Shared secret used by the optional server-side DayZ live-map bridge.
@@ -181,8 +201,12 @@ final class DayZManagerSettingsService
         'script_log_retention_days' => 'script_*.log retention (days)',
         'crash_log_retention_days' => 'crash_*.log retention (days)',
         'tm_general_log_retention_days' => 'TM_GeneralLogs_*.log retention (days)',
+        'trader_log_retention_days' => 'Trader (TM*) log retention (days)',
         'dzserver_adm_log_retention_days' => 'DayZServer_*.ADM retention (days)',
         'dzserver_rpt_log_retention_days' => 'DayZServer_*.RPT retention (days)',
+        'admin_log_retention_days' => 'Admin logs retention (days)',
+        'airdrop_log_retention_days' => 'Airdrop logs retention (days)',
+        'codelock_log_retention_days' => 'Code Lock logs retention (days)',
         'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
         'live_map_tile_url' => 'Live Map tile URL template',
         'cache_fetch_timer_seconds' => 'Cache fetch timer (seconds)',
@@ -233,17 +257,26 @@ final class DayZManagerSettingsService
         'auto_scrub_profile_logs' =>
             'Disabled by default. When enabled, DayZ Manager checks `/profiles` every day and '
             . 'deletes old `script_*.log`, `crash_*.log`, `TM_GeneralLogs_*.log`, `DayZServer_*.ADM`, '
-            . 'and `DayZServer_*.RPT` files older than each type\'s configured retention window.',
+            . '`DayZServer_*.RPT`, Trader (`TM*`), Admin, Airdrop, and Code Lock logs older than each '
+            . 'type\'s configured retention window.',
         'script_log_retention_days' =>
             'How many days to keep `script_*.log` files before automatic cleanup removes them.',
         'crash_log_retention_days' =>
             'How many days to keep `crash_*.log` files before automatic cleanup removes them.',
         'tm_general_log_retention_days' =>
             'How many days to keep `TM_GeneralLogs_*.log` files before automatic cleanup removes them.',
+        'trader_log_retention_days' =>
+            'How many days to keep Trader (`TM*`) logs before automatic cleanup removes them.',
         'dzserver_adm_log_retention_days' =>
             'How many days to keep `DayZServer_*.ADM` files before automatic cleanup removes them.',
         'dzserver_rpt_log_retention_days' =>
             'How many days to keep `DayZServer_*.RPT` files before automatic cleanup removes them.',
+        'admin_log_retention_days' =>
+            'How many days to keep Admin logs in `/profiles/VPPAdminTools/Logging` before automatic cleanup removes them.',
+        'airdrop_log_retention_days' =>
+            'How many days to keep Airdrop logs in `/profiles/Airdrop/Logs` before automatic cleanup removes them.',
+        'codelock_log_retention_days' =>
+            'How many days to keep Code Lock logs in `/profiles/CodeLock/Logs` before automatic cleanup removes them.',
         'live_map_bridge_secret' =>
             'Optional shared secret for a server-side DayZ script to write player snapshots to '
             . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '

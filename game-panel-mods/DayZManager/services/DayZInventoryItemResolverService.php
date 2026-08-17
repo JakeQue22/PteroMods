@@ -56,9 +56,14 @@ final class DayZInventoryItemResolverService
 
     /** @var array<string, string> */
     private const ITEM_TITLE_ALIASES = [
+        'canned bacon' => 'Canned Bacon',
         'tactical bacon can' => 'Canned Bacon',
         'tactical bacon' => 'Canned Bacon',
         'cmn bacon can' => 'Canned Bacon',
+        'rag' => 'Rags',
+        'rags' => 'Rags',
+        'worm' => 'Worm',
+        'worms' => 'Worm',
     ];
 
     /** @var list<string> */
@@ -66,7 +71,6 @@ final class DayZInventoryItemResolverService
         'logo',
         'wiki',
         'favicon',
-        'icon',
         'navbox',
         'background',
         'banner',

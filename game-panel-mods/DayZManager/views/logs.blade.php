@@ -4,11 +4,15 @@
         DayZ and supported-mod <code>.log</code> and <code>.rpt</code> files are grouped below.
         Select a file to open it in the panel file viewer.
     </p>
+    <div class="dz-form" style="margin-top:0.75rem;">
+        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroDzLogsCollapseAll()">Collapse all</button>
+        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroDzLogsExpandAll()">Expand all</button>
+    </div>
 </section>
 
 @foreach ($groups as $group)
     <section class="dz-card">
-        <details open>
+        <details open data-log-group="{{ $group['key'] }}">
             <summary>
                 <h2 style="display:inline;">{{ $group['label'] }}</h2>
                 <span class="dz-text-muted" style="margin-left:.5rem;">({{ count($group['entries']) }} file(s))</span>
@@ -38,3 +42,58 @@
         </details>
     </section>
 @endforeach
+
+<script>
+(function () {
+    var details = Array.prototype.slice.call(document.querySelectorAll('details[data-log-group]'));
+    var storageKey = 'pteromods.dayz.logs.state:' + window.location.pathname;
+
+    function loadState() {
+        try {
+            var raw = window.localStorage.getItem(storageKey);
+            var parsed = raw ? JSON.parse(raw) : null;
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function saveState(state) {
+        try {
+            window.localStorage.setItem(storageKey, JSON.stringify(state));
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    function setAll(open) {
+        var state = loadState();
+        details.forEach(function (el) {
+            var key = el.getAttribute('data-log-group') || '';
+            el.open = open;
+            if (key !== '') {
+                state[key] = open;
+            }
+        });
+        saveState(state);
+    }
+
+    var state = loadState();
+    details.forEach(function (el) {
+        var key = el.getAttribute('data-log-group') || '';
+        if (key !== '' && Object.prototype.hasOwnProperty.call(state, key)) {
+            el.open = !!state[key];
+        }
+        el.addEventListener('toggle', function () {
+            var next = loadState();
+            if (key !== '') {
+                next[key] = el.open;
+                saveState(next);
+            }
+        });
+    });
+
+    window.pteroDzLogsCollapseAll = function () { setAll(false); };
+    window.pteroDzLogsExpandAll = function () { setAll(true); };
+}());
+</script>
