@@ -30,8 +30,10 @@ final class DayZConfigurationService
 
     /** Extensions considered configuration/content files. */
     private const CONFIG_EXTENSIONS = ['cfg', 'xml', 'txt', 'json', 'ini', 'conf', 'bat', 'sh', 'c'];
+    private const PROFILE_EXCLUDED_EXTENSIONS = ['log', 'mdmp', 'rpt', 'adm'];
 
     private const MAX_FILES_PER_DIRECTORY = 200;
+    private const MAX_PROFILE_DIRECTORIES = 500;
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
@@ -150,7 +152,7 @@ final class DayZConfigurationService
         foreach ($this->directories($model) as $directory => $label) {
             $entries = $this->entriesIn($model, $directory, $serverId);
 
-            if ($entries === []) {
+            if ($entries === [] && !str_starts_with($directory, '/profiles')) {
                 continue;
             }
 
@@ -275,6 +277,34 @@ final class DayZConfigurationService
             }
         }
 
+        $pending = ['/profiles'];
+        $seen = ['/profiles' => true];
+
+        while ($pending !== [] && count($seen) < self::MAX_PROFILE_DIRECTORIES) {
+            $parent = array_shift($pending);
+
+            foreach ($this->gateway->listDirectory($server, $parent) as $entry) {
+                if (!($entry['directory'] ?? false) || ($entry['name'] ?? '') === '') {
+                    continue;
+                }
+
+                $path = rtrim($parent, '/') . '/' . $entry['name'];
+
+                if (isset($seen[$path])) {
+                    continue;
+                }
+
+                $seen[$path] = true;
+                $pending[] = $path;
+                $relative = trim(substr($path, strlen('/profiles')), '/');
+                $directories[$path] = 'Profiles · ' . str_replace('/', ' · ', $relative);
+
+                if (count($seen) >= self::MAX_PROFILE_DIRECTORIES) {
+                    break;
+                }
+            }
+        }
+
         return $directories;
     }
 
@@ -290,7 +320,7 @@ final class DayZConfigurationService
                 break;
             }
 
-            if (!$entry['file'] || $entry['name'] === '' || !$this->isConfigurationFile($entry['name'])) {
+            if (!$entry['file'] || $entry['name'] === '' || !$this->isVisibleFile($directory, $entry['name'])) {
                 continue;
             }
 
@@ -327,6 +357,17 @@ final class DayZConfigurationService
         $extension = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
 
         return in_array($extension, self::CONFIG_EXTENSIONS, true);
+    }
+
+    private function isVisibleFile(string $directory, string $name): bool
+    {
+        if (!str_starts_with($directory, '/profiles')) {
+            return $this->isConfigurationFile($name);
+        }
+
+        $extension = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
+
+        return !in_array($extension, self::PROFILE_EXCLUDED_EXTENSIONS, true);
     }
 
     /**

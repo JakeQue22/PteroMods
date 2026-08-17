@@ -54,6 +54,13 @@ final class DayZInventoryItemResolverService
         'ButterflyRev' => 'Butterfly Reversed',
     ];
 
+    /** @var array<string, string> */
+    private const ITEM_TITLE_ALIASES = [
+        'tactical bacon can' => 'Canned Bacon',
+        'tactical bacon' => 'Canned Bacon',
+        'cmn bacon can' => 'Canned Bacon',
+    ];
+
     /** @var list<string> */
     private const GENERIC_IMAGE_TERMS = [
         'logo',
@@ -466,9 +473,12 @@ final class DayZInventoryItemResolverService
         $baseLabel = $baseClass !== '' ? $this->humanizeClassName($baseClass) : '';
         $variantKey = (string) ($item['variant_key'] ?? '');
         $variantAliases = $variantKey !== '' ? $this->variantSearchTerms($variantKey) : [];
+        $knownTitle = self::ITEM_TITLE_ALIASES[$this->normalizeForCompare($classLabel)]
+            ?? self::ITEM_TITLE_ALIASES[$this->normalizeForCompare($name)]
+            ?? '';
 
         $searchTerms = $this->dedupeStrings(array_merge(
-            [$className, str_replace('_', ' ', $className), $classLabel, $baseClass, $baseLabel, $name, $internalId],
+            [$knownTitle, $className, str_replace('_', ' ', $className), $classLabel, $baseClass, $baseLabel, $name, $internalId],
             $variantAliases === [] || $baseLabel === ''
                 ? []
                 : array_merge(
@@ -478,7 +488,7 @@ final class DayZInventoryItemResolverService
         ));
 
         $directTitles = $this->dedupeStrings(array_merge(
-            [$name, $classLabel, $baseLabel],
+            [$knownTitle, $name, $classLabel, $baseLabel],
             $variantAliases === [] || $baseLabel === ''
                 ? []
                 : array_merge(
@@ -504,6 +514,7 @@ final class DayZInventoryItemResolverService
             'internal_id' => $internalId,
             'internal_norm' => $this->normalizeForCompare($internalId),
             'fallback_name' => (string) ($item['fallback_name'] ?? 'Unknown item'),
+            'known_title_norm' => $this->normalizeForCompare($knownTitle),
             'search_terms' => $searchTerms,
             'direct_titles' => $directTitles,
         ];
@@ -593,6 +604,10 @@ final class DayZInventoryItemResolverService
             $score = 112;
             $matchedBy = 'internal_id';
             $titleMatch = 'wikitext-internal-id';
+        } elseif ($context['known_title_norm'] !== '' && ($titleNorm === $context['known_title_norm'] || $displayNorm === $context['known_title_norm'])) {
+            $score = 104;
+            $matchedBy = 'known_alias';
+            $titleMatch = 'known-item-alias';
         } elseif ($context['name_norm'] !== '' && ($titleNorm === $context['name_norm'] || $displayNorm === $context['name_norm'] || in_array($context['name_norm'], $aliasNorms, true))) {
             $score = 96;
             $matchedBy = 'canonical_name';

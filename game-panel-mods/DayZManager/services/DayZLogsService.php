@@ -25,19 +25,54 @@ final class DayZLogsService
             'errors' => $this->group('errors', 'Error Logs', '/profiles', $serverId),
             'server' => $this->group('server', 'Server Logs', '/profiles', $serverId),
             'admin' => $this->group('admin', 'Admin Logs', '/profiles/VPPAdminTools/Logging', $serverId),
-            'codelock' => $this->group('codelock', 'Code Lock Logs', '/profiles/CodeLock/Logs', $serverId),
+            'trader' => $this->group('trader', 'Trader Logs', '/profiles', $serverId),
             'airdrop' => $this->group('airdrop', 'Airdrop Logs', '/profiles/Airdrop/Logs', $serverId),
         ];
 
         foreach ($this->filesIn($server, '/profiles', false) as $entry) {
+            if ($this->isTraderLog($entry['name'])) {
+                continue;
+            }
+
             $key = $this->isErrorLog($entry['name']) ? 'errors' : 'server';
             $groups[$key]['entries'][] = $this->entry($entry, $serverId);
         }
 
-        foreach (['admin', 'codelock', 'airdrop'] as $key) {
-            foreach ($this->filesIn($server, $groups[$key]['path'], true) as $entry) {
-                $groups[$key]['entries'][] = $this->entry($entry, $serverId);
+        foreach ($this->filesIn($server, $groups['admin']['path'], true, ['log', 'rpt', 'txt']) as $entry) {
+            if (!$this->isTraderLog($entry['name'])) {
+                $groups['admin']['entries'][] = $this->entry($entry, $serverId);
             }
+        }
+
+        foreach ($this->filesIn($server, $groups['airdrop']['path'], true) as $entry) {
+            if (!$this->isTraderLog($entry['name'])) {
+                $groups['airdrop']['entries'][] = $this->entry($entry, $serverId);
+            }
+        }
+
+        foreach ($this->filesIn($server, '/profiles', true) as $entry) {
+            if ($this->isTraderLog($entry['name'])) {
+                $groups['trader']['entries'][] = $this->entry($entry, $serverId);
+            }
+        }
+
+        $codeLockRoot = '/profiles/CodeLock/Logs';
+
+        foreach ($this->filesIn($server, $codeLockRoot, true) as $entry) {
+            if ($this->isTraderLog($entry['name'])) {
+                continue;
+            }
+
+            $relativeDirectory = trim(substr(dirname($entry['path']), strlen($codeLockRoot)), '/');
+            $category = $relativeDirectory !== '' ? $relativeDirectory : 'General';
+            $key = 'codelock-' . strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $category));
+
+            if (!isset($groups[$key])) {
+                $path = $relativeDirectory !== '' ? $codeLockRoot . '/' . $relativeDirectory : $codeLockRoot;
+                $groups[$key] = $this->group($key, 'Code Lock Logs · ' . str_replace('/', ' · ', $category), $path, $serverId);
+            }
+
+            $groups[$key]['entries'][] = $this->entry($entry, $serverId);
         }
 
         foreach ($groups as &$group) {
@@ -69,7 +104,7 @@ final class DayZLogsService
     /**
      * @return list<array{name:string,path:string,size:int,modified:string}>
      */
-    private function filesIn(mixed $server, string $root, bool $recursive): array
+    private function filesIn(mixed $server, string $root, bool $recursive, array $extensions = ['log', 'rpt']): array
     {
         $files = [];
         $pending = [rtrim($root, '/') ?: '/'];
@@ -91,7 +126,7 @@ final class DayZLogsService
                     continue;
                 }
 
-                if (!($entry['file'] ?? false) || !$this->isLogFile($name)) {
+                if (!($entry['file'] ?? false) || !$this->isLogFile($name, $extensions)) {
                     continue;
                 }
 
@@ -111,14 +146,19 @@ final class DayZLogsService
         return $files;
     }
 
-    private function isLogFile(string $name): bool
+    private function isLogFile(string $name, array $extensions): bool
     {
-        return in_array(strtolower((string) pathinfo($name, PATHINFO_EXTENSION)), ['log', 'rpt'], true);
+        return in_array(strtolower((string) pathinfo($name, PATHINFO_EXTENSION)), $extensions, true);
     }
 
     private function isErrorLog(string $name): bool
     {
-        return preg_match('/(?:crash|error|script)/i', $name) === 1;
+        return stripos($name, 'error') !== false;
+    }
+
+    private function isTraderLog(string $name): bool
+    {
+        return str_starts_with(strtoupper($name), 'TM');
     }
 
     /**

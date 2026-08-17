@@ -934,7 +934,7 @@
         var containerItems = items.filter(function (i) { return i.isContainerContent; });
 
         // Group items by slot for readability.
-        var slotOrder = ['Hands', 'Headgear', 'Mask', 'Eyewear', 'Gloves', 'Armband', 'Body', 'Back', 'Vest', 'Hips', 'Legs', 'Feet', 'Shoulder', ''];
+        var slotOrder = ['Hands', 'Headgear', 'Mask', 'Eyewear', 'Gloves', 'Armband', 'Body', 'Legs', 'Vest', 'Hips', 'Back', 'Feet', 'Shoulder', ''];
         var bySlot = {};
         equippedItems.forEach(function (item) {
             var s = item.slot || '';
@@ -1062,6 +1062,14 @@
                 var k = [item.containerSlot || item.slot || 'Unknown', item.containerClass || ''].join('|');
                 if (!byContainer[k]) { byContainer[k] = []; containerOrder.push(k); }
                 byContainer[k].push(item);
+            });
+            var containerSlotOrder = ['Legs', 'Back', 'Body', 'Hips'];
+            containerOrder.sort(function (left, right) {
+                var leftIndex = containerSlotOrder.indexOf(left.split('|')[0]);
+                var rightIndex = containerSlotOrder.indexOf(right.split('|')[0]);
+                leftIndex = leftIndex === -1 ? containerSlotOrder.length : leftIndex;
+                rightIndex = rightIndex === -1 ? containerSlotOrder.length : rightIndex;
+                return leftIndex - rightIndex;
             });
 
             containerOrder.forEach(function (containerKey) {

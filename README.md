@@ -457,7 +457,9 @@ URL: `GET /servers/{server}/dayz/configuration`
 Configuration files are discovered on the server through the Pterodactyl daemon.
 The server root, `config/`, `profiles/`, `battleye/`, and every mission folder in
 `mpmissions/` (including its `db/` directory) are scanned, and each file is
-listed with its real path, size, and a deep link into the panel file manager:
+listed with its real path, size, and a deep link into the panel file manager.
+The complete `profiles/` tree is included except `.log`, `.mdmp`, `.rpt`, and
+`.adm` files:
 
 | File type | Opens in |
 |---|---|
@@ -473,7 +475,11 @@ The `ConfigurationCatalog` service groups files into three operator-facing categ
 | **Server Messages** | `Messages.bat`, `messages.cfg`, `settings.cfg` |
 | **Admin Tools** | `credentials.txt`, `SuperAdmins.txt`, `admins.xml` |
 
-The separate **Logs** tab lists `.log` and `.rpt` files from `/profiles`, `/profiles/VPPAdminTools/Logging`, `/profiles/CodeLock/Logs` (including action subdirectories), and `/profiles/Airdrop/Logs` under Error, Server, Admin, Code Lock, and Airdrop sections.
+The separate **Logs** tab lists `.log` and `.rpt` files from `/profiles`,
+`/profiles/CodeLock/Logs`, and `/profiles/Airdrop/Logs`, plus `.txt` Admin Logs
+from `/profiles/VPPAdminTools/Logging`. Error Logs require `error` in the
+filename, Code Lock Logs are grouped by their containing folder, and `TM*` files
+are separated into Trader Logs.
 
 Saving through the API writes the file back to the container through the daemon,
 and the previous contents are stored in `dayz_configuration_backups` first.

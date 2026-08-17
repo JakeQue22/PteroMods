@@ -51,6 +51,7 @@ final class DayZMapMarkerService
         'military'        => ['label' => 'Military',            'icon' => '🎖️', 'color' => '#4ade80', 'default' => true],
         'airfield'        => ['label' => 'Airfields',           'icon' => '✈️', 'color' => '#38bdf8', 'default' => true],
         'trader'          => ['label' => 'Traders',              'icon' => '🛒', 'color' => '#34d399', 'default' => true],
+        'airdrop'         => ['label' => 'Airdrops',             'icon' => '🪂', 'color' => '#fb7185', 'default' => true],
         'landmark'        => ['label' => 'Landmarks',           'icon' => '⛰️', 'color' => '#a78bfa', 'default' => false],
         'player_spawn'    => ['label' => 'Player spawns',       'icon' => '🚩', 'color' => '#f472b6', 'default' => false],
         'heli_crash'      => ['label' => 'Helicopter crashes',  'icon' => '🚁', 'color' => '#f97316', 'default' => false],
@@ -239,6 +240,7 @@ final class DayZMapMarkerService
         }
 
         $this->collectTraders($server, $markers, $sources);
+        $this->collectAirdrops($server, $markers, $sources);
 
         $result = [
             'status' => $missionPath === '' ? 'mission_not_found' : 'ok',
@@ -614,6 +616,84 @@ final class DayZMapMarkerService
         if ($added > 0) {
             $sources[] = $path;
         }
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $markers
+     * @param list<string> $sources
+     */
+    private function collectAirdrops(mixed $server, array &$markers, array &$sources): void
+    {
+        $path = '/profiles/VPPMapAirdrop.json';
+        $raw = $this->gateway->readFile($server, $path);
+
+        if ($raw === null || trim($raw) === '') {
+            return;
+        }
+
+        $decoded = json_decode($raw, true);
+
+        if (!is_array($decoded)) {
+            return;
+        }
+
+        $added = 0;
+        $walk = function (array $node) use (&$walk, &$markers, &$added): void {
+            if (array_key_exists('M_MARKER_NAME', $node) && array_key_exists('M_POSITION', $node)) {
+                $position = $this->airdropPosition($node['M_POSITION']);
+
+                if ($position !== null) {
+                    $name = trim((string) $node['M_MARKER_NAME']);
+                    $markers['airdrop'][] = [
+                        'name' => $name !== '' ? $name : 'Airdrop',
+                        'x' => $position[0],
+                        'z' => $position[1],
+                        'detail' => 'VPP airdrop',
+                    ];
+                    $added++;
+                }
+            }
+
+            foreach ($node as $value) {
+                if (is_array($value)) {
+                    $walk($value);
+                }
+            }
+        };
+        $walk($decoded);
+
+        if ($added > 0) {
+            $sources[] = $path;
+        }
+    }
+
+    /**
+     * @return array{0:float,1:float}|null
+     */
+    private function airdropPosition(mixed $value): ?array
+    {
+        if (is_array($value)) {
+            $values = array_values($value);
+
+            if (count($values) >= 3 && is_numeric($values[0]) && is_numeric($values[2])) {
+                return [(float) $values[0], (float) $values[2]];
+            }
+
+            $x = $value['x'] ?? $value['X'] ?? null;
+            $z = $value['z'] ?? $value['Z'] ?? null;
+
+            if (is_numeric($x) && is_numeric($z)) {
+                return [(float) $x, (float) $z];
+            }
+        }
+
+        if (is_string($value)
+            && preg_match_all('/-?\d+(?:\.\d+)?/', $value, $matches) >= 3
+        ) {
+            return [(float) $matches[0][0], (float) $matches[0][2]];
+        }
+
+        return null;
     }
 
     /**

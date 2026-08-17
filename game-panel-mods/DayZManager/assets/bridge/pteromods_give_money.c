@@ -98,10 +98,12 @@ class PteroMods_GiveMoneyBridge
     static ref PteroMods_GiveMoneyBridge s_instance;
 
     protected bool m_Scheduled;
+    protected ref map<int, bool> m_FulfilledQueueIds;
 
     void PteroMods_GiveMoneyBridge()
     {
         m_Scheduled = false;
+        m_FulfilledQueueIds = new map<int, bool>;
     }
 
     void Start()
@@ -202,6 +204,7 @@ class PteroMods_GiveMoneyBridge
             return false;
 
         ref array<ref PteroMods_GiveMoneyEntry> remaining = new array<ref PteroMods_GiveMoneyEntry>;
+        ref array<ref PteroMods_GiveMoneyEntry> fulfilled = new array<ref PteroMods_GiveMoneyEntry>;
         bool changed = false;
 
         foreach (PteroMods_GiveMoneyEntry entry : queue)
@@ -212,6 +215,13 @@ class PteroMods_GiveMoneyBridge
             if (!PteroMods_GiveMoney_EntryTargetsPlayer(entry, playerId, playerUid))
             {
                 remaining.Insert(entry);
+                continue;
+            }
+
+            if (entry.queue_id > 0 && m_FulfilledQueueIds.Contains(entry.queue_id))
+            {
+                fulfilled.Insert(entry);
+                changed = true;
                 continue;
             }
 
@@ -226,10 +236,22 @@ class PteroMods_GiveMoneyBridge
                 entry.quantity = quantityLeft;
                 remaining.Insert(entry);
             }
+            else
+            {
+                if (entry.queue_id > 0)
+                    m_FulfilledQueueIds.Set(entry.queue_id, true);
+
+                fulfilled.Insert(entry);
+            }
         }
 
         if (changed)
             JsonFileLoader<array<ref PteroMods_GiveMoneyEntry>>.JsonSaveFile(path, remaining);
+
+        foreach (PteroMods_GiveMoneyEntry delivered : fulfilled)
+        {
+            NotifyFulfilled(delivered);
+        }
 
         return true;
     }
@@ -251,8 +273,6 @@ class PteroMods_GiveMoneyBridge
             if (!created)
                 return quantity - i;
         }
-
-        NotifyFulfilled(entry);
 
         return 0;
     }
