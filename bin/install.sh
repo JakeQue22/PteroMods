@@ -220,6 +220,58 @@ case "$TAB_STATUS" in
     *)         success "Navigation tab script registered in: $TAB_STATUS" ;;
 esac
 
+echo ""
+echo "── Step 5c: Registering DayZ background scheduler ──"
+
+cat > /tmp/pteromods-schedule-patch.php << 'PHPEOF'
+<?php
+declare(strict_types=1);
+$panelRoot = $argv[1] ?? '';
+$file = $panelRoot . '/app/Console/Kernel.php';
+$include = "        require base_path('game-panel-mods/DayZManager/schedule.php');\n";
+
+if (!is_file($file)) {
+    echo 'missing';
+    exit(0);
+}
+
+$contents = (string) file_get_contents($file);
+
+if (str_contains($contents, 'game-panel-mods/DayZManager/schedule.php')) {
+    echo 'unchanged';
+    exit(0);
+}
+
+// Add the module schedule at the start of Console Kernel::schedule(). This is
+// independent of web requests and is driven by the panel's normal
+// `php artisan schedule:run` cron entry.
+if (preg_match('/protected\s+function\s+schedule\s*\([^)]*\)\s*(?::\s*void\s*)?\{/m', $contents, $match, PREG_OFFSET_CAPTURE) !== 1) {
+    echo 'missing-method';
+    exit(0);
+}
+
+$offset = $match[0][1] + strlen($match[0][0]);
+$contents = substr($contents, 0, $offset) . "\n" . $include . substr($contents, $offset);
+
+if (file_put_contents($file, $contents) === false) {
+    echo 'failed';
+    exit(0);
+}
+
+echo 'patched';
+PHPEOF
+
+SCHEDULE_STATUS="$(php /tmp/pteromods-schedule-patch.php "$PANEL_ROOT")"
+rm -f /tmp/pteromods-schedule-patch.php
+
+case "$SCHEDULE_STATUS" in
+    patched)        success "DayZ background scheduler registered." ;;
+    unchanged)      info "DayZ background scheduler already registered." ;;
+    missing)        warn "app/Console/Kernel.php not found - register DayZManager/schedule.php manually." ;;
+    missing-method) warn "Console Kernel schedule() method not found - register DayZManager/schedule.php manually." ;;
+    *)              warn "Could not register the DayZ background scheduler automatically." ;;
+esac
+
 # ── step 6: run SQL migrations ────────────────────────────────────────────────
 
 echo ""

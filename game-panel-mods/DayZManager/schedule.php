@@ -14,15 +14,18 @@ declare(strict_types=1);
  *         require base_path('game-panel-mods/DayZManager/schedule.php');
  *     }
  *
- * This registers the `p:dayz:tick` command to run every minute, ensuring
+ * This registers the DayZ background tick to run every minute, ensuring
  * restart schedules, mod-install follow-ups, and log scrubbing all fire
  * without requiring a browser tab to be open.
  */
 
 use Illuminate\Console\Scheduling\Schedule;
+use GamePanelMods\DayZManager\Services\DayZBackgroundTickService;
 
 if (!isset($schedule) || !($schedule instanceof Schedule)) {
     return;
 }
 
-$schedule->command('p:dayz:tick')->everyMinute()->withoutOverlapping(2);
+$schedule->call(static function (): void {
+    (new DayZBackgroundTickService())->tick();
+})->name('pteromods:dayz:tick')->everyMinute()->withoutOverlapping(2);

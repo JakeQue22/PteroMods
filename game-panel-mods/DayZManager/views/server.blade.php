@@ -66,7 +66,7 @@
 
 <section class="dz-card">
     <h2>Send Global Message</h2>
-    <p class="dz-sub">Broadcast a message to all connected players using the server console (<code>say -1</code>).</p>
+    <p class="dz-sub">Broadcast a message to all connected players using BattlEye RCon (<code>say -1</code>).</p>
     <div class="dz-form">
         <input id="dz-global-message" class="dz-input" type="text" placeholder="Message to broadcast…" style="flex:1 1 20rem;min-width:0;" />
         <button class="dz-btn" onclick="pteroSendGlobalMessage()">Send Message</button>

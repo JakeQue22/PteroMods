@@ -9,6 +9,7 @@ use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZPanelGateway;
 use GamePanelMods\DayZManager\Services\DayZProfileLogScrubService;
+use GamePanelMods\DayZManager\Services\DayZRconService;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use GamePanelMods\DayZManager\Services\DayZServerQueryService;
 use GamePanelMods\DayZManager\Services\DayZServerService;
@@ -30,6 +31,7 @@ final class DayZServerController
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZProfileLogScrubService $logScrub = new DayZProfileLogScrubService(),
+        private readonly DayZRconService $rcon = new DayZRconService(),
     ) {
     }
 
@@ -192,7 +194,7 @@ final class DayZServerController
     }
 
     /**
-     * Sends a global message to all connected players via `say -1`.
+     * Sends a global message to all connected players via BattlEye RCon.
      *
      * @return array<string, mixed>
      */
@@ -207,11 +209,13 @@ final class DayZServerController
             return ['status' => 'failed', 'message' => 'Message cannot be empty.'];
         }
 
-        $sent = $this->gateway->sendCommand($model, 'say -1 ' . $message);
+        $sent = $this->rcon->sendCommand($model, 'say -1 ' . $message);
 
         return [
             'status' => $sent ? 'sent' : 'failed',
-            'message' => $sent ? 'Global message sent.' : 'Failed to send message (server may be offline).',
+            'message' => $sent
+                ? 'Global message sent via RCon.'
+                : 'Failed to send message via RCon. Check the server state and RCON_PORT/RCON_PASSWORD variables.',
         ];
     }
 

@@ -434,6 +434,7 @@ and the detected client/server mod lists.
 | Get launch parameters | GET | `/api/servers/{server}/dayz/server/launch-parameters` |
 | Restart server | POST | `/api/servers/{server}/dayz/server/restart` |
 | Send a power signal | POST | `/api/servers/{server}/dayz/server/power` |
+| Send a global RCon message | POST | `/api/servers/{server}/dayz/server/send-message` |
 
 **Restart payload** (optional):
 
@@ -453,6 +454,10 @@ and the detected client/server mod lists.
 
 Power signals are forwarded to the Wings daemon, so they behave exactly like the
 console buttons in the panel.
+
+Global messages are sent directly through BattlEye RCon using the server's
+`RCON_PORT` and `RCON_PASSWORD` egg variables; they are not written to the
+Pterodactyl process console.
 
 ### Configuration editor
 
@@ -516,7 +521,7 @@ the client application re-renders its navigation.
 
 ### Live Map
 
-The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable. Airdrops are read from `/profiles/VPPMapAirdrop.json` and other known airdrop files, and any other JSON file under `/profiles` (two levels deep) whose name contains `airdrop`; marker names and positions are taken from `M_MARKER_NAME`/`M_POSITION` or their common equivalents (`Name`, `Position`, …).
+The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable. Airdrops are read from `/profiles/VPPMapAirdrop.json` and other known airdrop files, and any other JSON file under `/profiles` (three levels deep) whose name contains `airdrop`; marker names and positions are taken from `M_MARKER_NAME`/`M_POSITION` or their common equivalents (`Name`, `Position`, …).
 
 #### How it works
 

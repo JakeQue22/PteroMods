@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace GamePanelMods\DayZManager\Console;
 
-use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
+use GamePanelMods\DayZManager\Services\DayZBackgroundTickService;
 use Illuminate\Console\Command;
 
 /**
@@ -28,8 +28,7 @@ final class DayZTickCommand extends Command
 
     public function handle(): int
     {
-        $warmer = new DayZCacheWarmService();
-        $warmer->tick(null);
+        (new DayZBackgroundTickService())->tick();
 
         $this->info('DayZ Manager tick completed.');
 

@@ -42,6 +42,9 @@ final class DayZMapMarkerService
         '/profiles/VPPMapAirdrop.json',
         '/profiles/VPPAdminTools/VPPMapAirdrop.json',
         '/profiles/VPPAdminTools/Config/VPPMapAirdrop.json',
+        '/profiles/Airdrop/VPPMapAirdrop.json',
+        '/profiles/Airdrop/logs/VPPMapAirdrop.json',
+        '/profiles/Airdrop/Logs/VPPMapAirdrop.json',
         '/profiles/Airdrop/AirdropSettings.json',
     ];
 
@@ -656,6 +659,16 @@ final class DayZMapMarkerService
             $decoded = json_decode($raw, true);
 
             if (!is_array($decoded)) {
+                // VPPMapAirdrop.json is intended as a fragment to paste into
+                // VPPMapConfig.json. Some releases therefore emit adjacent
+                // marker objects (or a trailing comma) rather than a complete
+                // JSON document. Read its canonical fields tolerantly.
+                $added = $this->collectVppAirdropFragment($raw, $markers, $seen);
+
+                if ($added > 0) {
+                    $sources[] = $path;
+                }
+
                 continue;
             }
 
@@ -694,9 +707,52 @@ final class DayZMapMarkerService
     }
 
     /**
+     * @param array<string, list<array<string, mixed>>> $markers
+     * @param array<string, bool> $seen
+     */
+    private function collectVppAirdropFragment(string $raw, array &$markers, array &$seen): int
+    {
+        $number = '[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?';
+        $pattern = '/"M_MARKER_NAME"\s*:\s*"((?:\\\\.|[^"\\\\])*)"'
+            . '[\s\S]*?"M_POSITION"\s*:\s*\[\s*(' . $number . ')\s*,\s*('
+            . $number . ')\s*(?:,\s*(' . $number . ')\s*)?\]/i';
+
+        if (preg_match_all($pattern, $raw, $matches, PREG_SET_ORDER) === false) {
+            return 0;
+        }
+
+        $added = 0;
+
+        foreach ($matches as $match) {
+            $decodedName = json_decode('"' . $match[1] . '"', true);
+            $name = is_string($decodedName) && trim($decodedName) !== ''
+                ? trim($decodedName)
+                : 'Airdrop';
+            $x = (float) $match[2];
+            $z = isset($match[4]) && $match[4] !== '' ? (float) $match[4] : (float) $match[3];
+            $key = strtolower($name) . '|' . round($x, 1) . '|' . round($z, 1);
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $markers['airdrop'][] = [
+                'name' => $name,
+                'x' => $x,
+                'z' => $z,
+                'detail' => 'Airdrop location',
+            ];
+            $added++;
+        }
+
+        return $added;
+    }
+
+    /**
      * Airdrop mods write their marker/location file to several different places
      * (VPP Admin Tools, the standalone Airdrop mod, custom mod folders), so the
-     * known paths are probed first and `/profiles` is then scanned (two levels
+     * known paths are probed first and `/profiles` is then scanned (three levels
      * deep) for any other JSON file whose name mentions "airdrop".
      *
      * @return list<string>
@@ -707,7 +763,7 @@ final class DayZMapMarkerService
         $pending = ['/profiles'];
         $depth = 0;
 
-        while ($pending !== [] && $depth < 2) {
+        while ($pending !== [] && $depth < 3) {
             $next = [];
 
             foreach ($pending as $directory) {
@@ -793,6 +849,11 @@ final class DayZMapMarkerService
                 return [(float) $values[0], (float) $values[2]];
             }
 
+            // Some exporters omit the altitude component and write [x, z].
+            if (count($values) >= 2 && is_numeric($values[0]) && is_numeric($values[1])) {
+                return [(float) $values[0], (float) $values[1]];
+            }
+
             $x = $value['x'] ?? $value['X'] ?? null;
             $z = $value['z'] ?? $value['Z'] ?? null;
 
@@ -801,10 +862,16 @@ final class DayZMapMarkerService
             }
         }
 
-        if (is_string($value)
-            && preg_match_all('/-?\d+(?:\.\d+)?/', $value, $matches) >= 3
-        ) {
-            return [(float) $matches[0][0], (float) $matches[0][2]];
+        if (is_string($value)) {
+            $count = preg_match_all('/[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/', $value, $matches);
+
+            if ($count >= 3) {
+                return [(float) $matches[0][0], (float) $matches[0][2]];
+            }
+
+            if ($count === 2) {
+                return [(float) $matches[0][0], (float) $matches[0][1]];
+            }
         }
 
         return null;
@@ -943,6 +1010,8 @@ final class DayZMapMarkerService
     {
         $serverId = $this->context->attribute($server, ['uuid', 'uuidShort', 'id']);
 
-        return $serverId === '' ? '' : 'pteromods.dayz.live_map.markers.' . md5($serverId . '|' . strtolower($mapName));
+        // Include the parser version so deployments do not keep serving a
+        // previously cached zero-count airdrop layer for up to 24 hours.
+        return $serverId === '' ? '' : 'pteromods.dayz.live_map.markers.v2.' . md5($serverId . '|' . strtolower($mapName));
     }
 }
