@@ -14,6 +14,7 @@ use Throwable;
 final class DayZProfileLogScrubService
 {
     private const RUN_INTERVAL_SECONDS = 86400;
+    private const LOG_EXTENSIONS = ['log', 'rpt', 'txt', 'adm'];
 
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
@@ -41,8 +42,12 @@ final class DayZProfileLogScrubService
             'script'         => max(1, (int) $this->settings->get('script_log_retention_days', 14)),
             'crash'          => max(1, (int) $this->settings->get('crash_log_retention_days', 14)),
             'tm_general_log' => max(1, (int) $this->settings->get('tm_general_log_retention_days', 14)),
+            'trader_log'     => max(1, (int) $this->settings->get('trader_log_retention_days', 14)),
             'dzserver_adm'   => max(1, (int) $this->settings->get('dzserver_adm_log_retention_days', 14)),
             'dzserver_rpt'   => max(1, (int) $this->settings->get('dzserver_rpt_log_retention_days', 14)),
+            'admin_log'      => max(1, (int) $this->settings->get('admin_log_retention_days', 14)),
+            'airdrop_log'    => max(1, (int) $this->settings->get('airdrop_log_retention_days', 14)),
+            'codelock_log'   => max(1, (int) $this->settings->get('codelock_log_retention_days', 14)),
         ];
         $cacheKey = 'pteromods.dayz.profile_log_scrub.last_run.' . md5($serverKey);
 
@@ -50,37 +55,117 @@ final class DayZProfileLogScrubService
             return ['status' => 'throttled', 'retention_by_type' => $retentionByType];
         }
 
-        $entries = $this->gateway->listDirectory($server, '/profiles');
+        $rules = [
+            [
+                'type' => 'script',
+                'path' => '/profiles',
+                'recursive' => false,
+                'matcher' => static fn (string $name): bool => preg_match('/^script_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log$/i', $name) === 1,
+            ],
+            [
+                'type' => 'crash',
+                'path' => '/profiles',
+                'recursive' => false,
+                'matcher' => static fn (string $name): bool => preg_match('/^crash_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log$/i', $name) === 1,
+            ],
+            [
+                'type' => 'tm_general_log',
+                'path' => '/profiles',
+                'recursive' => false,
+                'matcher' => static fn (string $name): bool => preg_match('/^TM_GeneralLogs_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log$/i', $name) === 1,
+            ],
+            [
+                'type' => 'dzserver_adm',
+                'path' => '/profiles',
+                'recursive' => false,
+                'matcher' => static fn (string $name): bool => preg_match('/^DayZServer_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.ADM$/i', $name) === 1,
+            ],
+            [
+                'type' => 'dzserver_rpt',
+                'path' => '/profiles',
+                'recursive' => false,
+                'matcher' => static fn (string $name): bool => preg_match('/^DayZServer_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.RPT$/i', $name) === 1,
+            ],
+            [
+                'type' => 'trader_log',
+                'path' => '/profiles',
+                'recursive' => true,
+                'matcher' => static fn (string $name): bool => str_starts_with(strtoupper($name), 'TM'),
+            ],
+            [
+                'type' => 'admin_log',
+                'path' => '/profiles/VPPAdminTools/Logging',
+                'recursive' => true,
+                'matcher' => static fn (string $name): bool => $name !== '',
+            ],
+            [
+                'type' => 'airdrop_log',
+                'path' => '/profiles/Airdrop/Logs',
+                'recursive' => true,
+                'matcher' => static fn (string $name): bool => $name !== '',
+            ],
+            [
+                'type' => 'codelock_log',
+                'path' => '/profiles/CodeLock/Logs',
+                'recursive' => true,
+                'matcher' => static fn (string $name): bool => $name !== '',
+            ],
+        ];
+
         $now = time();
         $deleted = 0;
         $scanned = 0;
+        $seen = [];
+        $clearedDirectories = [];
 
-        foreach ($entries as $entry) {
-            if (!is_array($entry) || !($entry['file'] ?? false)) {
-                continue;
-            }
+        foreach ($rules as $rule) {
+            $path = (string) ($rule['path'] ?? '/profiles');
+            $clearedDirectories[$path] = true;
 
-            $name = trim((string) ($entry['name'] ?? ''));
-            [$timestamp, $logType] = $this->timestampAndTypeFromName($name);
+            foreach ($this->filesIn($server, $path, (bool) ($rule['recursive'] ?? false)) as $entry) {
+                $name = trim((string) ($entry['name'] ?? ''));
 
-            if ($timestamp === null || $logType === null) {
-                continue;
-            }
+                if ($name === '' || !(($rule['matcher'])($name))) {
+                    continue;
+                }
 
-            $scanned++;
-            $cutoff = $now - ($retentionByType[$logType] * 86400);
+                $targetPath = trim((string) ($entry['path'] ?? ''));
 
-            if ($timestamp >= $cutoff) {
-                continue;
-            }
+                if ($targetPath === '' || isset($seen[$targetPath])) {
+                    continue;
+                }
+                $seen[$targetPath] = true;
 
-            if ($this->gateway->deletePath($server, '/profiles/' . $name)) {
-                $deleted++;
+                $logType = (string) ($rule['type'] ?? '');
+                $retentionDays = (int) ($retentionByType[$logType] ?? 14);
+                $timestamp = $this->timestampFromModified((string) ($entry['modified'] ?? ''));
+
+                if ($timestamp === null) {
+                    [$nameTimestamp] = $this->timestampAndTypeFromName($name);
+                    $timestamp = $nameTimestamp;
+                }
+
+                if ($timestamp === null) {
+                    continue;
+                }
+
+                $scanned++;
+                $cutoff = $now - ($retentionDays * 86400);
+
+                if ($timestamp >= $cutoff) {
+                    continue;
+                }
+
+                if ($this->gateway->deletePath($server, $targetPath)) {
+                    $deleted++;
+                }
             }
         }
 
         $this->markRan($cacheKey);
-        $this->gateway->clearFileListingCache($server, '/profiles');
+        foreach (array_keys($clearedDirectories) as $directory) {
+            $this->gateway->clearFileListingCache($server, $directory);
+        }
 
         return [
             'status' => 'scrubbed',
@@ -116,6 +201,67 @@ final class DayZProfileLogScrubService
         }
 
         return [null, null];
+    }
+
+    /**
+     * @return list<array{name:string,path:string,size:int,modified:string}>
+     */
+    private function filesIn(mixed $server, string $root, bool $recursive): array
+    {
+        $files = [];
+        $pending = [rtrim($root, '/') ?: '/'];
+
+        while ($pending !== []) {
+            $directory = (string) array_shift($pending);
+
+            foreach ($this->gateway->listDirectory($server, $directory) as $entry) {
+                $name = trim((string) ($entry['name'] ?? ''));
+
+                if ($name === '') {
+                    continue;
+                }
+
+                $path = rtrim($directory, '/') . '/' . $name;
+
+                if (($entry['directory'] ?? false) && $recursive) {
+                    $pending[] = $path;
+                    continue;
+                }
+
+                if (!($entry['file'] ?? false) || !$this->isLogFile($name)) {
+                    continue;
+                }
+
+                $files[] = [
+                    'name' => $name,
+                    'path' => $path,
+                    'size' => max(0, (int) ($entry['size'] ?? 0)),
+                    'modified' => (string) ($entry['modified'] ?? ''),
+                ];
+            }
+        }
+
+        return $files;
+    }
+
+    private function isLogFile(string $name): bool
+    {
+        $extension = strtolower((string) pathinfo($name, PATHINFO_EXTENSION));
+
+        return in_array($extension, self::LOG_EXTENSIONS, true);
+    }
+
+    private function timestampFromModified(string $modified): ?int
+    {
+        $modified = trim($modified);
+
+        if ($modified === '') {
+            return null;
+        }
+
+        $timestamp = strtotime($modified);
+
+        return $timestamp === false ? null : $timestamp;
     }
 
     private function recentlyRan(string $cacheKey): bool

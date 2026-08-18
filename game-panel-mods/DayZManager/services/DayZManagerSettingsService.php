@@ -16,6 +16,8 @@ use Throwable;
  */
 final class DayZManagerSettingsService
 {
+    private const CACHE_SECONDS = 120;
+
     /**
      * Defaults for every known setting key.
      *
@@ -105,6 +107,11 @@ final class DayZManagerSettingsService
         'tm_general_log_retention_days' => 14,
 
         /**
+         * Number of days Trader (`TM*`) log files are kept before auto-scrub deletes them.
+         */
+        'trader_log_retention_days' => 14,
+
+        /**
          * Number of days `DayZServer_*.ADM` files are kept before auto-scrub deletes them.
          */
         'dzserver_adm_log_retention_days' => 14,
@@ -113,6 +120,21 @@ final class DayZManagerSettingsService
          * Number of days `DayZServer_*.RPT` files are kept before auto-scrub deletes them.
          */
         'dzserver_rpt_log_retention_days' => 14,
+
+        /**
+         * Number of days Admin log files are kept before auto-scrub deletes them.
+         */
+        'admin_log_retention_days' => 14,
+
+        /**
+         * Number of days Airdrop log files are kept before auto-scrub deletes them.
+         */
+        'airdrop_log_retention_days' => 14,
+
+        /**
+         * Number of days Code Lock log files are kept before auto-scrub deletes them.
+         */
+        'codelock_log_retention_days' => 14,
 
         /**
          * Shared secret used by the optional server-side DayZ live-map bridge.
@@ -149,6 +171,11 @@ final class DayZManagerSettingsService
          * pruned automatically after every create (manual or auto).
          */
         'auto_backup_keep' => 10,
+
+        /**
+         * Interval (in seconds) between DayZ Manager background cache refreshes.
+         */
+        'cache_fetch_timer_seconds' => 60,
     ];
 
     /**
@@ -174,10 +201,15 @@ final class DayZManagerSettingsService
         'script_log_retention_days' => 'script_*.log retention (days)',
         'crash_log_retention_days' => 'crash_*.log retention (days)',
         'tm_general_log_retention_days' => 'TM_GeneralLogs_*.log retention (days)',
+        'trader_log_retention_days' => 'Trader (TM*) log retention (days)',
         'dzserver_adm_log_retention_days' => 'DayZServer_*.ADM retention (days)',
         'dzserver_rpt_log_retention_days' => 'DayZServer_*.RPT retention (days)',
+        'admin_log_retention_days' => 'Admin logs retention (days)',
+        'airdrop_log_retention_days' => 'Airdrop logs retention (days)',
+        'codelock_log_retention_days' => 'Code Lock logs retention (days)',
         'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
         'live_map_tile_url' => 'Live Map tile URL template',
+        'cache_fetch_timer_seconds' => 'Cache fetch timer (seconds)',
     ];
 
     /**
@@ -225,17 +257,26 @@ final class DayZManagerSettingsService
         'auto_scrub_profile_logs' =>
             'Disabled by default. When enabled, DayZ Manager checks `/profiles` every day and '
             . 'deletes old `script_*.log`, `crash_*.log`, `TM_GeneralLogs_*.log`, `DayZServer_*.ADM`, '
-            . 'and `DayZServer_*.RPT` files older than each type\'s configured retention window.',
+            . '`DayZServer_*.RPT`, Trader (`TM*`), Admin, Airdrop, and Code Lock logs older than each '
+            . 'type\'s configured retention window.',
         'script_log_retention_days' =>
             'How many days to keep `script_*.log` files before automatic cleanup removes them.',
         'crash_log_retention_days' =>
             'How many days to keep `crash_*.log` files before automatic cleanup removes them.',
         'tm_general_log_retention_days' =>
             'How many days to keep `TM_GeneralLogs_*.log` files before automatic cleanup removes them.',
+        'trader_log_retention_days' =>
+            'How many days to keep Trader (`TM*`) logs before automatic cleanup removes them.',
         'dzserver_adm_log_retention_days' =>
             'How many days to keep `DayZServer_*.ADM` files before automatic cleanup removes them.',
         'dzserver_rpt_log_retention_days' =>
             'How many days to keep `DayZServer_*.RPT` files before automatic cleanup removes them.',
+        'admin_log_retention_days' =>
+            'How many days to keep Admin logs in `/profiles/VPPAdminTools/Logging` before automatic cleanup removes them.',
+        'airdrop_log_retention_days' =>
+            'How many days to keep Airdrop logs in `/profiles/Airdrop/Logs` before automatic cleanup removes them.',
+        'codelock_log_retention_days' =>
+            'How many days to keep Code Lock logs in `/profiles/CodeLock/Logs` before automatic cleanup removes them.',
         'live_map_bridge_secret' =>
             'Optional shared secret for a server-side DayZ script to write player snapshots to '
             . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '
@@ -246,7 +287,15 @@ final class DayZManagerSettingsService
             . 'Use the raw tile template URL here, not the public viewer URL (`https://dayz.xam.nu/#...`). '
             . 'Default uses the current xam.nu official-map satellite template (`.../1.27/satellite/{z}/{x}/{y}.webp`). '
             . 'Leave empty to disable tile loading (shows a plain dark background).',
+        'cache_fetch_timer_seconds' =>
+            'How often DayZ Manager refreshes cached DayZ data in the background (seconds). '
+            . 'Lower values refresh more often but increase panel/API load.',
     ];
+
+    public function __construct(
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
+    ) {
+    }
 
     /**
      * Retrieves a setting value, returning the typed default when the row is absent.
@@ -254,24 +303,9 @@ final class DayZManagerSettingsService
     public function get(string $key, mixed $default = null): mixed
     {
         $fallback = array_key_exists($key, self::DEFAULTS) ? self::DEFAULTS[$key] : $default;
+        $settings = $this->all();
 
-        if (!$this->tableExists()) {
-            return $fallback;
-        }
-
-        try {
-            $row = \Illuminate\Support\Facades\DB::table('dayz_manager_settings')
-                ->where('key', $key)
-                ->value('value');
-
-            if ($row === null) {
-                return $fallback;
-            }
-
-            return $this->decode((string) $row, $fallback);
-        } catch (Throwable) {
-            return $fallback;
-        }
+        return array_key_exists($key, $settings) ? $settings[$key] : $fallback;
     }
 
     /**
@@ -294,7 +328,10 @@ final class DayZManagerSettingsService
             );
         } catch (Throwable) {
             // Best-effort: silently ignore write failures.
+            return;
         }
+
+        $this->forgetCache();
     }
 
     /**
@@ -304,30 +341,16 @@ final class DayZManagerSettingsService
      */
     public function all(): array
     {
-        $settings = self::DEFAULTS;
+        /** @var array<string, mixed>|null $settings */
+        $settings = $this->staleCache->remember(
+            'pteromods.dayz.settings.all',
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->loadAll(),
+            self::DEFAULTS,
+        );
 
-        if (!$this->tableExists()) {
-            return $settings;
-        }
-
-        try {
-            $rows = \Illuminate\Support\Facades\DB::table('dayz_manager_settings')
-                ->get(['key', 'value'])
-                ->all();
-
-            foreach ($rows as $row) {
-                $row = (array) $row;
-                $key = (string) ($row['key'] ?? '');
-
-                if ($key !== '' && array_key_exists($key, $settings)) {
-                    $settings[$key] = $this->decode((string) ($row['value'] ?? ''), $settings[$key]);
-                }
-            }
-        } catch (Throwable) {
-            // Fall through: return defaults.
-        }
-
-        return $settings;
+        return is_array($settings) ? $settings : self::DEFAULTS;
     }
 
     /**
@@ -368,6 +391,51 @@ final class DayZManagerSettingsService
             return json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         } catch (Throwable) {
             return $default;
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function loadAll(): array
+    {
+        $settings = self::DEFAULTS;
+
+        if (!$this->tableExists()) {
+            return $settings;
+        }
+
+        try {
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_manager_settings')
+                ->get(['key', 'value'])
+                ->all();
+
+            foreach ($rows as $row) {
+                $row = (array) $row;
+                $key = (string) ($row['key'] ?? '');
+
+                if ($key !== '' && array_key_exists($key, $settings)) {
+                    $settings[$key] = $this->decode((string) ($row['value'] ?? ''), $settings[$key]);
+                }
+            }
+        } catch (Throwable) {
+            // Fall through: return defaults.
+        }
+
+        return $settings;
+    }
+
+    private function forgetCache(): void
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.settings.all');
+            \Illuminate\Support\Facades\Cache::forget('pteromods.dayz.settings.all.lock');
+        } catch (Throwable) {
+            // Best-effort cache invalidation only.
         }
     }
 }

@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS `dayz_restart_schedules` (
     `timed_restart_at` TIMESTAMP     NULL DEFAULT NULL,
     `timed_warnings_sent` VARCHAR(255) NOT NULL DEFAULT '',
     `warnings_sent`    VARCHAR(255)  NOT NULL DEFAULT '',
-    `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1',
+    `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,15,10,5,2,1',
     `warning_messages` TEXT           NULL,
     `created_at`       TIMESTAMP     NULL DEFAULT NULL,
     `updated_at`       TIMESTAMP     NULL DEFAULT NULL,
@@ -99,10 +99,18 @@ CREATE TABLE IF NOT EXISTS `dayz_manager_settings` (
 ALTER TABLE `dayz_restart_schedules`
     ADD COLUMN IF NOT EXISTS `timed_restart_at`      TIMESTAMP     NULL DEFAULT NULL AFTER `next_restart_at`,
     ADD COLUMN IF NOT EXISTS `timed_warnings_sent`   VARCHAR(255)  NOT NULL DEFAULT '' AFTER `timed_restart_at`,
-    ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1' AFTER `warnings_sent`,
+    ADD COLUMN IF NOT EXISTS `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,15,10,5,2,1' AFTER `warnings_sent`,
     ADD COLUMN IF NOT EXISTS `warning_messages`      TEXT          NULL AFTER `warning_minutes_enabled`,
     ADD COLUMN IF NOT EXISTS `start_time`             VARCHAR(5)    NOT NULL DEFAULT '' AFTER `interval_minutes`,
     ADD COLUMN IF NOT EXISTS `last_restart_at`        TIMESTAMP     NULL DEFAULT NULL AFTER `next_restart_at`;
+
+UPDATE `dayz_restart_schedules`
+SET `warning_minutes_enabled` = '180,120,60,30,20,15,10,5,2,1'
+WHERE `warning_minutes_enabled` = '180,120,60,30,20,10,5,2,1';
+
+ALTER TABLE `dayz_restart_schedules`
+    ALTER COLUMN `warning_minutes_enabled`
+    SET DEFAULT '180,120,60,30,20,15,10,5,2,1';
 
 CREATE TABLE IF NOT EXISTS `dayz_dzsa_pending` (
     `id`           INT UNSIGNED  NOT NULL AUTO_INCREMENT,
@@ -179,4 +187,32 @@ CREATE TABLE IF NOT EXISTS `dayz_give_money_queue` (
     PRIMARY KEY (`id`),
     KEY `idx_dayz_give_money_queue_server_player` (`server_id`, `player_id`),
     KEY `idx_dayz_give_money_queue_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dayz_inventory_item_resolutions` (
+    `id`                INT UNSIGNED   NOT NULL AUTO_INCREMENT,
+    `lookup_type`       VARCHAR(32)    NOT NULL,
+    `lookup_key`        VARCHAR(255)   NOT NULL,
+    `lookup_normalized` VARCHAR(255)   NOT NULL,
+    `classname`         VARCHAR(191)   NOT NULL DEFAULT '',
+    `internal_id`       VARCHAR(191)   NOT NULL DEFAULT '',
+    `canonical_name`    VARCHAR(255)   NOT NULL DEFAULT '',
+    `wiki_title`        VARCHAR(255)   NOT NULL DEFAULT '',
+    `wiki_url`          VARCHAR(500)   NOT NULL DEFAULT '',
+    `image_url`         VARCHAR(500)   NOT NULL DEFAULT '',
+    `image_name`        VARCHAR(255)   NOT NULL DEFAULT '',
+    `variant`           VARCHAR(255)   NOT NULL DEFAULT '',
+    `category`          VARCHAR(255)   NOT NULL DEFAULT '',
+    `type`              VARCHAR(255)   NOT NULL DEFAULT '',
+    `aliases_json`      LONGTEXT       NULL,
+    `verification_json` LONGTEXT       NULL,
+    `confidence`        SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    `refreshed_at`      TIMESTAMP      NULL DEFAULT NULL,
+    `created_at`        TIMESTAMP      NULL DEFAULT NULL,
+    `updated_at`        TIMESTAMP      NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uq_dayz_inventory_item_resolutions_lookup` (`lookup_type`, `lookup_normalized`),
+    KEY `idx_dayz_inventory_item_resolutions_classname` (`classname`),
+    KEY `idx_dayz_inventory_item_resolutions_wiki_title` (`wiki_title`),
+    KEY `idx_dayz_inventory_item_resolutions_refreshed` (`refreshed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

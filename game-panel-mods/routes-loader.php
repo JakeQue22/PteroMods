@@ -65,8 +65,12 @@ use Illuminate\Support\Facades\Route;
                 continue;
             }
 
-            Route::{$method}('/' . ltrim((string) $route['uri'], '/'), $route['action'])
-                ->middleware(['auth']);
+            $registered = Route::{$method}('/' . ltrim((string) $route['uri'], '/'), $route['action']);
+            $middleware = !empty($route['signed_public']) ? [] : ['auth'];
+
+            if ($middleware !== []) {
+                $registered->middleware($middleware);
+            }
         }
     };
 

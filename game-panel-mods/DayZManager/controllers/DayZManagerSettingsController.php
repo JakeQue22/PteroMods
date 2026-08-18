@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace GamePanelMods\DayZManager\Controllers;
 
 use GamePanelMods\DayZManager\Services\DayZManagerSettingsService;
+use GamePanelMods\DayZManager\Services\DayZCacheWarmService;
 use GamePanelMods\DayZManager\Services\DayZPageRenderer;
 use GamePanelMods\DayZManager\Services\DayZServerContext;
 use Throwable;
@@ -16,6 +17,7 @@ final class DayZManagerSettingsController
 {
     public function __construct(
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
+        private readonly DayZCacheWarmService $warmer = new DayZCacheWarmService(),
         private readonly DayZPageRenderer $renderer = new DayZPageRenderer(),
         private readonly DayZServerContext $context = new DayZServerContext(),
     ) {
@@ -29,6 +31,7 @@ final class DayZManagerSettingsController
     public function index(mixed $server = null)
     {
         $resolved = $this->context->resolve($server);
+        $this->warmer->tick($resolved['model']);
 
         $data = [
             'settings'          => $this->settings->all(),
@@ -61,8 +64,23 @@ final class DayZManagerSettingsController
         $normalised = [];
 
         foreach ($values as $key => $value) {
-            if (in_array((string) $key, ['script_log_retention_days', 'crash_log_retention_days', 'tm_general_log_retention_days', 'dzserver_adm_log_retention_days', 'dzserver_rpt_log_retention_days'], true)) {
+            if (in_array((string) $key, [
+                'script_log_retention_days',
+                'crash_log_retention_days',
+                'tm_general_log_retention_days',
+                'trader_log_retention_days',
+                'dzserver_adm_log_retention_days',
+                'dzserver_rpt_log_retention_days',
+                'admin_log_retention_days',
+                'airdrop_log_retention_days',
+                'codelock_log_retention_days',
+            ], true)) {
                 $normalised[(string) $key] = max(1, min(3650, (int) $value));
+                continue;
+            }
+
+            if ((string) $key === 'cache_fetch_timer_seconds') {
+                $normalised[(string) $key] = max(5, min(3600, (int) $value));
                 continue;
             }
 
@@ -76,5 +94,27 @@ final class DayZManagerSettingsController
             'status'   => 'saved',
             'settings' => $this->settings->all(),
         ];
+    }
+
+    /**
+     * Forces DayZ Manager cache refreshes for all supported DayZ data.
+     *
+     * @return array<string, mixed>
+     */
+    public function refreshCache(mixed $server = null): array
+    {
+        $resolved = $this->context->resolve($server);
+        $this->context->authorizeManage($resolved['model']);
+
+        try {
+            $result = $this->warmer->forceRefreshAll($resolved['model']);
+
+            return ['status' => 'refreshed'] + $result;
+        } catch (Throwable $exception) {
+            return [
+                'status' => 'error',
+                'message' => $exception->getMessage(),
+            ];
+        }
     }
 }

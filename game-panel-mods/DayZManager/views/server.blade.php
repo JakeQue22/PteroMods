@@ -1,6 +1,6 @@
 <section class="dz-card">
     <h2>Server Control</h2>
-    <p class="dz-sub">Power the server and review the launch parameters Pterodactyl actually starts it with.</p>
+    <p class="dz-sub">Power the server and manage restart automation.</p>
     @if (!empty($live))
         <dl class="dz-grid" id="dz-query-stats">
             <div class="dz-stat">
@@ -41,6 +41,14 @@
     $restartStartTime = (string) ($restartSchedule['start_time'] ?? '');
     $nextRestartDisplay = (string) ($restartSchedule['next_restart_at_display'] ?? '');
     $lastRestartDisplay = (string) ($restartSchedule['last_restart_at_display'] ?? '');
+    $warningTitle = static function (int $minutes): string {
+        return match ($minutes) {
+            180 => '3 hour warning',
+            120 => '2 hour warning',
+            60 => '1 hour warning',
+            default => $minutes . ' minute warning',
+        };
+    };
 @endphp
 
 <section class="dz-card">
@@ -82,7 +90,7 @@
     <dl class="dz-grid" style="margin-top:0.9rem;">
         @foreach ($warningMinuteOptions as $minutes)
             <div class="dz-stat">
-                <dt>{{ $minutes }} minute warning</dt>
+                <dt>{{ $warningTitle($minutes) }}</dt>
                 <dd>
                     <label class="dz-sub" style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.45rem;">
                         <input type="checkbox" class="dz-warning-enabled" data-warning-minute="{{ $minutes }}" {{ in_array($minutes, $warningMinutesEnabled, true) ? 'checked' : '' }} />
@@ -147,30 +155,6 @@
         <button class="dz-btn dz-btn-red dz-hidden" id="dz-timed-cancel-btn" onclick="pteroCancelTimedRestart()">Cancel</button>
     </div>
     <p id="dz-timed-restart-status" class="dz-status dz-hidden"></p>
-</section>
-
-<section class="dz-card">
-    <h2>Current Launch Parameters</h2>
-    @if ($startup_source === 'pterodactyl')
-        <p class="dz-sub">Loaded from the Pterodactyl startup command and this server's egg variables.</p>
-
-        <dl class="dz-grid">
-            <div class="dz-stat">
-                <dt>Mod Parameter</dt>
-                <dd>{{ $launch_parameters !== '' ? $launch_parameters : '—' }}</dd>
-            </div>
-            <div class="dz-stat"><dt>Client Mods</dt><dd>{{ $mod_count }}</dd></div>
-            <div class="dz-stat">
-                <dt>Server-only Mods</dt>
-                <dd>{{ count($server_mods) > 0 ? implode(', ', $server_mods) : '—' }}</dd>
-            </div>
-        </dl>
-    @else
-        <p class="dz-sub">
-            The startup command could not be read from Pterodactyl. Check that the module can reach the
-            panel database and that the server still exists.
-        </p>
-    @endif
 </section>
 
 @if (count($startup_variables) > 0)

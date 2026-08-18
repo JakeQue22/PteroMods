@@ -15,6 +15,44 @@
     var LINK_ID = 'pteromods-dayz-tab';
     var LABEL = 'DayZ Manager';
     var support = {};
+    var schedulerServer = '';
+    var schedulerInterval = null;
+
+    function tickRestartSchedule(id) {
+        var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+        return fetch('/api/server/' + encodeURIComponent(id) + '/dayz/server/restart-schedule/tick', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrf,
+                Accept: 'application/json',
+            },
+            body: '{}',
+        }).catch(function () {
+            // The next 30-second tick retries transient panel or Wings failures.
+        });
+    }
+
+    function startRestartScheduler(id) {
+        if (schedulerServer === id) {
+            return;
+        }
+
+        schedulerServer = id;
+        if (schedulerInterval !== null) {
+            window.clearInterval(schedulerInterval);
+        }
+        tickRestartSchedule(id);
+        schedulerInterval = window.setInterval(function () {
+            var current = context();
+
+            if (current && current.id === id) {
+                tickRestartSchedule(id);
+            }
+        }, 30000);
+    }
 
     function context() {
         var path = window.location.pathname;
@@ -73,6 +111,18 @@
         } else {
             link.textContent = LABEL;
         }
+
+        // The panel client area is a React SPA that delegates click handling to
+        // React Router at the document level.  React Router intercepts the click,
+        // tries client-side navigation to a route that does not exist, and drops
+        // the event — leaving the page unchanged and requiring a second click for
+        // the browser to fall back to a full navigation.  Stopping propagation
+        // prevents React Router from seeing the click so the first click always
+        // navigates correctly.
+        link.addEventListener('click', function (e) {
+            e.stopImmediatePropagation();
+            window.location.href = url;
+        });
 
         return link;
     }
@@ -134,6 +184,8 @@
             if (!supported) {
                 return;
             }
+
+            startRestartScheduler(current.id);
 
             if (current.admin) {
                 injectAdmin(current.url);

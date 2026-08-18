@@ -11,7 +11,7 @@ return [
             `interval_minutes` INT           NOT NULL DEFAULT 360,
             `next_restart_at`  TIMESTAMP     NULL DEFAULT NULL,
             `warnings_sent`    VARCHAR(255)  NOT NULL DEFAULT '',
-            `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,10,5,2,1',
+            `warning_minutes_enabled` VARCHAR(255) NOT NULL DEFAULT '180,120,60,30,20,15,10,5,2,1',
             `warning_messages` TEXT           NULL,
             `created_at`       TIMESTAMP     NULL DEFAULT NULL,
             `updated_at`       TIMESTAMP     NULL DEFAULT NULL,

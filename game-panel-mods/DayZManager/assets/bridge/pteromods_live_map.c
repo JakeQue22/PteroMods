@@ -67,10 +67,19 @@
  *
  * INVENTORY
  * Top-level equipped items are collected from common attachment slots plus the
- * item held in the player's hands.  Only the slot name and item class name are
- * written; container contents (e.g. backpack contents) are not enumerated to
- * keep the snapshot small.  FindAttachmentBySlotName returns null for empty
- * slots and is safe to call on every tick.
+ * item held in the player's hands.  The slot name and item class name are
+ * written.  For containers that can hold cargo (Back = backpack, Hips = belt /
+ * holster, Legs = pants, Body = vest), items stored inside are also enumerated
+ * one level deep and placed in the parent item's "contents" array.
+ * PteroMods_LiveMap_CollectContainerContents uses:
+ *   EntityAI.GetInventory()                  → GameInventory
+ *   CargoBase.GetItemCount()                  → total cargo item count
+ *   CargoBase.GetItem(int index)               → item at cargo index
+ * Items are cast to ItemBase (not EntityAI) so that only real inventory items
+ * are collected; expansion proxy objects do not extend ItemBase and will cast to
+ * null safely.
+ * GetAttachmentSlotsCount / GetAttachmentFromIndex are intentionally NOT used:
+ * calling GetInventory() on slot attachments crashes with Expansion/VPP mods.
  */
 
 // ---- Configuration ---------------------------------------------------------
@@ -90,11 +99,19 @@ const string PTEROMODS_LIVEMAP_DIR = "$profile:PteroMods";
 // Member names become the JSON keys, so they match what the PteroMods panel
 // reads in DayZLiveMapService::normalizePlayers().
 
-// One entry per top-level equipped attachment slot.
+// One entry per top-level equipped attachment slot (or item inside a container).
 class PteroMods_LiveMapItem
 {
     string slot;       // Slot name (e.g. "Body", "Back", "Hands")
     string className;  // Item class name (e.g. "CivilianCoat_Black")
+    // Items stored inside this container (backpack cargo, vest pockets, pants pockets …).
+    // Only one level deep: contents of contents are not serialised.
+    ref array<ref PteroMods_LiveMapItem> contents;
+
+    void PteroMods_LiveMapItem()
+    {
+        contents = new array<ref PteroMods_LiveMapItem>;
+    }
 }
 
 class PteroMods_LiveMapPlayer
@@ -143,6 +160,45 @@ float PteroMods_LiveMap_Round2(float value)
 {
     float scaled = Math.Round(value * 100.0);
     return scaled / 100.0;
+}
+
+// Enumerates direct cargo items stored inside a container (backpack, vest, pants …)
+// and appends them to slotItem.contents.
+//
+// Only direct cargo (CargoBase) is enumerated.  Attachment-slot sub-containers
+// are intentionally skipped: calling GetInventory() on a slot attachment is
+// unsafe when DayZExpansion, VPP, or other mods register proxy/virtual attachment
+// objects that pass the null check at script level but are not fully-initialised
+// ItemBase instances, which causes an engine-level segfault.
+//
+// Items are cast to ItemBase (not EntityAI) so that only true inventory items
+// are collected; expansion proxy objects do not extend ItemBase and will cast to
+// null, which the guard below catches safely.
+void PteroMods_LiveMap_CollectContainerContents(EntityAI container, PteroMods_LiveMapItem slotItem)
+{
+    if (!container)
+        return;
+
+    GameInventory inv = container.GetInventory();
+    if (!inv)
+        return;
+
+    // Direct cargo items (the main case for backpacks and holsters).
+    CargoBase cargo = inv.GetCargo();
+    if (!cargo)
+        return;
+
+    int itemCount = cargo.GetItemCount();
+    for (int ci = 0; ci < itemCount; ci++)
+    {
+        ItemBase cargoItem = ItemBase.Cast(cargo.GetItem(ci));
+        if (!cargoItem)
+            continue;
+        PteroMods_LiveMapItem cargoSubItem = new PteroMods_LiveMapItem();
+        cargoSubItem.slot = slotItem.slot + ".cargo";
+        cargoSubItem.className = cargoItem.GetType();
+        slotItem.contents.Insert(cargoSubItem);
+    }
 }
 
 // ---- Bridge ----------------------------------------------------------------
@@ -247,6 +303,9 @@ class PteroMods_LiveMapBridge
             }
 
             // Collect top-level equipped items from common attachment slots.
+            // For containers that can hold items (Back, Body, Hips, Legs), also
+            // enumerate their contents one level deep via
+            // PteroMods_LiveMap_CollectContainerContents.
             array<string> slotNames = new array<string>;
             slotNames.Insert("Headgear");
             slotNames.Insert("Mask");
@@ -258,6 +317,8 @@ class PteroMods_LiveMapBridge
             slotNames.Insert("Hips");
             slotNames.Insert("Feet");
             slotNames.Insert("Legs");
+            slotNames.Insert("Shoulder");
+            slotNames.Insert("Melee");
             foreach (string slotName : slotNames)
             {
                 EntityAI attachment = man.FindAttachmentBySlotName(slotName);
@@ -266,16 +327,25 @@ class PteroMods_LiveMapBridge
                     PteroMods_LiveMapItem slotItem = new PteroMods_LiveMapItem();
                     slotItem.slot = slotName;
                     slotItem.className = attachment.GetType();
+
+                    // Enumerate container contents for slots that typically hold items.
+                    if (slotName == "Back" || slotName == "Body" || slotName == "Hips" || slotName == "Legs")
+                        PteroMods_LiveMap_CollectContainerContents(attachment, slotItem);
+
                     entry.inventory.Insert(slotItem);
                 }
             }
-            EntityAI heldEnt = man.GetHumanInventory().GetEntityInHands();
-            if (heldEnt)
+            HumanInventory humanInv = man.GetHumanInventory();
+            if (humanInv)
             {
-                PteroMods_LiveMapItem handItem = new PteroMods_LiveMapItem();
-                handItem.slot = "Hands";
-                handItem.className = heldEnt.GetType();
-                entry.inventory.Insert(handItem);
+                EntityAI heldEnt = humanInv.GetEntityInHands();
+                if (heldEnt)
+                {
+                    PteroMods_LiveMapItem handItem = new PteroMods_LiveMapItem();
+                    handItem.slot = "Hands";
+                    handItem.className = heldEnt.GetType();
+                    entry.inventory.Insert(handItem);
+                }
             }
 
             snapshot.players.Insert(entry);

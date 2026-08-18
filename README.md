@@ -379,16 +379,31 @@ URL: `GET /servers/{server}/dayz/players`
 
 The **Players** tab shows a single merged player directory: persisted DayZ records loaded from `characters.db` / `players.db` are combined with the currently online players from the live-map bridge snapshot, so each player appears once with their nickname, Steam64 (linked to their Steam profile), DayZ UID, last seen time, position and list membership. Each entry links straight to that player on the Live Map. Ban/whitelist/priority list changes are persisted to `dayz_player_lists`.
 
+Every player card shows a **Money** field read from LB Banking
+(`/profiles/LBmaster/Data/LBBanking/Players/<steam64>.json`, field `currentMoney`),
+and an **Alter Bank Money** action that writes a new `currentMoney` value back to
+that file. Give Money, Kick, Ban and Alter Bank Money each append a line to
+`/profiles/VPPAdminTools/Logging/PteroModsPanel_<date>.log` recording the panel
+username that performed the action, so panel-originated actions show up in the
+Admin Logs block of the Logs tab.
+
+The players page also includes a **Give Money** queue. The panel writes one JSON queue file per player under `/profiles/PteroMods/give_money_<uid>.json` (mirrored to the Steam64 key when the two ids differ). The bundled server-side mission bridge for consuming those files lives at `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c`; each fulfilled grant calls its queue-specific signed URL so the pending database row is removed immediately.
+
 | Action | Method | Endpoint |
 |---|---|---|
 | List entries | GET | `/api/servers/{server}/dayz/players/{list_type}` |
 | Add entry | POST | `/api/servers/{server}/dayz/players/{list_type}` |
 | Remove entry | DELETE | `/api/servers/{server}/dayz/players/{list_type}/{id}` |
 | Kick live player | POST | `/api/servers/{server}/dayz/player-actions/kick` |
+| Alter bank money | POST | `/api/servers/{server}/dayz/player-actions/bank-money` |
 
 Persisted players include last-known coordinates and a bounds check against the active map size; live players show current online position/health from the bridge. `{list_type}` must be one of `ban`, `whitelist`, or `priority`.
 
+To activate the bundled give-money bridge, copy `game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c` into the active mission folder, include it from `init.c`, and call `PteroMods_GiveMoney_Init();` inside `main()`. The bridge reads the queued JSON and creates the requested `MoneyRuble1`, `MoneyRuble5`, `MoneyRuble10`, `MoneyRuble25`, `MoneyRuble50`, or `MoneyRuble100` items in the matching online player's inventory.
+
 The persistence database is copied from the container via Wings and read with the first SQLite implementation available in the panel runtime: the `sqlite3` extension, PDO's `sqlite` driver, or the bundled dependency-free `DayZSqliteFileReader`, which parses the SQLite file format directly. **No PHP SQLite extension is required.** Table and column names are matched heuristically, so both vanilla and community persistence layouts are supported.
+
+Inventory item metadata and thumbnails are resolved and cached from DayZ Wiki, with explicit fallbacks to DayZ Fandom and the DayZ Archive. Variant searches include both `Item Variant` and `Item (Variant)` forms and prefer matching variant image filenames.
 
 **Add payload:**
 
@@ -451,7 +466,9 @@ URL: `GET /servers/{server}/dayz/configuration`
 Configuration files are discovered on the server through the Pterodactyl daemon.
 The server root, `config/`, `profiles/`, `battleye/`, and every mission folder in
 `mpmissions/` (including its `db/` directory) are scanned, and each file is
-listed with its real path, size, and a deep link into the panel file manager:
+listed with its real path, size, and a deep link into the panel file manager.
+The complete `profiles/` tree is included except `.log`, `.mdmp`, `.rpt`, and
+`.adm` files:
 
 | File type | Opens in |
 |---|---|
@@ -463,9 +480,20 @@ The `ConfigurationCatalog` service groups files into three operator-facing categ
 
 | Category | Files |
 |---|---|
-| **Default** | `serverDZ.cfg`, `BEServer.cfg`, `messages.xml`, `priority.txt`, `ban.txt`, `whitelist.txt`, `scripts.log`, `storage_1`, `storage_2`, and any `.bat`, `.cfg`, `.xml`, or `.txt` |
+| **Default** | `serverDZ.cfg`, `BEServer.cfg`, `messages.xml`, `priority.txt`, `ban.txt`, `whitelist.txt`, `storage_1`, `storage_2`, and any `.bat`, `.cfg`, `.xml`, or `.txt` |
 | **Server Messages** | `Messages.bat`, `messages.cfg`, `settings.cfg` |
 | **Admin Tools** | `credentials.txt`, `SuperAdmins.txt`, `admins.xml` |
+
+The separate **Logs** tab lists `.log` and `.rpt` files from `/profiles`,
+`/profiles/CodeLock/Logs`, and `/profiles/Airdrop/Logs`, plus `.txt` Admin Logs
+from `/profiles/VPPAdminTools/Logging`. Error Logs require `error` in the
+filename, files whose name starts with `script` are separated into Script Logs,
+Code Lock Logs are grouped by their containing folder, and `TM*` files are
+separated into Trader Logs.
+
+The Configuration tab hides `.log`, `.rpt`, `.adm`, `.mdmp`, `.ch`, `.bin`, and
+`.vpp` files, and skips any `/profiles` sub-folder whose name contains `log`
+(those belong on the Logs tab).
 
 Saving through the API writes the file back to the container through the daemon,
 and the previous contents are stored in `dayz_configuration_backups` first.
@@ -488,7 +516,7 @@ the client application re-renders its navigation.
 
 ### Live Map
 
-The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable.
+The **Live Map** tab shows an interactive Leaflet map of live player positions. It does **not** connect to the DayZ server directly — player data must be written to a bridge file by a server-side mod or script. A 1 km coordinate grid and labelled major locations are always drawn, so the viewer stays usable even when the external tile server is unreachable. Airdrops are read from `/profiles/VPPMapAirdrop.json` and other known airdrop files, and any other JSON file under `/profiles` (two levels deep) whose name contains `airdrop`; marker names and positions are taken from `M_MARKER_NAME`/`M_POSITION` or their common equivalents (`Name`, `Position`, …).
 
 #### How it works
 

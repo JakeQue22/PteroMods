@@ -80,7 +80,7 @@ final class DayZServerContext
         try {
             $user = \Illuminate\Support\Facades\Auth::user();
         } catch (Throwable) {
-            return;
+            abort(403);
         }
 
         if ($user === null) {
@@ -256,8 +256,7 @@ final class DayZServerContext
      */
     private function authorize(mixed $model): void
     {
-        if ($model === null
-            || !function_exists('abort')
+        if (!function_exists('abort')
             || !class_exists('Illuminate\\Support\\Facades\\Auth')) {
             return;
         }
@@ -265,7 +264,7 @@ final class DayZServerContext
         try {
             $user = \Illuminate\Support\Facades\Auth::user();
         } catch (Throwable) {
-            return;
+            abort(403);
         }
 
         if ($user === null) {
@@ -274,6 +273,10 @@ final class DayZServerContext
 
         if ((bool) ($this->rawAttribute($user, 'root_admin') ?? false)) {
             return;
+        }
+
+        if ($model === null) {
+            abort(403);
         }
 
         $userId = (int) ($this->rawAttribute($user, 'id') ?? 0);

@@ -59,7 +59,8 @@
 
     <p id="dz-settings-status" class="dz-status dz-hidden" style="margin-top:0.75rem;"></p>
     <div class="dz-form" style="margin-top:0.75rem;">
-        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroDzClearLogsNow()">Clear now</button>
+        <button class="dz-btn" type="button" onclick="pteroDzRefreshCachesNow()">Update Cache</button>
+        <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroDzClearLogsNow()">Prune Logs</button>
     </div>
 </section>
 
@@ -159,7 +160,7 @@ window.pteroDzClearLogsNow = function () {
     }
 
     status.className = 'dz-status';
-    status.textContent = 'Cleaning old logs now…';
+    status.textContent = 'Pruning old logs now…';
 
     fetch('/api/server/' + encodeURIComponent(match[1]) + '/dayz/server/log-scrub/tick', {
         method: 'POST',
@@ -176,10 +177,51 @@ window.pteroDzClearLogsNow = function () {
         if (data.status === 'scrubbed' || data.status === 'throttled') {
             var deleted = Number(data.deleted || 0);
             var scanned = Number(data.scanned || 0);
-            status.textContent = 'Log cleanup complete. Scanned ' + scanned + ' file(s), deleted ' + deleted + '.';
+            status.textContent = 'Log pruning complete. Scanned ' + scanned + ' file(s), deleted ' + deleted + '.';
             status.className = 'dz-status';
         } else {
-            status.textContent = data.message || 'Could not clean logs.';
+            status.textContent = data.message || 'Could not prune logs.';
+            status.className = 'dz-status dz-status-error';
+        }
+    })
+    .catch(function () {
+        status.textContent = 'Request failed. Please try again.';
+        status.className = 'dz-status dz-status-error';
+    });
+};
+
+window.pteroDzRefreshCachesNow = function () {
+    var status = document.getElementById('dz-settings-status');
+    var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    var csrf = csrfMeta ? csrfMeta.getAttribute('content') : '';
+    var match = window.location.pathname.match(/^\/(?:servers?|admin\/servers\/view)\/([^/]+)\/dayz/);
+    if (!match) {
+        status.textContent = 'Could not determine the server for cache refresh.';
+        status.className = 'dz-status dz-status-error';
+        return;
+    }
+
+    status.className = 'dz-status';
+    status.textContent = 'Refreshing DayZ Manager caches…';
+
+    fetch('/api/server/' + encodeURIComponent(match[1]) + '/dayz/settings/cache-refresh', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrf,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+        body: '{}',
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+        if (data.status === 'refreshed') {
+            var count = Number(data.servers_warmed || 0);
+            status.textContent = 'Cache refresh complete. Warmed ' + count + ' server(s).';
+            status.className = 'dz-status';
+        } else {
+            status.textContent = data.message || 'Could not refresh caches.';
             status.className = 'dz-status dz-status-error';
         }
     })

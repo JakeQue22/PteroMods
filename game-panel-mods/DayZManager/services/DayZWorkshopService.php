@@ -119,7 +119,7 @@ final class DayZWorkshopService
         $mods = $this->staleCache->remember(
             $key,
             self::STATS_CACHE_SECONDS,
-            self::STATS_CACHE_SECONDS * 20,
+            self::STATS_CACHE_SECONDS * 720,
             fn (): array => $this->scanInstalledMods($server),
             [],
             // Never replace a non-empty mod list with an empty one.  A transient
@@ -1490,7 +1490,7 @@ final class DayZWorkshopService
         $stats = $this->staleCache->remember(
             $key,
             self::STATS_CACHE_SECONDS,
-            self::STATS_CACHE_SECONDS * 20,
+            self::STATS_CACHE_SECONDS * 720,
             fn (): array => $this->gatherWorkshopStats($server),
             $fallback,
             // Mirror the same guard as cachedInstalledMods: never let a

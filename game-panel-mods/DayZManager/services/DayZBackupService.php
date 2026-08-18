@@ -7,39 +7,30 @@ namespace GamePanelMods\DayZManager\Services;
 use Throwable;
 
 /**
- * Manages DayZ Manager database backups for a server.
+ * Manages DayZ persistence (storage_1) backups for a server.
  *
- * A backup is a JSON snapshot of all per-server DB rows (mod order, restart
- * schedule, mod install queue) plus the global player lists and settings.
- * Backups are stored in `dayz_backups` and can be restored at any time;
- * restoring overwrites the live rows and optionally restarts the server so
- * the new mod/configuration state takes effect immediately.
+ * A backup compresses the DayZ persistence folder
+ * (`/mpmissions/<mission>/storage_1`) on the game server into a tar.gz
+ * archive stored at `/mpmissions/<mission>/storage_1_backups/`.  The backup
+ * record in `dayz_backups` carries the mission folder name and the relative
+ * archive path so it can be restored at any time.
+ *
+ * Before any Restore or Restore + Restart a safety backup is taken
+ * automatically.
  */
 final class DayZBackupService
 {
     private const AUTO_BACKUP_INTERVAL_SECONDS = 900;
+    private const CACHE_SECONDS = 120;
 
-    /**
-     * Tables that carry server-specific rows and are filtered by `server_id`.
-     */
-    private const SERVER_TABLES = [
-        'dayz_server_mod_order',
-        'dayz_restart_schedules',
-        'dayz_mod_install_queue',
-    ];
-
-    /**
-     * Tables that are global (no server_id column) and are always included.
-     */
-    private const GLOBAL_TABLES = [
-        'dayz_player_lists',
-        'dayz_manager_settings',
-    ];
+    /** Sub-folder inside the mission directory where archives are stored. */
+    private const BACKUP_SUBDIR = 'storage_1_backups';
 
     public function __construct(
         private readonly DayZServerContext $context = new DayZServerContext(),
         private readonly DayZManagerSettingsService $settings = new DayZManagerSettingsService(),
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -58,22 +49,21 @@ final class DayZBackupService
             return [];
         }
 
-        try {
-            $rows = \Illuminate\Support\Facades\DB::table('dayz_backups')
-                ->where('server_id', $serverId)
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->get(['id', 'label', 'trigger', 'created_at'])
-                ->all();
+        /** @var list<array<string, mixed>>|null $rows */
+        $rows = $this->staleCache->remember(
+            'pteromods.dayz.backups.list.' . md5($serverId),
+            self::CACHE_SECONDS,
+            self::CACHE_SECONDS * 20,
+            fn (): array => $this->loadList($serverId),
+            [],
+        );
 
-            return array_map(static fn (mixed $row): array => (array) $row, $rows);
-        } catch (Throwable) {
-            return [];
-        }
+        return is_array($rows) ? $rows : [];
     }
 
     /**
-     * Creates a new backup and prunes excess backups per the keep setting.
+     * Creates a new backup by compressing the DayZ persistence folder on the
+     * game server and recording the archive location in the database.
      *
      * @return array<string, mixed>
      */
@@ -89,23 +79,54 @@ final class DayZBackupService
             return ['status' => 'error', 'message' => 'Backup table not found — run the migrations.'];
         }
 
-        $payload = $this->buildPayload($serverId);
+        $missionFolder = $this->resolveMissionFolder($server);
+
+        if ($missionFolder === '') {
+            return ['status' => 'error', 'message' => 'Could not find a dayzOffline mission folder under /mpmissions.'];
+        }
+
+        $missionRoot = '/mpmissions/' . $missionFolder;
+
+        // Compress storage_1 inside the mission root.
+        $archiveName = $this->gateway->compressServerPath($server, $missionRoot, ['storage_1']);
+
+        if ($archiveName === null) {
+            return ['status' => 'error', 'message' => 'Wings could not compress the storage_1 folder. Ensure the server container is reachable.'];
+        }
+
+        // Move the archive into the dedicated backup sub-directory.
+        $timestamp  = date('Ymd_His');
+        $safeTrigger = preg_replace('/[^a-z0-9_]/', '_', strtolower($trigger)) ?: 'manual';
+        $destName   = 'storage_1_' . $timestamp . '_' . $safeTrigger . '.tar.gz';
+        $destRel    = self::BACKUP_SUBDIR . '/' . $destName;
+
+        $this->gateway->renameFile($server, $missionRoot, $archiveName, $destRel);
+
+        $archiveServerPath = $missionRoot . '/' . $destRel;
 
         try {
+            $payload = json_encode([
+                'schema_version'  => 2,
+                'server_id'       => $serverId,
+                'mission_folder'  => $missionFolder,
+                'archive_rel_path' => $destRel,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+
             \Illuminate\Support\Facades\DB::table('dayz_backups')->insert([
                 'server_id'  => $serverId,
                 'label'      => $label !== '' ? $label : date('Y-m-d H:i:s') . ' backup',
                 'trigger'    => $trigger,
-                'payload'    => json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+                'payload'    => $payload,
                 'created_at' => date('Y-m-d H:i:s'),
             ]);
         } catch (Throwable $exception) {
-            return ['status' => 'error', 'message' => 'Could not save backup: ' . $exception->getMessage()];
+            return ['status' => 'error', 'message' => 'Could not save backup record: ' . $exception->getMessage()];
         }
 
-        $this->pruneOldBackups($serverId);
+        $this->forgetListCache($serverId);
+        $this->pruneOldBackups($serverId, $server, $missionRoot);
 
-        return ['status' => 'created', 'server_id' => $serverId];
+        return ['status' => 'created', 'server_id' => $serverId, 'archive' => $archiveServerPath];
     }
 
     /**
@@ -122,10 +143,41 @@ final class DayZBackupService
         }
 
         try {
+            $row = \Illuminate\Support\Facades\DB::table('dayz_backups')
+                ->where('id', $backupId)
+                ->where('server_id', $serverId)
+                ->first(['id', 'server_id', 'payload']);
+
+            if ($row === null) {
+                return ['status' => 'error', 'message' => 'Backup not found or does not belong to this server.'];
+            }
+
             $deleted = \Illuminate\Support\Facades\DB::table('dayz_backups')
                 ->where('id', $backupId)
                 ->where('server_id', $serverId)
                 ->delete();
+
+            if ($deleted > 0) {
+                // Best-effort: remove the archive from the game server.
+                $meta = $this->parseMeta((string) ($row->payload ?? '{}'));
+
+                if (isset($meta['mission_folder'], $meta['archive_rel_path'])) {
+                    $missionRoot = '/mpmissions/' . $meta['mission_folder'];
+                    $archiveParts = explode('/', $meta['archive_rel_path'], 2);
+                    $archiveDir  = count($archiveParts) === 2
+                        ? $missionRoot . '/' . $archiveParts[0]
+                        : $missionRoot;
+                    $archiveFile = count($archiveParts) === 2 ? $archiveParts[1] : $archiveParts[0];
+
+                    try {
+                        $this->gateway->deletePath($server, $archiveDir . '/' . $archiveFile);
+                    } catch (Throwable) {
+                        // Best-effort only; the DB record is already gone.
+                    }
+                }
+
+                $this->forgetListCache($serverId);
+            }
 
             return $deleted > 0
                 ? ['status' => 'deleted']
@@ -136,7 +188,10 @@ final class DayZBackupService
     }
 
     /**
-     * Restores a backup by id and optionally restarts the server.
+     * Restores a backup by decompressing its archive on the game server.
+     *
+     * A safety backup of the current storage_1 is taken automatically before
+     * any restore so the previous state can be recovered if needed.
      *
      * @return array<string, mixed>
      */
@@ -161,17 +216,32 @@ final class DayZBackupService
             return ['status' => 'error', 'message' => 'Backup not found or does not belong to this server.'];
         }
 
+        $meta = $this->parseMeta((string) ($row->payload ?? '{}'));
+
+        if (!isset($meta['mission_folder'], $meta['archive_rel_path'])) {
+            return ['status' => 'error', 'message' => 'Backup record is missing archive metadata (schema v1 backups cannot be restored this way).'];
+        }
+
+        $missionFolder  = (string) $meta['mission_folder'];
+        $archiveRelPath = (string) $meta['archive_rel_path'];
+        $missionRoot    = '/mpmissions/' . $missionFolder;
+
+        // Take a safety backup before overwriting.
+        $this->create($server, 'pre-restore safety backup', 'auto');
+
+        // Remove the current storage_1 so the decompressed archive lands cleanly.
         try {
-            $payload = json_decode((string) ($row->payload ?? '{}'), true, 512, JSON_THROW_ON_ERROR);
+            $this->gateway->deletePath($server, $missionRoot . '/storage_1');
         } catch (Throwable) {
-            return ['status' => 'error', 'message' => 'Backup payload is corrupt.'];
+            // If storage_1 does not exist yet, deletion is a no-op.
         }
 
-        if (!is_array($payload)) {
-            return ['status' => 'error', 'message' => 'Backup payload is corrupt.'];
-        }
+        // Decompress the selected backup archive into the mission root.
+        $ok = $this->gateway->decompressServerPath($server, $missionRoot, $archiveRelPath);
 
-        $this->applyPayload($serverId, $payload);
+        if (!$ok) {
+            return ['status' => 'error', 'message' => 'Wings could not decompress the backup archive. The previous storage_1 was removed — you may need to restore from another backup.'];
+        }
 
         if ($restart) {
             $this->gateway->power($server, 'restart');
@@ -223,94 +293,98 @@ final class DayZBackupService
     }
 
     /**
-     * @return array<string, mixed>
+     * Resolves the first `dayzOffline.*` subdirectory under `/mpmissions`.
+     * Returns an empty string when none is found.
      */
-    private function buildPayload(string $serverId): array
+    private function resolveMissionFolder(mixed $server): string
     {
-        $payload = [
-            'schema_version' => 1,
-            'server_id'      => $serverId,
-            'tables'         => [],
-        ];
+        try {
+            $entries = $this->gateway->listDirectory($server, '/mpmissions');
 
-        foreach (self::SERVER_TABLES as $table) {
-            if (!$this->tableExists($table)) {
-                continue;
+            foreach ($entries as $entry) {
+                if (!is_array($entry) || empty($entry['directory'])) {
+                    continue;
+                }
+
+                $name = trim((string) ($entry['name'] ?? ''));
+
+                if ($name !== '' && str_starts_with(strtolower($name), 'dayzoffline.')) {
+                    return $name;
+                }
             }
-
-            try {
-                $rows = \Illuminate\Support\Facades\DB::table($table)
-                    ->where('server_id', $serverId)
-                    ->get()
-                    ->all();
-
-                $payload['tables'][$table] = array_map(static fn (mixed $row): array => (array) $row, $rows);
-            } catch (Throwable) {
-                $payload['tables'][$table] = [];
-            }
+        } catch (Throwable) {
+            // Fall through.
         }
 
-        foreach (self::GLOBAL_TABLES as $table) {
-            if (!$this->tableExists($table)) {
-                continue;
-            }
-
-            try {
-                $rows = \Illuminate\Support\Facades\DB::table($table)
-                    ->get()
-                    ->all();
-
-                $payload['tables'][$table] = array_map(static fn (mixed $row): array => (array) $row, $rows);
-            } catch (Throwable) {
-                $payload['tables'][$table] = [];
-            }
-        }
-
-        return $payload;
+        return '';
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
      */
-    private function applyPayload(string $serverId, array $payload): void
+    private function parseMeta(string $json): array
     {
-        $tables = is_array($payload['tables'] ?? null) ? $payload['tables'] : [];
+        try {
+            $decoded = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
 
-        // Only per-server tables are restored automatically.  Global tables
-        // (dayz_player_lists, dayz_manager_settings) are included in the backup
-        // payload for reference but are intentionally not restored here: wiping
-        // those tables would affect every other server sharing the database.
-        foreach (self::SERVER_TABLES as $table) {
-            if (!isset($tables[$table]) || !is_array($tables[$table])) {
-                continue;
-            }
-
-            if (!$this->tableExists($table)) {
-                continue;
-            }
-
-            try {
-                \Illuminate\Support\Facades\DB::table($table)
-                    ->where('server_id', $serverId)
-                    ->delete();
-
-                foreach ($tables[$table] as $row) {
-                    if (!is_array($row)) {
-                        continue;
-                    }
-
-                    $row['server_id'] = $serverId;
-                    unset($row['id']);
-
-                    \Illuminate\Support\Facades\DB::table($table)->insert($row);
-                }
-            } catch (Throwable) {
-                // Best-effort: continue restoring other tables.
-            }
+            return is_array($decoded) ? $decoded : [];
+        } catch (Throwable) {
+            return [];
         }
     }
 
-    private function pruneOldBackups(string $serverId): void
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function loadList(string $serverId): array
+    {
+        try {
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_backups')
+                ->where('server_id', $serverId)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->get(['id', 'server_id', 'label', 'trigger', 'created_at', 'payload'])
+                ->all();
+
+            return array_map(function (mixed $row): array {
+                $entry = (array) $row;
+                $meta  = $this->parseMeta((string) ($entry['payload'] ?? '{}'));
+
+                unset($entry['payload']);
+
+                $archivePath = '';
+
+                if (isset($meta['mission_folder'], $meta['archive_rel_path'])) {
+                    $archivePath = '/mpmissions/' . $meta['mission_folder'] . '/' . $meta['archive_rel_path'];
+                }
+
+                return $entry + [
+                    'archive_path'   => $archivePath,
+                    'schema_version' => (int) ($meta['schema_version'] ?? 1),
+                ];
+            }, $rows);
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
+    private function forgetListCache(string $serverId): void
+    {
+        if (!class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            return;
+        }
+
+        $key = 'pteromods.dayz.backups.list.' . md5($serverId);
+
+        try {
+            \Illuminate\Support\Facades\Cache::forget($key);
+            \Illuminate\Support\Facades\Cache::forget($key . '.lock');
+        } catch (Throwable) {
+            // Best-effort cache invalidation only.
+        }
+    }
+
+    private function pruneOldBackups(string $serverId, mixed $server, string $missionRoot): void
     {
         $keep = max(1, (int) $this->settings->get('auto_backup_keep', 10));
 
@@ -319,22 +393,38 @@ final class DayZBackupService
         }
 
         try {
-            // Only auto-generated backups are subject to the retention limit;
-            // manual backups are kept until the user explicitly deletes them.
-            $ids = \Illuminate\Support\Facades\DB::table('dayz_backups')
+            $rows = \Illuminate\Support\Facades\DB::table('dayz_backups')
                 ->where('server_id', $serverId)
                 ->where('trigger', 'auto')
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
-                ->pluck('id')
+                ->get(['id', 'payload'])
                 ->all();
 
-            $toDelete = array_slice($ids, $keep);
+            $toDelete = array_slice($rows, $keep);
 
-            if ($toDelete !== []) {
+            foreach ($toDelete as $row) {
+                $rowArray = (array) $row;
+                $id       = (int) ($rowArray['id'] ?? 0);
+
+                if ($id <= 0) {
+                    continue;
+                }
+
+                $meta = $this->parseMeta((string) ($rowArray['payload'] ?? '{}'));
+
                 \Illuminate\Support\Facades\DB::table('dayz_backups')
-                    ->whereIn('id', $toDelete)
+                    ->where('id', $id)
+                    ->where('server_id', $serverId)
                     ->delete();
+
+                if (isset($meta['archive_rel_path'])) {
+                    try {
+                        $this->gateway->deletePath($server, $missionRoot . '/' . $meta['archive_rel_path']);
+                    } catch (Throwable) {
+                        // Best-effort.
+                    }
+                }
             }
         } catch (Throwable) {
             // Best-effort pruning only.

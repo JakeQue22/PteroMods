@@ -122,6 +122,13 @@
                             N/A
                         @endif
                     </dd></div>
+                    <div><dt>Money</dt><dd>
+                        @if (($player['bank_money'] ?? null) !== null)
+                            ${{ number_format((float) $player['bank_money']) }}
+                        @else
+                            —
+                        @endif
+                    </dd></div>
                     @if (!empty($player['first_seen_at']))
                         <div><dt>First seen</dt><dd>{{ $fmtDate($player['first_seen_at']) }}</dd></div>
                     @endif
@@ -145,7 +152,7 @@
                         <button class="dz-btn dz-btn-ghost" type="button" onclick="pteroViewInventory({{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($inventoryJson, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">View Inventory</button>
                     @endif
                     @if (!$isProtectedPlayer && !empty($player['online']) && $kickId)
-                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $kickId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
+                        <button class="dz-btn dz-btn-amber" type="button" onclick="pteroKickPlayer({{ json_encode((string) $kickId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($player['name'] ?: $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Kick</button>
                     @endif
                     @if (!$isProtectedPlayer)
                         @if (!empty($listFlags['ban']) && !empty($listEntryIds['ban']))
@@ -179,8 +186,9 @@
                     @if ($resetBackupId > 0)
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
                     @endif
-                    @if (!$isOnline || in_array($steam64, $superadmin_ids ?? [], true))
-                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
+                    <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Cash</button>
+                    @if ($steam64)
+                        <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroAlterBankMoney({{ json_encode((string) $steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode(($player['bank_money'] ?? null) !== null ? (string) $player['bank_money'] : '', JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Alter Bank Money</button>
                     @endif
                 </div>
                 <p class="dz-status dz-hidden dz-player-action-status" style="margin-top:0.75rem;"></p>
@@ -199,12 +207,59 @@
     <p id="dz-player-action-status" class="dz-status dz-hidden" style="margin-top:0.75rem;"></p>
 </section>
 
+<div id="dz-give-money-modal" class="dz-player-modal" style="display:none;">
+    <div class="dz-player-modal__dialog">
+        <button type="button" class="dz-player-modal__close" onclick="window.pteroCloseGiveMoneyModal && window.pteroCloseGiveMoneyModal()" aria-label="Close">✕</button>
+        <div class="dz-player-modal__header">
+            <p class="dz-player-modal__eyebrow">Give Cash</p>
+            <h3 id="dz-give-money-modal-title" style="margin:0;">Queue cash</h3>
+            <p class="dz-sub" style="margin:0;">Online players receive it instantly; offline players receive it after reconnecting.</p>
+        </div>
+        <form id="dz-give-money-form" class="dz-player-modal__form">
+            <label class="dz-player-modal__field">
+                <span>Denomination</span>
+                <select id="dz-give-money-denomination" class="dz-input">
+                    <option value="1">1 coin · MoneyRuble1</option>
+                    <option value="5">5 coins · MoneyRuble5</option>
+                    <option value="10">10 coins · MoneyRuble10</option>
+                    <option value="25">25 coins · MoneyRuble25</option>
+                    <option value="50">50 coins · MoneyRuble50</option>
+                    <option value="100" selected>100 coins · MoneyRuble100</option>
+                </select>
+            </label>
+            <label class="dz-player-modal__field">
+                <span>Quantity</span>
+                <input id="dz-give-money-quantity" class="dz-input" type="number" min="1" max="99" step="1" value="1" />
+            </label>
+            <div class="dz-player-modal__meta">
+                <div>
+                    <span class="dz-player-modal__meta-label">Item class</span>
+                    <strong id="dz-give-money-class">MoneyRuble100</strong>
+                </div>
+                <div>
+                    <span class="dz-player-modal__meta-label">Total value</span>
+                    <strong id="dz-give-money-total">100 coins</strong>
+                </div>
+            </div>
+            <p id="dz-give-money-modal-status" class="dz-status dz-hidden" style="margin:0;"></p>
+            <div class="dz-player-modal__actions">
+                <button type="button" class="dz-btn dz-btn-ghost" onclick="window.pteroCloseGiveMoneyModal && window.pteroCloseGiveMoneyModal()">Cancel</button>
+                <button id="dz-give-money-submit" type="submit" class="dz-btn" style="background:var(--dz-success,#10b981);border-color:var(--dz-success,#10b981);">Queue Cash</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {{-- Inventory viewer modal --}}
-<div id="dz-inventory-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);overflow-y:auto;">
-    <div style="background:var(--dz-surface,#1a1f2e);border:1px solid var(--dz-border,#2d3348);border-radius:0.5rem;max-width:640px;margin:4rem auto;padding:1.5rem;position:relative;">
-        <button type="button" onclick="document.getElementById('dz-inventory-modal').style.display='none'" style="position:absolute;top:0.75rem;right:0.75rem;background:none;border:none;color:inherit;font-size:1.25rem;cursor:pointer;" aria-label="Close">✕</button>
-        <h3 id="dz-inventory-modal-title" style="margin:0 0 1rem;"></h3>
-        <div id="dz-inventory-modal-body"></div>
+<div id="dz-inventory-modal" class="dz-player-modal" style="display:none;">
+    <div class="dz-player-modal__dialog dz-player-modal__dialog--wide">
+        <button type="button" class="dz-player-modal__close" onclick="document.getElementById('dz-inventory-modal').style.display='none'" aria-label="Close">✕</button>
+        <div class="dz-player-modal__header">
+            <p class="dz-player-modal__eyebrow">Inventory</p>
+            <h3 id="dz-inventory-modal-title" style="margin:0;"></h3>
+            <p class="dz-sub" style="margin:0;">Equipped items and nested container contents from the latest player snapshot.</p>
+        </div>
+        <div id="dz-inventory-modal-body" class="dz-inventory-modal__body"></div>
     </div>
 </div>
 
@@ -253,6 +308,142 @@
     </section>
 @endforeach
 
+@if (!empty($give_money_queue))
+<section class="dz-card">
+    <h2>Give Money Queue</h2>
+    <p class="dz-sub">Pending give-money requests. The bundled mission bridge template lives at <code>game-panel-mods/DayZManager/assets/bridge/pteromods_give_money.c</code> and reads <code>/profiles/PteroMods/give_money_&lt;uid&gt;.json</code> to add the requested MoneyRuble items to the player's inventory.</p>
+    <p id="dz-give-money-queue-status" class="dz-status" style="margin:0 0 0.75rem;"></p>
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+        <thead>
+            <tr style="border-bottom:1px solid var(--dz-border,#2d3348);">
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Player</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Item</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Qty</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Status</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Queued</th>
+                <th style="text-align:left;padding:0.25rem 0.5rem;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach ($give_money_queue as $entry)
+                <tr style="border-bottom:1px solid var(--dz-border,#2d3348);">
+                    <td style="padding:0.25rem 0.5rem;">
+                        {{ ($entry['player_name'] ?? '') !== '' ? $entry['player_name'] : ($entry['player_id'] ?? '—') }}
+                    </td>
+                    <td style="padding:0.25rem 0.5rem;font-family:monospace;">{{ $entry['item_class'] ?? '—' }}</td>
+                    <td style="padding:0.25rem 0.5rem;">{{ $entry['quantity'] ?? 1 }}</td>
+                    <td style="padding:0.25rem 0.5rem;">
+                        <span style="color:{{ ($entry['status'] ?? '') === 'delivered' ? 'var(--dz-success,#10b981)' : (($entry['status'] ?? '') === 'pending' ? 'var(--dz-warn,#f59e0b)' : 'var(--dz-muted)') }}">
+                            {{ ucfirst($entry['status'] ?? 'pending') }}
+                        </span>
+                    </td>
+                    <td style="padding:0.25rem 0.5rem;color:var(--dz-muted);">{{ $entry['created_at_display'] ?? ($entry['created_at'] ?? '—') }}</td>
+                    <td style="padding:0.25rem 0.5rem;">
+                        @if (!empty($entry['id']))
+                            <button class="dz-btn dz-btn-red" type="button" onclick="pteroRemoveGiveMoney({{ (int) $entry['id'] }}, {{ json_encode(($entry['player_name'] ?? '') !== '' ? $entry['player_name'] : ($entry['player_id'] ?? 'player'), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($entry['item_class'] ?? 'item'), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ (int) ($entry['quantity'] ?? 1) }})">Remove</button>
+                        @endif
+                    </td>
+                </tr>
+            @endforeach
+        </tbody>
+    </table>
+</section>
+@endif
+
+<style>
+.dz-player-modal {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(2, 6, 23, 0.82);
+    padding: 2rem 1rem;
+    overflow-y: auto;
+    align-items: flex-start;
+    justify-content: center;
+}
+.dz-player-modal__dialog {
+    position: relative;
+    width: min(560px, 100%);
+    margin: 0 auto;
+    padding: 1.4rem;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in srgb, var(--dz-border, #2d3348) 78%, white 22%);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.03), transparent 18%),
+        var(--dz-surface, #1a1f2e);
+    box-shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+}
+.dz-player-modal__dialog--wide {
+    width: min(1040px, 100%);
+}
+.dz-player-modal__close {
+    position: absolute;
+    top: 0.85rem;
+    right: 0.85rem;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--dz-border, #2d3348);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.04);
+    color: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+}
+.dz-player-modal__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 1.1rem;
+    padding-right: 2.5rem;
+}
+.dz-player-modal__eyebrow {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dz-accent, #60a5fa);
+}
+.dz-player-modal__form {
+    display: grid;
+    gap: 0.95rem;
+}
+.dz-player-modal__field {
+    display: grid;
+    gap: 0.4rem;
+}
+.dz-player-modal__field > span,
+.dz-player-modal__meta-label {
+    font-size: 0.78rem;
+    color: var(--dz-muted);
+}
+.dz-player-modal__meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.75rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid var(--dz-border, #2d3348);
+    border-radius: 0.8rem;
+    background: rgba(11, 15, 25, 0.55);
+}
+.dz-player-modal__meta > div {
+    display: grid;
+    gap: 0.2rem;
+}
+.dz-player-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.7rem;
+    margin-top: 0.25rem;
+}
+.dz-inventory-modal__body {
+    display: grid;
+    gap: 1rem;
+}
+</style>
+
 <script>
 (function () {
     var csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
@@ -277,6 +468,10 @@
     }
 
     function actionStatusEl(playerActionId) {
+        if (playerActionId && String(playerActionId) === 'give-money-queue') {
+            return document.getElementById('dz-give-money-queue-status');
+        }
+
         if (playerActionId) {
             var cards = document.querySelectorAll('.dz-player-card');
             for (var i = 0; i < cards.length; i += 1) {
@@ -338,10 +533,10 @@
             .catch(function () { setStatus('Request failed.', false, playerActionId); });
     };
 
-    window.pteroKickPlayer = function (playerId, playerActionId) {
+    window.pteroKickPlayer = function (playerId, playerActionId, playerName) {
         if (!confirm('Kick this player from the server now?')) { return; }
         setStatus('Sending kick command…', undefined, playerActionId);
-        req('POST', '/dayz/player-actions/kick', { player_id: playerId })
+        req('POST', '/dayz/player-actions/kick', { player_id: playerId, player_name: playerName || '' })
             .then(function (d) { setStatus(d.message || (d.status === 'dispatched' ? 'Kick command sent.' : 'Kick failed.'), d.status === 'dispatched' ? undefined : false, playerActionId); })
             .catch(function () { setStatus('Kick request failed.', false, playerActionId); });
     };
@@ -405,30 +600,152 @@
             .catch(function () { setStatus('Restore request failed.', false, playerActionId); });
     };
 
-    window.pteroGiveMoney = function (playerId, playerName, isOnline, playerActionId) {
-        var msg = (isOnline ? '⚠️  This player appears online. The queued reward may be delivered after they reconnect.\n\n' : '⚠️  Recommended: give money while the player is OFFLINE so it can be delivered reliably.\n\n')
-            + 'Give money to "' + playerName + '"?\n\n'
-            + 'Select denomination:\n'
-            + '  1   = MoneyRuble1  (1 coin)\n'
-            + '  50  = MoneyRuble50 (50 coins)\n'
-            + '  100 = MoneyRuble100 (100 coins)';
-        var denom = window.prompt(msg + '\n\nEnter denomination (1 / 50 / 100):', '100');
-        if (denom === null) { return; }
-        denom = parseInt(denom, 10);
-        if (denom !== 1 && denom !== 50 && denom !== 100) {
-            alert('Invalid denomination. Please enter 1, 50, or 100.');
+    var GIVE_MONEY_CLASSES = {
+        '1': 'MoneyRuble1',
+        '5': 'MoneyRuble5',
+        '10': 'MoneyRuble10',
+        '25': 'MoneyRuble25',
+        '50': 'MoneyRuble50',
+        '100': 'MoneyRuble100'
+    };
+    var giveMoneyModal = document.getElementById('dz-give-money-modal');
+    var giveMoneyForm = document.getElementById('dz-give-money-form');
+    var giveMoneyState = null;
+
+    function setGiveMoneyModalStatus(message, ok) {
+        var el = document.getElementById('dz-give-money-modal-status');
+        if (!el) { return; }
+        if (!message) {
+            el.textContent = '';
+            el.className = 'dz-status dz-hidden';
             return;
         }
-        var qty = window.prompt('How many items of MoneyRuble' + denom + ' to give? (1–99)', '1');
-        if (qty === null) { return; }
-        qty = Math.max(1, Math.min(99, parseInt(qty, 10) || 1));
-        setStatus('Queueing give money…', undefined, playerActionId);
-        req('POST', '/dayz/player-actions/give-money', { player_id: playerId, player_name: playerName, denomination: denom, quantity: qty })
-            .then(function (d) {
-                var ok = d.status === 'queued';
-                setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false, playerActionId);
+        el.textContent = message;
+        el.className = 'dz-status' + (ok === false ? ' dz-status-error' : '');
+    }
+
+    function updateGiveMoneySummary() {
+        var denomEl = document.getElementById('dz-give-money-denomination');
+        var qtyEl = document.getElementById('dz-give-money-quantity');
+        var classEl = document.getElementById('dz-give-money-class');
+        var totalEl = document.getElementById('dz-give-money-total');
+        if (!denomEl || !qtyEl || !classEl || !totalEl) { return; }
+        var denom = String(denomEl.value || '100');
+        var quantity = Math.max(1, Math.min(99, parseInt(qtyEl.value, 10) || 1));
+        qtyEl.value = String(quantity);
+        classEl.textContent = GIVE_MONEY_CLASSES[denom] || 'Unknown';
+        totalEl.textContent = String((parseInt(denom, 10) || 0) * quantity) + ' coins';
+    }
+
+    window.pteroCloseGiveMoneyModal = function () {
+        if (!giveMoneyModal) { return; }
+        giveMoneyModal.style.display = 'none';
+        setGiveMoneyModalStatus('', undefined);
+        giveMoneyState = null;
+    };
+
+    window.pteroGiveMoney = function (playerId, playerName, isOnline, playerActionId, playerUid) {
+        if (!giveMoneyModal) { return; }
+        giveMoneyState = {
+            playerId: playerId,
+            playerUid: playerUid || playerId,
+            playerName: playerName,
+            playerActionId: playerActionId,
+            isOnline: !!isOnline
+        };
+        var title = document.getElementById('dz-give-money-modal-title');
+        var denomEl = document.getElementById('dz-give-money-denomination');
+        var qtyEl = document.getElementById('dz-give-money-quantity');
+        if (title) { title.textContent = 'Give cash to ' + playerName; }
+        if (denomEl) { denomEl.value = '100'; }
+        if (qtyEl) { qtyEl.value = '1'; }
+        updateGiveMoneySummary();
+        setGiveMoneyModalStatus('', undefined);
+        giveMoneyModal.style.display = 'block';
+    };
+
+    if (giveMoneyForm) {
+        giveMoneyForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            if (!giveMoneyState) { return; }
+            var denomEl = document.getElementById('dz-give-money-denomination');
+            var qtyEl = document.getElementById('dz-give-money-quantity');
+            var submitBtn = document.getElementById('dz-give-money-submit');
+            var denomination = parseInt((denomEl && denomEl.value) || '100', 10);
+            var quantity = Math.max(1, Math.min(99, parseInt((qtyEl && qtyEl.value) || '1', 10) || 1));
+            if (!GIVE_MONEY_CLASSES[String(denomination)]) {
+                setGiveMoneyModalStatus('Invalid denomination selected.', false);
+                return;
+            }
+            if (submitBtn) { submitBtn.disabled = true; }
+            setGiveMoneyModalStatus('Queueing give money…', undefined);
+            setStatus('Queueing give money…', undefined, giveMoneyState.playerActionId);
+            req('POST', '/dayz/player-actions/give-money', {
+                player_id: giveMoneyState.playerId,
+                player_uid: giveMoneyState.playerUid,
+                player_name: giveMoneyState.playerName,
+                denomination: denomination,
+                quantity: quantity
             })
-            .catch(function () { setStatus('Give money request failed.', false, playerActionId); });
+                .then(function (d) {
+                    var ok = d.status === 'queued';
+                    setGiveMoneyModalStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false);
+                    setStatus(d.message || (ok ? 'Money queued successfully.' : 'Failed to queue money.'), ok ? undefined : false, giveMoneyState.playerActionId);
+                    if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
+                })
+                .catch(function () {
+                    setGiveMoneyModalStatus('Give money request failed.', false);
+                    setStatus('Give money request failed.', false, giveMoneyState.playerActionId);
+                })
+                .finally(function () {
+                    if (submitBtn) { submitBtn.disabled = false; }
+                });
+        });
+    }
+
+    ['dz-give-money-denomination', 'dz-give-money-quantity'].forEach(function (id) {
+        var field = document.getElementById(id);
+        if (field) {
+            field.addEventListener('input', updateGiveMoneySummary);
+            field.addEventListener('change', updateGiveMoneySummary);
+        }
+    });
+
+    window.pteroAlterBankMoney = function (steam64, playerName, currentMoney, playerActionId) {
+        if (!steam64) { return; }
+        var current = (currentMoney === null || currentMoney === undefined) ? '' : String(currentMoney);
+        var answer = window.prompt('Set LB Banking money for "' + playerName + '"'
+            + (current !== '' ? '\n\nCurrent balance: ' + current : '\n\nNo balance could be read from LB Banking.'), current);
+        if (answer === null) { return; }
+        answer = String(answer).trim();
+        if (answer === '' || isNaN(Number(answer))) {
+            setStatus('Enter a numeric bank money amount.', false, playerActionId);
+            return;
+        }
+        setStatus('Updating bank money…', undefined, playerActionId);
+        req('POST', '/dayz/player-actions/bank-money', {
+            steam64: steam64,
+            player_name: playerName,
+            amount: Number(answer)
+        })
+            .then(function (d) {
+                var ok = d.status === 'saved';
+                setStatus(d.message || (ok ? 'Bank money updated.' : 'Failed to update bank money.'), ok ? undefined : false, playerActionId);
+                if (ok) { setTimeout(function () { window.location.reload(); }, 1200); }
+            })
+            .catch(function () { setStatus('Bank money request failed.', false, playerActionId); });
+    };
+
+    window.pteroRemoveGiveMoney = function (queueId, playerName, itemClass, quantity) {        if (!queueId) { return; }
+        if (!confirm('Remove ' + quantity + '× ' + itemClass + ' queued for "' + playerName + '"?')) { return; }
+        setStatus('Removing queued give money…', undefined, 'give-money-queue');
+        req('DELETE', '/dayz/player-actions/give-money/' + encodeURIComponent(queueId), null)
+            .then(function (d) {
+                var ok = d.status === 'removed';
+                setStatus(d.message || (ok ? 'Queued give money removed.' : 'Failed to remove queued give money.'), ok ? undefined : false, 'give-money-queue');
+                if (ok) { setTimeout(function () { window.location.reload(); }, 900); }
+            })
+            .catch(function () { setStatus('Remove give money request failed.', false, 'give-money-queue'); });
     };
 
     window.pteroRemovePlayer = function (actionId, playerName, selectedPlayerId, playerActionId) {
@@ -451,6 +768,83 @@
             .catch(function () { setStatus('Remove request failed.', false, playerActionId || actionId); });
     };
 
+    var INVENTORY_META_CACHE = Object.create(null);
+
+    function dedupeStrings(list) {
+        var out = [];
+        var seen = Object.create(null);
+        (list || []).forEach(function (entry) {
+            var value = String(entry || '').trim();
+            if (value === '' || seen[value]) { return; }
+            seen[value] = true;
+            out.push(value);
+        });
+        return out;
+    }
+
+    function humanizeInventoryClassName(value) {
+        return String(value || '')
+            .replace(/_/g, ' ')
+            .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .replace(/([A-Za-z])(\d)/g, '$1 $2')
+            .replace(/(\d)([A-Za-z])/g, '$1 $2')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function inventoryLookupKey(item) {
+        return [
+            String((item && item.className) || ''),
+            String((item && item.itemId) || ''),
+            String((item && item.name) || '')
+        ].join('|');
+    }
+
+    function fallbackInventoryLabel(item) {
+        if (item && item.name) { return String(item.name); }
+        if (item && item.className) { return humanizeInventoryClassName(item.className); }
+        if (item && item.itemId) { return String(item.itemId); }
+        return 'Unknown item';
+    }
+
+    function resolveInventoryBatch(items) {
+        var pending = [];
+        (items || []).forEach(function (item) {
+            var key = inventoryLookupKey(item);
+            if (!key || INVENTORY_META_CACHE[key]) { return; }
+            pending.push(item);
+        });
+
+        if (!pending.length) {
+            return Promise.resolve({});
+        }
+
+        var requestPromise = req('POST', '/dayz/player-actions/inventory/resolve', { items: pending })
+            .then(function (payload) {
+                var resolved = payload && payload.items && typeof payload.items === 'object' ? payload.items : {};
+                pending.forEach(function (item) {
+                    var key = inventoryLookupKey(item);
+                    INVENTORY_META_CACHE[key] = resolved[key] || { resolved: false };
+                });
+                return resolved;
+            })
+            .catch(function () {
+                pending.forEach(function (item) {
+                    INVENTORY_META_CACHE[inventoryLookupKey(item)] = { resolved: false };
+                });
+                return {};
+            });
+
+        pending.forEach(function (item) {
+            INVENTORY_META_CACHE[inventoryLookupKey(item)] = requestPromise.then(function (resolved) {
+                return resolved[inventoryLookupKey(item)] || { resolved: false };
+            });
+        });
+
+        return requestPromise;
+    }
+
     window.pteroViewInventory = function (playerName, inventoryJson) {
         var modal = document.getElementById('dz-inventory-modal');
         var title = document.getElementById('dz-inventory-modal-title');
@@ -458,6 +852,7 @@
         if (!modal || !title || !body) { return; }
 
         title.textContent = playerName + ' — Inventory';
+        body.innerHTML = '';
 
         var parsed = null;
         try {
@@ -470,22 +865,130 @@
             return;
         }
 
-        // Collect all item class names from the inventory tree.
-        var items = [];
-        function walk(obj) {
-            if (!obj || typeof obj !== 'object') { return; }
-            if (Array.isArray(obj)) { obj.forEach(walk); return; }
-            var cls = obj.className || obj.class || obj.type || obj.item || obj.name;
-            if (cls && typeof cls === 'string') { items.push(cls); }
-            Object.values(obj).forEach(function (v) {
-                if (v && typeof v === 'object') { walk(v); }
+        // Collect items. The bridge format is [{slot, className, contents:[…]}, …]
+        // but older snapshots may use other shapes — we handle both.
+        // Items inside containers (e.g. backpack contents) use slot "<parent>.cargo"
+        // or "<parent>.attach" so they appear under a dedicated section.
+        var items = []; // [{slot, className, isContainerContent}]
+
+        function stringField(entry, keys) {
+            for (var i = 0; i < keys.length; i += 1) {
+                var value = entry ? entry[keys[i]] : '';
+                if (typeof value === 'string' && value.trim() !== '') {
+                    return value.trim();
+                }
+            }
+            return '';
+        }
+
+        function isContainerKey(key) {
+            return ['contents', 'cargo', 'inventory', 'items', 'children', 'attachments', 'attached', 'pockets', 'storage', 'containers'].indexOf(String(key || '').toLowerCase()) !== -1;
+        }
+
+        function numericField(entry, keys) {
+            for (var i = 0; i < keys.length; i += 1) {
+                var v = entry ? entry[keys[i]] : undefined;
+                if (typeof v === 'number' && v > 0) { return v; }
+                if (typeof v === 'string' && v.trim() !== '') {
+                    var n = parseInt(v.trim(), 10);
+                    if (!isNaN(n) && n > 0) { return n; }
+                }
+            }
+            return 0;
+        }
+
+        function collectEntry(entry, parentSlot, parentClass, inContainer) {
+            if (!entry || typeof entry !== 'object') { return; }
+            var cls = stringField(entry, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
+            var itemId = stringField(entry, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']);
+            var itemName = stringField(entry, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']);
+            var slot = typeof entry.slot === 'string' ? entry.slot : (parentSlot || '');
+            var qty = numericField(entry, ['quantity', 'count', 'amount', 'stackCount', 'stack_count']);
+            if (cls !== '') {
+                items.push({
+                    slot: slot,
+                    className: cls,
+                    itemId: itemId,
+                    name: itemName,
+                    quantity: qty,
+                    isContainerContent: !!inContainer,
+                    containerSlot: parentSlot || '',
+                    containerClass: parentClass || ''
+                });
+            }
+            ['contents', 'cargo', 'inventory', 'items', 'children', 'attachments', 'attached', 'pockets', 'storage', 'containers'].forEach(function (key) {
+                var value = entry[key];
+                if (Array.isArray(value)) {
+                    value.forEach(function (sub) { collectEntry(sub, slot || parentSlot || 'Unknown', cls || parentClass || '', true); });
+                    return;
+                }
+                if (value && typeof value === 'object') {
+                    Object.keys(value).forEach(function (subKey) {
+                        var nested = value[subKey];
+                        if (Array.isArray(nested)) {
+                            nested.forEach(function (sub) { collectEntry(sub, slot || parentSlot || subKey || 'Unknown', cls || parentClass || '', true); });
+                        } else {
+                            collectEntry(nested, slot || parentSlot || subKey || 'Unknown', cls || parentClass || '', true);
+                        }
+                    });
+                }
+            });
+
+            Object.keys(entry).forEach(function (key) {
+                if (isContainerKey(key) || key === 'slot') { return; }
+                var value = entry[key];
+                if (!value || typeof value !== 'object') { return; }
+                if (Array.isArray(value)) {
+                    value.forEach(function (sub) {
+                        collectEntry(sub, slot || parentSlot || key || 'Unknown', cls || parentClass || '', !!inContainer);
+                    });
+                    return;
+                }
+                collectEntry(value, slot || parentSlot || key || 'Unknown', cls || parentClass || '', !!inContainer);
             });
         }
-        walk(parsed);
+
+        if (Array.isArray(parsed)) {
+            parsed.forEach(function (entry) {
+                if (typeof entry === 'string' && entry !== '') {
+                    items.push({ slot: '', className: entry, itemId: '', name: '', isContainerContent: false });
+                } else {
+                    collectEntry(entry, '', '', false);
+                }
+            });
+        }
 
         if (items.length === 0) {
-            // No recognised item list structure — fall back to formatted JSON.
-            body.innerHTML = '';
+            // Deep-walk fallback for any other inventory structure.
+            (function walk(obj, parentSlot, parentClass, inContainer) {
+                if (!obj || typeof obj !== 'object') { return; }
+                if (Array.isArray(obj)) { obj.forEach(function (v) { walk(v, parentSlot, parentClass, inContainer); }); return; }
+                var cls = stringField(obj, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
+                if (cls && typeof cls === 'string') {
+                    items.push({
+                        slot: obj.slot || parentSlot || '',
+                        className: cls,
+                        itemId: stringField(obj, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']),
+                        name: stringField(obj, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']),
+                        quantity: numericField(obj, ['quantity', 'count', 'amount', 'stackCount', 'stack_count']),
+                        isContainerContent: !!inContainer,
+                        containerSlot: parentSlot || '',
+                        containerClass: parentClass || ''
+                    });
+                }
+                Object.keys(obj).forEach(function (key) {
+                    var value = obj[key];
+                    if (!value || typeof value !== 'object') { return; }
+                    var keyName = String(key || '').toLowerCase();
+                    var nextContainer = !!inContainer || isContainerKey(keyName);
+                    var nextSlot = obj.slot || parentSlot || (nextContainer ? 'Unknown' : key);
+                    walk(value, nextSlot, cls || parentClass || '', nextContainer);
+                });
+            }(parsed, '', '', false));
+        }
+
+        if (items.length === 0) {
+            // Last resort: formatted JSON dump.
             var pre = document.createElement('pre');
             pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:0.8rem;max-height:60vh;overflow-y:auto;background:var(--dz-surface-alt,#0b0f19);padding:1rem;border-radius:0.25rem;margin:0;';
             pre.textContent = JSON.stringify(parsed, null, 2);
@@ -494,26 +997,215 @@
             return;
         }
 
-        // Render a grid of items with wiki links.
-        var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.5rem;max-height:65vh;overflow-y:auto;">';
-        items.forEach(function (cls) {
-            var label = cls.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2');
-            var wikiUrl = 'https://dayz.wiki.gg/wiki/' + encodeURIComponent(cls);
-            var safeClass = escapeHtml(cls);
-            var safeLabel = escapeHtml(label);
-            html += '<div style="background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.35rem;padding:0.5rem;font-size:0.78rem;overflow:hidden;">'
-                + '<div style="font-size:1.5rem;text-align:center;margin-bottom:0.25rem;">📦</div>'
-                + '<div style="word-break:break-word;text-align:center;">'
-                + '<a href="' + wikiUrl + '" target="_blank" rel="noopener noreferrer" style="color:var(--dz-accent);text-decoration:none;" title="' + safeClass + '">' + safeLabel + '</a>'
-                + '</div>'
-                + '</div>';
+        // Split into equipped items (top-level slots) and container contents.
+        var equippedItems = items.filter(function (i) { return !i.isContainerContent; });
+        var containerItems = items.filter(function (i) { return i.isContainerContent; });
+
+        // Group items by slot for readability.
+        var slotOrder = ['Hands', 'Headgear', 'Mask', 'Eyewear', 'Gloves', 'Armband', 'Body', 'Legs', 'Vest', 'Hips', 'Back', 'Feet', 'Shoulder', 'Melee', ''];
+        var bySlot = {};
+        equippedItems.forEach(function (item) {
+            var s = item.slot || '';
+            if (!bySlot[s]) { bySlot[s] = []; }
+            bySlot[s].push(item);
         });
-        html += '</div><p style="margin:0.5rem 0 0;font-size:0.72rem;color:var(--dz-muted);">' + items.length + ' item(s) · Links open the DayZ wiki page for each item.</p>';
-        body.innerHTML = html;
+
+        var orderedSlots = slotOrder.filter(function (s) { return bySlot[s] && bySlot[s].length; });
+        Object.keys(bySlot).forEach(function (s) {
+            if (orderedSlots.indexOf(s) === -1) { orderedSlots.push(s); }
+        });
+
+        var summary = document.createElement('div');
+        summary.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:0.75rem;margin-bottom:0.25rem;';
+        [
+            { label: 'Equipped', value: String(equippedItems.length) },
+            { label: 'Container items', value: String(containerItems.length) },
+            { label: 'Sections', value: String(orderedSlots.length + (containerItems.length ? 1 : 0)) }
+        ].forEach(function (meta) {
+            var box = document.createElement('div');
+            box.style.cssText = 'padding:0.9rem 1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.85rem;background:rgba(11,15,25,0.5);display:grid;gap:0.2rem;';
+            box.innerHTML = '<span style="font-size:0.74rem;color:var(--dz-muted);">' + escapeHtml(meta.label) + '</span><strong style="font-size:1.15rem;">' + escapeHtml(meta.value) + '</strong>';
+            summary.appendChild(box);
+        });
+        body.appendChild(summary);
+
+        var cardStyle = 'background:linear-gradient(180deg, rgba(255,255,255,0.03), transparent 24%), var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:0.85rem;padding:0.85rem 0.75rem 0.7rem;font-size:0.78rem;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:0.5rem;min-height:172px;box-shadow:0 12px 32px rgba(2,6,23,0.18);';
+        var imgStyle  = 'width:84px;height:84px;object-fit:contain;display:block;';
+        var emojiStyle = 'font-size:2.5rem;text-align:center;line-height:1;';
+
+        function setCardImage(imgWrap, imgUrl, label) {
+            imgWrap.innerHTML = '';
+            if (!imgUrl) {
+                imgWrap.innerHTML = '<span style="' + emojiStyle + '">📦</span>';
+                return;
+            }
+
+            var img = document.createElement('img');
+            img.src = imgUrl;
+            img.alt = label;
+            img.style.cssText = imgStyle;
+            img.onerror = function () {
+                imgWrap.innerHTML = '<span style="' + emojiStyle + '">📦</span>';
+            };
+            imgWrap.appendChild(img);
+        }
+
+        var cardsByLookup = Object.create(null);
+
+        function applyResolvedMeta(cardBits, resolved, fallbackLabel) {
+            if (!cardBits) { return; }
+            var label = fallbackLabel;
+
+            cardBits.nameEl.innerHTML = '';
+            var span = document.createElement('span');
+            span.textContent = label;
+            span.title = [
+                cardBits.item.className || label,
+                resolved && resolved.variant ? resolved.variant : '',
+                resolved && (resolved.type || resolved.category) ? (resolved.type || resolved.category) : ''
+            ].filter(Boolean).join(' · ');
+            cardBits.nameEl.appendChild(span);
+
+            if (resolved && resolved.image_url) {
+                setCardImage(cardBits.imgWrap, resolved.image_url, label);
+            }
+        }
+
+        function makeItemCard(item) {
+            var label = fallbackInventoryLabel(item);
+            var card = document.createElement('div');
+            card.style.cssText = cardStyle;
+
+            var imgWrap = document.createElement('div');
+            imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;position:relative;';
+            setCardImage(imgWrap, '', label);
+
+            if (item.quantity > 1) {
+                var badge = document.createElement('span');
+                badge.textContent = 'x' + item.quantity;
+                badge.style.cssText = 'position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,0.72);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 4px;border-radius:0.3em;line-height:1.4;pointer-events:none;';
+                imgWrap.appendChild(badge);
+            }
+
+            card.appendChild(imgWrap);
+
+            var nameEl = document.createElement('div');
+            nameEl.style.cssText = 'word-break:break-word;text-align:center;line-height:1.25;font-weight:600;';
+            nameEl.textContent = label;
+            nameEl.title = item.className || label;
+            card.appendChild(nameEl);
+
+            var metaEl = document.createElement('div');
+            metaEl.style.cssText = 'font-size:0.7rem;color:var(--dz-muted);text-align:center;line-height:1.3;';
+            metaEl.textContent = item.slot || item.containerSlot || 'Inventory';
+            card.appendChild(metaEl);
+
+            var key = inventoryLookupKey(item);
+            if (!cardsByLookup[key]) { cardsByLookup[key] = []; }
+            cardsByLookup[key].push({ item: item, imgWrap: imgWrap, nameEl: nameEl, metaEl: metaEl });
+
+            return card;
+        }
+
+        var frag = document.createDocumentFragment();
+
+        orderedSlots.forEach(function (slot) {
+            var section = document.createElement('div');
+            section.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.95rem;background:rgba(11,15,25,0.38);';
+
+            if (slot !== '') {
+                var heading = document.createElement('p');
+                heading.textContent = slot;
+                heading.style.cssText = 'font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--dz-muted);margin:0 0 0.6rem;';
+                section.appendChild(heading);
+            }
+
+            var grid = document.createElement('div');
+            grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
+
+            bySlot[slot].forEach(function (item) { grid.appendChild(makeItemCard(item)); });
+
+            section.appendChild(grid);
+            frag.appendChild(section);
+        });
+
+        // Container contents — one dedicated section per container (backpack, pants, etc.).
+        if (containerItems.length > 0) {
+            // Group container items by parent slot + class.
+            var byContainer = {};
+            var containerOrder = [];
+            containerItems.forEach(function (item) {
+                var k = [item.containerSlot || item.slot || 'Unknown', item.containerClass || ''].join('|');
+                if (!byContainer[k]) { byContainer[k] = []; containerOrder.push(k); }
+                byContainer[k].push(item);
+            });
+            var containerSlotOrder = ['Legs', 'Back', 'Body', 'Hips'];
+            containerOrder.sort(function (left, right) {
+                var leftIndex = containerSlotOrder.indexOf(left.split('|')[0]);
+                var rightIndex = containerSlotOrder.indexOf(right.split('|')[0]);
+                leftIndex = leftIndex === -1 ? containerSlotOrder.length : leftIndex;
+                rightIndex = rightIndex === -1 ? containerSlotOrder.length : rightIndex;
+                return leftIndex - rightIndex;
+            });
+
+            containerOrder.forEach(function (containerKey) {
+                var keyParts = containerKey.split('|');
+                var containerSlot = keyParts[0];
+                var containerClass = keyParts.slice(1).join('|');
+                var containerLabel = containerSlot === 'Back' ? 'Backpack' : (containerSlot === 'Legs' ? 'Pants' : (containerSlot === 'Body' ? 'Vest' : (containerSlot === 'Hips' ? 'Holster / Belt' : containerSlot)));
+
+                var contSec = document.createElement('div');
+                contSec.style.cssText = 'margin-bottom:1rem;padding:1rem;border:1px solid var(--dz-border,#2d3348);border-radius:0.95rem;background:rgba(11,15,25,0.38);';
+
+                var contHead = document.createElement('p');
+                contHead.textContent = containerLabel + (containerClass ? ' — ' + containerClass : '');
+                contHead.style.cssText = 'font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--dz-muted);margin:0 0 0.75rem;';
+                contSec.appendChild(contHead);
+
+                var grid = document.createElement('div');
+                grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:0.5rem;';
+                byContainer[containerKey].forEach(function (item) { grid.appendChild(makeItemCard(item)); });
+                contSec.appendChild(grid);
+
+                frag.appendChild(contSec);
+            });
+        }
+
+        var footer = document.createElement('p');
+        footer.style.cssText = 'margin:0.25rem 0 0;font-size:0.72rem;color:var(--dz-muted);';
+        footer.textContent = equippedItems.length + ' item(s) equipped' + (containerItems.length ? ' · ' + containerItems.length + ' in containers' : '') + ' · Images and links from the DayZ wiki (dayz.wiki.gg)';
+        frag.appendChild(footer);
+
+        body.appendChild(frag);
         modal.style.display = 'block';
+
+        var uniqueItems = [];
+        var seenLookup = Object.create(null);
+        items.forEach(function (item) {
+            var key = inventoryLookupKey(item);
+            if (!key || seenLookup[key]) { return; }
+            seenLookup[key] = true;
+            uniqueItems.push({ className: item.className || '', itemId: item.itemId || '', name: item.name || '' });
+        });
+
+        resolveInventoryBatch(uniqueItems).then(function () {
+            Object.keys(cardsByLookup).forEach(function (key) {
+                var maybePromise = INVENTORY_META_CACHE[key];
+                Promise.resolve(maybePromise).then(function (resolved) {
+                    (cardsByLookup[key] || []).forEach(function (cardBits) {
+                        applyResolvedMeta(cardBits, resolved || null, fallbackInventoryLabel(cardBits.item));
+                    });
+                });
+            });
+        });
     };
 
     // Close modal on backdrop click.
+    if (giveMoneyModal) {
+        giveMoneyModal.addEventListener('click', function (e) {
+            if (e.target === this) { window.pteroCloseGiveMoneyModal(); }
+        });
+    }
     document.getElementById('dz-inventory-modal').addEventListener('click', function (e) {
         if (e.target === this) { this.style.display = 'none'; }
     });

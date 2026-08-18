@@ -27,7 +27,23 @@ final class DayZMapMarkerService
 {
     private const CACHE_SECONDS = 300;
 
+    /**
+     * How long marker data is kept as stale-but-servable after a background
+     * refresh stops happening (e.g. panel idle overnight).  The warmer
+     * refreshes every 60 s during active use, so this ceiling only matters
+     * when nobody has visited any DayZ page for many hours.
+     */
+    private const CACHE_STALE_SECONDS = self::CACHE_SECONDS * 288; // 24 h
+
     private const MAX_MARKERS_PER_GROUP = 1500;
+
+    /** Known airdrop marker/location files, probed before scanning `/profiles`. */
+    private const AIRDROP_PATHS = [
+        '/profiles/VPPMapAirdrop.json',
+        '/profiles/VPPAdminTools/VPPMapAirdrop.json',
+        '/profiles/VPPAdminTools/Config/VPPMapAirdrop.json',
+        '/profiles/Airdrop/AirdropSettings.json',
+    ];
 
     /**
      * Marker categories, in the order they are listed in the layer control.
@@ -42,6 +58,8 @@ final class DayZMapMarkerService
         'village'         => ['label' => 'Villages',            'icon' => '🏠', 'color' => '#fde68a', 'default' => true],
         'military'        => ['label' => 'Military',            'icon' => '🎖️', 'color' => '#4ade80', 'default' => true],
         'airfield'        => ['label' => 'Airfields',           'icon' => '✈️', 'color' => '#38bdf8', 'default' => true],
+        'trader'          => ['label' => 'Traders',              'icon' => '🛒', 'color' => '#34d399', 'default' => true],
+        'airdrop'         => ['label' => 'Airdrops',             'icon' => '🪂', 'color' => '#fb7185', 'default' => true],
         'landmark'        => ['label' => 'Landmarks',           'icon' => '⛰️', 'color' => '#a78bfa', 'default' => false],
         'player_spawn'    => ['label' => 'Player spawns',       'icon' => '🚩', 'color' => '#f472b6', 'default' => false],
         'heli_crash'      => ['label' => 'Helicopter crashes',  'icon' => '🚁', 'color' => '#f97316', 'default' => false],
@@ -61,7 +79,7 @@ final class DayZMapMarkerService
         'animal_hen'      => ['label' => 'Hens',                'icon' => '🐔', 'color' => '#fda4af', 'default' => false],
         'animal_hare'     => ['label' => 'Hares',               'icon' => '🐇', 'color' => '#ddd6fe', 'default' => false],
         'animal_other'    => ['label' => 'Other animals',       'icon' => '🐾', 'color' => '#cbd5e1', 'default' => false],
-        'event'           => ['label' => 'Other events',        'icon' => '📍', 'color' => '#e879f9', 'default' => false],
+        'event'           => ['label' => 'Other events',         'icon' => '📍', 'color' => '#e879f9', 'default' => false],
     ];
 
     /**
@@ -173,6 +191,7 @@ final class DayZMapMarkerService
     public function __construct(
         private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
         private readonly DayZServerContext $context = new DayZServerContext(),
+        private readonly DayZStaleCacheService $staleCache = new DayZStaleCacheService(),
     ) {
     }
 
@@ -189,12 +208,30 @@ final class DayZMapMarkerService
      */
     public function markers(mixed $server, string $mapName): array
     {
-        $cached = $this->cached($server, $mapName);
+        $cacheKey = $this->cacheKey($server, $mapName);
 
-        if ($cached !== null) {
-            return $cached;
+        if ($cacheKey !== '') {
+            /** @var array{status: string, map: string, groups: list<array<string, mixed>>, sources: list<string>>}|null $result */
+            $result = $this->staleCache->remember(
+                $cacheKey,
+                self::CACHE_SECONDS,
+                self::CACHE_STALE_SECONDS,
+                fn (): array => $this->buildMarkers($server, $mapName),
+            );
+
+            if (is_array($result)) {
+                return $result;
+            }
         }
 
+        return $this->buildMarkers($server, $mapName);
+    }
+
+    /**
+     * @return array{status: string, map: string, groups: list<array<string, mixed>>, sources: list<string>}
+     */
+    private function buildMarkers(mixed $server, string $mapName): array
+    {
         $markers = [];
         $sources = [];
 
@@ -210,14 +247,15 @@ final class DayZMapMarkerService
             $this->collectPlayerSpawns($server, $missionPath, $markers, $sources);
         }
 
+        $this->collectTraders($server, $markers, $sources);
+        $this->collectAirdrops($server, $markers, $sources);
+
         $result = [
             'status' => $missionPath === '' ? 'mission_not_found' : 'ok',
             'map' => $mapName,
             'groups' => $this->buildGroups($markers),
             'sources' => $sources,
         ];
-
-        $this->remember($server, $mapName, $result);
 
         return $result;
     }
@@ -552,6 +590,323 @@ final class DayZMapMarkerService
         return ucwords(trim(preg_replace('/\s+/', ' ', $text) ?? $text));
     }
 
+    /**
+     * Reads `/profiles/Trader/TraderObjects.txt` (Dr. Jones Trader mod).
+     *
+     * Supports both the common tagged format:
+     *   // Main Airfield:
+     *   <TraderMarkerPosition> 5833, 74, 3806
+     * and older/custom `Location:` blocks with `TraderMarkerPosition = ...`.
+     *
+     * @param array<string, list<array<string, mixed>>> $markers
+     * @param list<string> $sources
+     */
+    private function collectTraders(mixed $server, array &$markers, array &$sources): void
+    {
+        $path = '/profiles/Trader/TraderObjects.txt';
+
+        try {
+            $raw = $this->gateway->readFile($server, $path);
+        } catch (Throwable) {
+            return;
+        }
+
+        if (!is_string($raw) || trim($raw) === '') {
+            return;
+        }
+
+        $added = $this->collectTaggedTraders($raw, $markers);
+
+        if ($added < 1) {
+            $added = $this->collectSectionTraders($raw, $markers);
+        }
+
+        if ($added > 0) {
+            $sources[] = $path;
+        }
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $markers
+     * @param list<string> $sources
+     */
+    private function collectAirdrops(mixed $server, array &$markers, array &$sources): void
+    {
+        $seen = [];
+
+        foreach ($this->airdropFilePaths($server) as $path) {
+            try {
+                $raw = $this->gateway->readFile($server, $path);
+            } catch (Throwable) {
+                continue;
+            }
+
+            if (!is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+
+            // Strip UTF-8 BOM if present; json_decode fails silently on BOM-prefixed input.
+            if (str_starts_with($raw, "\xef\xbb\xbf")) {
+                $raw = substr($raw, 3);
+            }
+
+            $decoded = json_decode($raw, true);
+
+            if (!is_array($decoded)) {
+                continue;
+            }
+
+            $added = 0;
+            $walk = function (array $node) use (&$walk, &$markers, &$added, &$seen): void {
+                $position = $this->airdropNodePosition($node);
+
+                if ($position !== null) {
+                    $name = $this->airdropNodeName($node);
+                    $key = strtolower($name) . '|' . round($position[0], 1) . '|' . round($position[1], 1);
+
+                    if (!isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $markers['airdrop'][] = [
+                            'name' => $name,
+                            'x' => $position[0],
+                            'z' => $position[1],
+                            'detail' => 'Airdrop location',
+                        ];
+                        $added++;
+                    }
+                }
+
+                foreach ($node as $value) {
+                    if (is_array($value)) {
+                        $walk($value);
+                    }
+                }
+            };
+            $walk($decoded);
+
+            if ($added > 0) {
+                $sources[] = $path;
+            }
+        }
+    }
+
+    /**
+     * Airdrop mods write their marker/location file to several different places
+     * (VPP Admin Tools, the standalone Airdrop mod, custom mod folders), so the
+     * known paths are probed first and `/profiles` is then scanned (two levels
+     * deep) for any other JSON file whose name mentions "airdrop".
+     *
+     * @return list<string>
+     */
+    private function airdropFilePaths(mixed $server): array
+    {
+        $paths = self::AIRDROP_PATHS;
+        $pending = ['/profiles'];
+        $depth = 0;
+
+        while ($pending !== [] && $depth < 2) {
+            $next = [];
+
+            foreach ($pending as $directory) {
+                try {
+                    $entries = $this->gateway->listDirectory($server, $directory);
+                } catch (Throwable) {
+                    continue;
+                }
+
+                foreach ($entries as $entry) {
+                    $name = trim((string) ($entry['name'] ?? ''));
+
+                    if ($name === '') {
+                        continue;
+                    }
+
+                    $path = rtrim($directory, '/') . '/' . $name;
+
+                    if ($entry['directory'] ?? false) {
+                        $next[] = $path;
+                        continue;
+                    }
+
+                    if (stripos($name, 'airdrop') !== false
+                        && strtolower((string) pathinfo($name, PATHINFO_EXTENSION)) === 'json'
+                    ) {
+                        $paths[] = $path;
+                    }
+                }
+            }
+
+            $pending = $next;
+            $depth++;
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
+     * @param array<mixed> $node
+     * @return array{0:float,1:float}|null
+     */
+    private function airdropNodePosition(array $node): ?array
+    {
+        foreach (['M_POSITION', 'Position', 'position', 'POSITION', 'pos', 'Pos', 'Coordinates', 'coordinates'] as $key) {
+            if (array_key_exists($key, $node)) {
+                $position = $this->airdropPosition($node[$key]);
+
+                if ($position !== null) {
+                    return $position;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<mixed> $node
+     */
+    private function airdropNodeName(array $node): string
+    {
+        foreach (['M_MARKER_NAME', 'MarkerName', 'markerName', 'Name', 'name', 'Location', 'location', 'Title', 'title'] as $key) {
+            $value = $node[$key] ?? null;
+
+            if (is_string($value) && trim($value) !== '') {
+                return trim($value);
+            }
+        }
+
+        return 'Airdrop';
+    }
+
+    /**
+     * @return array{0:float,1:float}|null
+     */
+    private function airdropPosition(mixed $value): ?array
+    {
+        if (is_array($value)) {
+            $values = array_values($value);
+
+            if (count($values) >= 3 && is_numeric($values[0]) && is_numeric($values[2])) {
+                return [(float) $values[0], (float) $values[2]];
+            }
+
+            $x = $value['x'] ?? $value['X'] ?? null;
+            $z = $value['z'] ?? $value['Z'] ?? null;
+
+            if (is_numeric($x) && is_numeric($z)) {
+                return [(float) $x, (float) $z];
+            }
+        }
+
+        if (is_string($value)
+            && preg_match_all('/-?\d+(?:\.\d+)?/', $value, $matches) >= 3
+        ) {
+            return [(float) $matches[0][0], (float) $matches[0][2]];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $markers
+     */
+    private function collectTaggedTraders(string $raw, array &$markers): int
+    {
+        $added = 0;
+        $locationName = 'Trader';
+        $lines = preg_split('/\R/', $raw) ?: [];
+
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+
+            if ($trimmed === '') {
+                continue;
+            }
+
+            if (str_starts_with($trimmed, '//')) {
+                $comment = trim(substr($trimmed, 2));
+
+                if ($comment !== '' && !str_starts_with($comment, '<')) {
+                    $locationName = rtrim($comment, " \t\n\r\0\x0B:");
+                }
+
+                continue;
+            }
+
+            if (!preg_match('/^<TraderMarkerPosition>\s*([^\r\n]+)/i', $trimmed, $lineMatch)) {
+                continue;
+            }
+
+            if (preg_match_all('/[-+]?\d*\.?\d+/', (string) ($lineMatch[1] ?? ''), $numbers) === false
+                || count($numbers[0] ?? []) < 3) {
+                continue;
+            }
+
+            $x = (float) $numbers[0][0];
+            $z = (float) $numbers[0][2];
+
+            if ($x === 0.0 && $z === 0.0) {
+                continue;
+            }
+
+            $markers['trader'][] = [
+                'name'   => $locationName !== '' ? $locationName : 'Trader',
+                'x'      => $x,
+                'z'      => $z,
+                'detail' => 'Trader location',
+            ];
+            $added++;
+        }
+
+        return $added;
+    }
+
+    /**
+     * @param array<string, list<array<string, mixed>>> $markers
+     */
+    private function collectSectionTraders(string $raw, array &$markers): int
+    {
+        $sectionsPattern = '/^\s*Location\s*:\s*(.*?)(?:\r\n|\r|\n)([\s\S]*?)(?=^\s*Location\s*:|\z)/im';
+
+        if (preg_match_all($sectionsPattern, $raw, $sections, PREG_SET_ORDER) === false
+            || $sections === []) {
+            return 0;
+        }
+
+        $added = 0;
+
+        foreach ($sections as $section) {
+            $locationName = trim((string) ($section[1] ?? ''));
+            $body = (string) ($section[2] ?? '');
+
+            if (!preg_match('/TraderMarkerPosition(?:\[\])?\s*=\s*([^\r\n;]+)/i', $body, $line)) {
+                continue;
+            }
+
+            if (preg_match_all('/[-+]?\d*\.?\d+/', (string) ($line[1] ?? ''), $numbers) === false
+                || count($numbers[0] ?? []) < 3) {
+                continue;
+            }
+
+            $x = (float) $numbers[0][0];
+            $z = (float) $numbers[0][2];
+
+            if ($x === 0.0 && $z === 0.0) {
+                continue;
+            }
+
+            $markers['trader'][] = [
+                'name'   => $locationName !== '' ? $locationName : 'Trader',
+                'x'      => $x,
+                'z'      => $z,
+                'detail' => 'Trader location',
+            ];
+            $added++;
+        }
+
+        return $added;
+    }
+
     private function missionPath(mixed $server): string
     {
         $missions = [];
@@ -579,44 +934,6 @@ final class DayZMapMarkerService
         }
 
         return $missions === [] ? '' : '/mpmissions/' . $missions[0];
-    }
-
-    /**
-     * @return array{status: string, map: string, groups: list<array<string, mixed>>, sources: list<string>}|null
-     */
-    private function cached(mixed $server, string $mapName): ?array
-    {
-        $key = $this->cacheKey($server, $mapName);
-
-        if ($key === '' || !class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return null;
-        }
-
-        try {
-            $value = \Illuminate\Support\Facades\Cache::get($key);
-        } catch (Throwable) {
-            return null;
-        }
-
-        return is_array($value) ? $value : null;
-    }
-
-    /**
-     * @param array<string, mixed> $result
-     */
-    private function remember(mixed $server, string $mapName, array $result): void
-    {
-        $key = $this->cacheKey($server, $mapName);
-
-        if ($key === '' || !class_exists('Illuminate\\Support\\Facades\\Cache')) {
-            return;
-        }
-
-        try {
-            \Illuminate\Support\Facades\Cache::put($key, $result, self::CACHE_SECONDS);
-        } catch (Throwable) {
-            // Best-effort caching only.
-        }
     }
 
     private function cacheKey(mixed $server, string $mapName): string

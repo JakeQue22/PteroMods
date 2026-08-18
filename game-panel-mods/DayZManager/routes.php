@@ -6,6 +6,7 @@ $pages = [
     ''               => 'DayZDashboardController@show',
     '/mods'          => 'DayZWorkshopController@index',
     '/configuration' => 'DayZConfigurationController@index',
+    '/logs'          => 'DayZLogsController@index',
     '/players'       => 'DayZPlayerController@index',
     '/server'        => 'DayZServerController@launchParameters',
     '/dzsa'          => 'DayZServerController@dzsa',

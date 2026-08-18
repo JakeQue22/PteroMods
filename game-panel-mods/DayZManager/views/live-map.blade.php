@@ -30,8 +30,10 @@
     </p>
 </section>
 
-<section class="dz-card dz-live-map-layout">
-    <div id="dz-live-map-canvas" class="dz-live-map-canvas" aria-label="DayZ live map viewer"></div>
+<section id="dz-live-map-shell" class="dz-card dz-live-map-layout">
+    <div id="dz-live-map-canvas" class="dz-live-map-canvas" aria-label="DayZ live map viewer">
+        <div id="dz-live-map-cursor" style="display:none;position:absolute;bottom:0.35rem;left:0.35rem;z-index:900;background:rgba(0,0,0,0.65);color:#e2e8f0;font-size:0.72rem;font-family:monospace;padding:0.15rem 0.4rem;border-radius:0.2rem;pointer-events:none;"></div>
+    </div>
     <aside class="dz-live-map-sidebar">
         <h3 id="dz-live-map-players-heading">Players (0/64)</h3>
         <div id="dz-live-map-status" class="dz-sub"></div>
@@ -69,6 +71,25 @@
     // {map} is replaced with the map's tile id; {z}/{x}/{y} are Leaflet placeholders.
     const TILE_URL_TPL = @json($tile_url ?? '');
     const INITIAL_SUPERADMINS = @json(array_values($superadmin_ids ?? []));
+    @php
+    $_snapshot_data = [
+        'status'             => $status ?? 'waiting_for_bridge',
+        'source'             => $source ?? '',
+        'map'                => $map ?? 'ChernarusPlus',
+        'map_definition'     => $map_definition ?? ['name' => 'ChernarusPlus', 'world_size' => 15360.0, 'locations' => []],
+        'players'            => $players ?? [],
+        'online_count'       => $online_count ?? 0,
+        'last_update'        => $last_update ?? null,
+        'query_online'       => $query_online ?? false,
+        'query_player_count' => $query_player_count ?? 0,
+        'superadmin_ids'     => $superadmin_ids ?? [],
+    ];
+    @endphp
+    const INITIAL_SNAPSHOT = @json($_snapshot_data);
+    const INITIAL_MARKER_GROUPS = @json($initial_marker_groups ?? []);
+    const INITIAL_PLAYER_DIRECTORY = @json($initial_player_directory ?? []);
+    const INITIAL_BRIDGE_STATUS = @json($initial_bridge_status ?? null);
+    const INLINE_MARKER_LABEL_ZOOM = 3;
 
     const state = {
         mapDef: @json($map_definition),
@@ -86,15 +107,18 @@
         gridLayer: null,
         playerLayer: null,
         markerLayers: {},
+        markerGroupsData: [],
         layerControl: null,
         directory: new Map(),  // steam64/uid → persisted player record
         focused: false,
         tileError: false,
         notice: '',
         statusText: '',
+        inlineLabelsPermanent: false,
     };
 
     const root      = document.getElementById('dz-live-map-canvas');
+    const fullscreenTarget = document.getElementById('dz-live-map-shell') || root;
     const statusEl  = document.getElementById('dz-live-map-status');
     const listEl    = document.getElementById('dz-live-map-list');
     const detailEl  = document.getElementById('dz-live-map-player');
@@ -249,6 +273,13 @@
             state.leafletMap.fitBounds(worldBounds(state.mapDef));
         });
 
+        state.leafletMap.on('zoomend', function () {
+            const shouldBePermanent = shouldShowInlineMarkerLabels();
+            if (shouldBePermanent !== state.inlineLabelsPermanent) {
+                applyMarkerGroups(state.markerGroupsData);
+            }
+        });
+
         // The canvas is laid out by CSS grid, and fullscreen changes its size,
         // so Leaflet needs to re-measure or it renders an empty viewport.
         window.addEventListener('resize', function () {
@@ -257,6 +288,25 @@
         document.addEventListener('fullscreenchange', function () {
             state.leafletMap.invalidateSize(false);
         });
+
+        // Show DayZ world coordinates on mouse hover.
+        const cursorEl = document.getElementById('dz-live-map-cursor');
+        if (cursorEl) {
+            state.leafletMap.on('mousemove', function (ev) {
+                const ll = ev.latlng;
+                cursorEl.textContent = 'X: ' + Math.round(ll.lng) + '  Z: ' + Math.round(ll.lat);
+                cursorEl.style.display = '';
+            });
+            state.leafletMap.on('mouseout', function () {
+                cursorEl.style.display = 'none';
+            });
+            // Click on map copies coordinates to clipboard.
+            state.leafletMap.on('click', function (ev) {
+                if (!navigator.clipboard) { return; }
+                const ll = ev.latlng;
+                navigator.clipboard.writeText(Math.round(ll.lng) + ', ' + Math.round(ll.lat));
+            });
+        }
     }
 
     function applyTileLayer(mapDef) {
@@ -369,6 +419,14 @@
         state.locationLayer.addTo(state.leafletMap);
     }
 
+    function shouldShowInlineMarkerLabels() {
+        return !!(state.leafletMap && state.leafletMap.getZoom() >= INLINE_MARKER_LABEL_ZOOM);
+    }
+
+    function groupUsesInlineLabel(key) {
+        return key === 'town' || key === 'village';
+    }
+
     // ── Marker overlays ───────────────────────────────────────────────────
     // Categories (animals, infected, loot, vehicles, helicopter crashes,
     // player spawns, named locations, …) come from the panel, which reads the
@@ -400,6 +458,7 @@
 
     function applyMarkerGroups(groups) {
         clearMarkerLayers();
+        state.markerGroupsData = Array.isArray(groups) ? groups : [];
 
         if (!Array.isArray(groups) || groups.length === 0) {
             // Nothing came back from the server, so fall back to the built-in
@@ -413,10 +472,13 @@
             state.locationLayer = null;
         }
 
+        state.inlineLabelsPermanent = shouldShowInlineMarkerLabels();
+
         groups.forEach(function (group) {
             const layer   = L.layerGroup();
             const icon    = categoryIcon(group.icon || '📍', group.color || '#fbbf24');
             const markers = Array.isArray(group.markers) ? group.markers : [];
+            const permanentLabel = state.inlineLabelsPermanent && groupUsesInlineLabel(group.key);
 
             markers.forEach(function (marker) {
                 const latlng = dayzToLatLng(Number(marker.x || 0), Number(marker.z || 0));
@@ -424,7 +486,13 @@
                 const detail = escapeHtml(marker.detail || group.label);
 
                 L.marker(latlng, { icon: icon })
-                    .bindTooltip(name, { direction: 'top' })
+                    .bindTooltip(name, {
+                        direction: 'top',
+                        permanent: permanentLabel,
+                        opacity: permanentLabel ? 1 : 0.95,
+                        offset: permanentLabel ? [0, -12] : [0, 0],
+                        className: permanentLabel ? 'dz-map-inline-label' : '',
+                    })
                     .bindPopup('<strong>' + name + '</strong><br>' + detail
                         + '<br>' + Number(marker.x || 0).toFixed(0) + ', ' + Number(marker.z || 0).toFixed(0)
                         + (marker.radius ? '<br>Radius: ' + Number(marker.radius).toFixed(0) + ' m' : ''))
@@ -487,6 +555,10 @@
 
     async function loadMarkers() {
         await fetchMarkers();
+        scheduleMarkerReload();
+    }
+
+    function scheduleMarkerReload() {
         setTimeout(loadMarkers, MARKERS_MS);
     }
 
@@ -588,7 +660,13 @@
         state.list = players.slice();
         countEl.textContent = String(players.length);
         if (playersHeadingEl) {
-            playersHeadingEl.textContent = 'Players (' + String(players.length) + '/' + String(PLAYER_CAPACITY) + ')';
+            const aliveCount = players.filter(function (p) { return p.alive !== false; }).length;
+            const deadCount  = players.length - aliveCount;
+            let headingText = 'Players (' + aliveCount + '/' + String(PLAYER_CAPACITY) + ')';
+            if (deadCount > 0) {
+                headingText += ' · ' + deadCount + ' dead';
+            }
+            playersHeadingEl.textContent = headingText;
         }
         renderPlayerList();
         renderSelection();
@@ -640,18 +718,33 @@
         return '<div><dt>' + escapeHtml(label) + '</dt><dd>' + value + '</dd></div>';
     }
 
+    function healthBar(h) {
+        const pct   = Math.max(0, Math.min(100, h));
+        const color = pct > 60 ? '#34d399' : pct > 30 ? '#f59e0b' : '#f87171';
+        return '<div style="background:var(--dz-border,#2d3348);border-radius:2px;height:6px;width:100%;margin-top:2px;">'
+            + '<div style="background:' + color + ';width:' + pct.toFixed(0) + '%;height:6px;border-radius:2px;"></div></div>';
+    }
+
     function playerDetailRows(player) {
         const entry   = directoryEntry(player) || {};
         const lists   = Object.keys(entry.lists || {}).filter(function (key) { return entry.lists[key]; });
         const location = roughLocationName(player);
+        const x = Number(player.x || 0);
+        const z = Number(player.z || 0);
+        const coordStr = x.toFixed(1) + ', ' + z.toFixed(1);
 
         let html = '';
 
         html += playerRow('Location', escapeHtml(location));
-        html += playerRow('Position', Number(player.x || 0).toFixed(1) + ', ' + Number(player.z || 0).toFixed(1));
+        html += playerRow('Position',
+            coordStr
+            + ' <button type="button" onclick="navigator.clipboard&&navigator.clipboard.writeText(\'' + x.toFixed(0) + ', ' + z.toFixed(0) + '\')" '
+            + 'style="margin-left:4px;padding:0 4px;font-size:0.7rem;cursor:pointer;background:var(--dz-surface-alt,#0b0f19);border:1px solid var(--dz-border,#2d3348);border-radius:3px;color:var(--dz-muted);" title="Copy coordinates">📋</button>');
         html += playerRow('Height', Number(player.y || 0).toFixed(1));
         html += playerRow('Direction', Number(player.direction || 0).toFixed(1) + '°');
-        html += playerRow('Status', player.alive !== false ? 'Alive' : 'Dead');
+        html += playerRow('Status', player.alive !== false
+            ? '<span style="color:#34d399;">Alive</span>'
+            : '<span style="color:#f87171;">Dead</span>');
         if (player.in_vehicle) {
             html += playerRow('In Vehicle', escapeHtml(player.vehicle_class || 'Unknown'));
         }
@@ -660,7 +753,7 @@
             var h = Number(player.health);
             // Older bridge deployments sent health on a 0-10000 scale; normalise.
             if (h > 100) { h = h / 100; }
-            html += playerRow('Health', h.toFixed(1) + '%');
+            html += playerRow('Health', h.toFixed(1) + '%' + healthBar(h));
         } else {
             html += playerRow('Health', 'N/A');
         }
@@ -751,7 +844,23 @@
             const player = entry.player;
             const li  = document.createElement('li');
             li.className = 'dz-live-map-list-item' + (state.selected === player.steam64 ? ' is-active' : '');
-            li.innerHTML = '<button type="button"><span class="dz-live-map-list-main">' + playerNameHtml(player) + '</span>'
+
+            // Health bar colour.
+            var h = player.health != null ? Number(player.health) : null;
+            if (h !== null && h > 100) { h = h / 100; }
+            var hPct   = h !== null ? Math.max(0, Math.min(100, h)) : null;
+            var hColor = hPct === null ? '#888' : (hPct > 60 ? '#34d399' : hPct > 30 ? '#f59e0b' : '#f87171');
+            var aliveIndicator = player.alive !== false
+                ? '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#34d399;margin-right:3px;flex-shrink:0;" title="Alive"></span>'
+                : '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#f87171;margin-right:3px;flex-shrink:0;" title="Dead"></span>';
+            var healthHtml = hPct !== null
+                ? '<div style="background:var(--dz-border,#2d3348);border-radius:2px;height:3px;width:100%;margin-top:2px;">'
+                  + '<div style="background:' + hColor + ';width:' + hPct.toFixed(0) + '%;height:3px;border-radius:2px;"></div></div>'
+                : '';
+
+            li.innerHTML = '<button type="button"><span class="dz-live-map-list-main" style="display:flex;align-items:center;">'
+                + aliveIndicator + playerNameHtml(player) + '</span>'
+                + healthHtml
                 + '<small>' + escapeHtml(roughLocationName(player)) + '</small></button>';
             li.querySelector('button').addEventListener('click', function () {
                 selectPlayer(player.steam64);
@@ -862,16 +971,48 @@
             return;
         }
 
-        state.leafletMap.fitBounds(worldBounds(state.mapDef));
+        state.selected = '';
+        state.focused = false;
+        state.leafletMap.closePopup();
+        state.leafletMap.invalidateSize(false);
+        state.leafletMap.fitBounds(worldBounds(state.mapDef), { padding: [16, 16], animate: false });
+        renderPlayerList();
+        renderSelection();
     }
 
     function toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            root.requestFullscreen && root.requestFullscreen();
+        if (!fullscreenTarget) {
             return;
         }
 
-        document.exitFullscreen && document.exitFullscreen();
+        const activeFullscreenElement = document.fullscreenElement
+            || document.webkitFullscreenElement
+            || document.msFullscreenElement;
+
+        if (!activeFullscreenElement) {
+            const request = fullscreenTarget.requestFullscreen
+                || fullscreenTarget.webkitRequestFullscreen
+                || fullscreenTarget.msRequestFullscreen;
+
+            if (request) {
+                request.call(fullscreenTarget);
+                window.setTimeout(function () {
+                    if (state.leafletMap) {
+                        state.leafletMap.invalidateSize(false);
+                    }
+                }, 150);
+            }
+
+            return;
+        }
+
+        const exit = document.exitFullscreen
+            || document.webkitExitFullscreen
+            || document.msExitFullscreen;
+
+        if (exit) {
+            exit.call(document);
+        }
     }
 
     function csrfToken() {
@@ -911,6 +1052,29 @@
         }
     }
 
+    function applyBridgeStatusPayload(data) {
+        const script = !!(data && data.script);
+        const initC = !!(data && data.init_c);
+        const snapshot = !!(data && data.snapshot);
+        const legacy = !!(data && data.init_c_legacy);
+
+        if (data && data.deployed) {
+            setBridgeMessage('Bridge deployed (script, init.c, snapshot all present).', 'success');
+            return;
+        }
+
+        if (legacy) {
+            setBridgeMessage('Legacy bridge block detected in init.c — remove and redeploy bridge.', 'error');
+            return;
+        }
+
+        const parts = [];
+        parts.push('script: ' + (script ? 'yes' : 'no'));
+        parts.push('init.c: ' + (initC ? 'yes' : 'no'));
+        parts.push('snapshot: ' + (snapshot ? 'yes' : 'no'));
+        setBridgeMessage('Bridge not fully deployed (' + parts.join(', ') + ').', 'warn');
+    }
+
     async function refreshBridgeStatus() {
         try {
             const res = await fetch(BRIDGE_STATUS_URL, {
@@ -923,27 +1087,7 @@
             if (!res.ok) {
                 throw new Error('HTTP ' + res.status);
             }
-
-            const script = !!data.script;
-            const initC  = !!data.init_c;
-            const snapshot = !!data.snapshot;
-            const legacy = !!data.init_c_legacy;
-
-            if (data.deployed) {
-                setBridgeMessage('Bridge deployed (script, init.c, snapshot all present).', 'success');
-                return;
-            }
-
-            if (legacy) {
-                setBridgeMessage('Legacy bridge block detected in init.c — remove and redeploy bridge.', 'error');
-                return;
-            }
-
-            const parts = [];
-            parts.push('script: ' + (script ? 'yes' : 'no'));
-            parts.push('init.c: ' + (initC ? 'yes' : 'no'));
-            parts.push('snapshot: ' + (snapshot ? 'yes' : 'no'));
-            setBridgeMessage('Bridge not fully deployed (' + parts.join(', ') + ').', 'warn');
+            applyBridgeStatusPayload(data);
         } catch (err) {
             setBridgeMessage('Failed to load bridge status.', 'error');
         }
@@ -994,8 +1138,12 @@
         } catch (err) {
             setStatusText('Failed to fetch live map snapshot.');
         } finally {
-            setTimeout(poll, POLL_MS);
+            schedulePoll();
         }
+    }
+
+    function schedulePoll() {
+        setTimeout(poll, POLL_MS);
     }
 
     // ── Leaflet loader ────────────────────────────────────────────────────
@@ -1053,8 +1201,18 @@
             return;
         }
 
-        poll();
-        loadMarkers();
+        applyDirectory(INITIAL_PLAYER_DIRECTORY);
+        applyMarkerGroups(INITIAL_MARKER_GROUPS);
+        applySnapshot(INITIAL_SNAPSHOT);
+
+        if (INITIAL_BRIDGE_STATUS && typeof INITIAL_BRIDGE_STATUS === 'object') {
+            applyBridgeStatusPayload(INITIAL_BRIDGE_STATUS);
+        } else {
+            refreshBridgeStatus();
+        }
+
+        schedulePoll();
+        scheduleMarkerReload();
     }
 
     window.pteroLiveMapResetCamera = resetView;
@@ -1079,7 +1237,6 @@
     }
 
     setStatusText('Loading map…');
-    refreshBridgeStatus();
     loadLeaflet(0);
 }());
 </script>
@@ -1164,5 +1321,22 @@
     white-space: nowrap;
     text-shadow: 1px 1px 2px #0b0f19, -1px -1px 2px #0b0f19;
     pointer-events: none;
+}
+.leaflet-tooltip.dz-map-inline-label {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+}
+.leaflet-tooltip.dz-map-inline-label .leaflet-tooltip-content,
+.dz-map-inline-label {
+    color: rgba(241, 245, 249, 0.96);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-shadow: 1px 1px 3px #0b0f19, -1px -1px 3px #0b0f19;
+    white-space: nowrap;
+}
+.leaflet-tooltip-top.dz-map-inline-label:before {
+    display: none;
 }
 </style>

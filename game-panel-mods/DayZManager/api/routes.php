@@ -43,6 +43,12 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/players/superadmin',       'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@addSuperadmin'];
     $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/players/superadmin/{id}',   'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removeSuperadmin'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@giveMoney'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/bank-money', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@alterBankMoney'];
+    $routes[] = ['method' => 'GET',    'uri' => $prefix . '/player-actions/give-money/{id}/bridge-fulfil',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@bridgeFulfillGiveMoney', 'signed_public' => true];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money/{id}/bridge-fulfil',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@bridgeFulfillGiveMoney', 'signed_public' => true];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/player-actions/give-money/{id}/fulfil',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@fulfillGiveMoney'];
+    $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/player-actions/give-money/{id}', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removeGiveMoney'];
+    $routes[] = ['method' => 'POST', 'uri' => $prefix . '/player-actions/inventory/resolve', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@resolveInventory'];
     $routes[] = ['method' => 'DELETE', 'uri' => $prefix . '/player-actions/players/{id}', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZPlayerController@removePlayer'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/tab', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZTabController@status'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dashboard', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'];
@@ -67,7 +73,9 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/lookup', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@lookup'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/mods/browse', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZWorkshopController@browse'];
     $routes[] = ['method' => 'GET',    'uri' => $prefix . '/settings',                'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@index'];
+    $routes[] = ['method' => 'GET',    'uri' => $prefix . '/logs',                    'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZLogsController@index'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/settings/save',           'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@save'];
+    $routes[] = ['method' => 'POST',   'uri' => $prefix . '/settings/cache-refresh',  'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZManagerSettingsController@refreshCache'];
     $routes[] = ['method' => 'GET',    'uri' => $prefix . '/backups',                 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@index'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/create',          'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@create'];
     $routes[] = ['method' => 'POST',   'uri' => $prefix . '/backups/restore',         'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZBackupController@restore'];

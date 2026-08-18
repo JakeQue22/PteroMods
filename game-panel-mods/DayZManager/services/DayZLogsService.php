@@ -1,0 +1,224 @@
+<?php
+
+declare(strict_types=1);
+
+namespace GamePanelMods\DayZManager\Services;
+
+/**
+ * Discovers DayZ and supported-mod log files through Wings.
+ */
+final class DayZLogsService
+{
+    private const MAX_FILES = 500;
+
+    public function __construct(
+        private readonly DayZPanelGateway $gateway = new DayZPanelGateway(),
+    ) {
+    }
+
+    /**
+     * @return list<array{key:string,label:string,path:string,browse_url:string,entries:list<array<string,mixed>>}>
+     */
+    public function groups(mixed $server, string $serverId): array
+    {
+        $groups = [
+            'errors' => $this->group('errors', 'Error Logs', '/profiles', $serverId),
+            'server' => $this->group('server', 'Server Logs', '/profiles', $serverId),
+            'script' => $this->group('script', 'Script Logs', '/profiles', $serverId),
+            'admin' => $this->group('admin', 'Admin Logs', '/profiles/VPPAdminTools/Logging', $serverId),
+            'trader' => $this->group('trader', 'Trader Logs', '/profiles', $serverId),
+            'airdrop' => $this->group('airdrop', 'Airdrop Logs', '/profiles/Airdrop/Logs', $serverId),
+        ];
+
+        foreach ($this->filesIn($server, '/profiles', false) as $entry) {
+            if ($this->isTraderLog($entry['name'])) {
+                continue;
+            }
+
+            $key = match (true) {
+                $this->isErrorLog($entry['name']) => 'errors',
+                $this->isScriptLog($entry['name']) => 'script',
+                default => 'server',
+            };
+            $groups[$key]['entries'][] = $this->entry($entry, $serverId);
+        }
+
+        foreach ($this->filesIn($server, $groups['admin']['path'], true, ['log', 'rpt', 'txt']) as $entry) {
+            if (!$this->isTraderLog($entry['name'])) {
+                $groups['admin']['entries'][] = $this->entry($entry, $serverId);
+            }
+        }
+
+        foreach ($this->filesIn($server, $groups['airdrop']['path'], true) as $entry) {
+            if (!$this->isTraderLog($entry['name'])) {
+                $groups['airdrop']['entries'][] = $this->entry($entry, $serverId);
+            }
+        }
+
+        foreach ($this->filesIn($server, '/profiles', true) as $entry) {
+            if ($this->isTraderLog($entry['name'])) {
+                $groups['trader']['entries'][] = $this->entry($entry, $serverId);
+            }
+        }
+
+        $codeLockRoot = '/profiles/CodeLock/Logs';
+
+        foreach ($this->filesIn($server, $codeLockRoot, true) as $entry) {
+            if ($this->isTraderLog($entry['name'])) {
+                continue;
+            }
+
+            $relativeDirectory = trim(substr(dirname($entry['path']), strlen($codeLockRoot)), '/');
+            $category = $relativeDirectory !== '' ? $relativeDirectory : 'General';
+            $key = 'codelock-' . strtolower((string) preg_replace('/[^a-z0-9]+/i', '-', $category));
+
+            if (!isset($groups[$key])) {
+                $path = $relativeDirectory !== '' ? $codeLockRoot . '/' . $relativeDirectory : $codeLockRoot;
+                $groups[$key] = $this->group($key, 'Code Lock Logs · ' . str_replace('/', ' · ', $category), $path, $serverId);
+            }
+
+            $groups[$key]['entries'][] = $this->entry($entry, $serverId);
+        }
+
+        foreach ($groups as &$group) {
+            usort($group['entries'], static function (array $left, array $right): int {
+                $modified = strcmp((string) ($right['modified'] ?? ''), (string) ($left['modified'] ?? ''));
+
+                return $modified !== 0 ? $modified : strcasecmp((string) $left['path'], (string) $right['path']);
+            });
+        }
+        unset($group);
+
+        return array_values($groups);
+    }
+
+    /**
+     * @return array{key:string,label:string,path:string,browse_url:string,entries:list<array<string,mixed>>}
+     */
+    private function group(string $key, string $label, string $path, string $serverId): array
+    {
+        return [
+            'key' => $key,
+            'label' => $label,
+            'path' => $path,
+            'browse_url' => $this->browseUrl($serverId, $path),
+            'entries' => [],
+        ];
+    }
+
+    /**
+     * @return list<array{name:string,path:string,size:int,modified:string}>
+     */
+    private function filesIn(mixed $server, string $root, bool $recursive, array $extensions = ['log', 'rpt', 'adm']): array
+    {
+        $files = [];
+        $pending = [rtrim($root, '/') ?: '/'];
+
+        while ($pending !== [] && count($files) < self::MAX_FILES) {
+            $directory = array_shift($pending);
+
+            foreach ($this->gateway->listDirectory($server, $directory) as $entry) {
+                $name = trim((string) ($entry['name'] ?? ''));
+
+                if ($name === '') {
+                    continue;
+                }
+
+                $path = rtrim($directory, '/') . '/' . $name;
+
+                if (($entry['directory'] ?? false) && $recursive) {
+                    $pending[] = $path;
+                    continue;
+                }
+
+                if (!($entry['file'] ?? false) || !$this->isLogFile($name, $extensions)) {
+                    continue;
+                }
+
+                $files[] = [
+                    'name' => $name,
+                    'path' => $path,
+                    'size' => max(0, (int) ($entry['size'] ?? 0)),
+                    'modified' => (string) ($entry['modified'] ?? ''),
+                ];
+
+                if (count($files) >= self::MAX_FILES) {
+                    break;
+                }
+            }
+        }
+
+        return $files;
+    }
+
+    private function isLogFile(string $name, array $extensions): bool
+    {
+        return in_array(strtolower((string) pathinfo($name, PATHINFO_EXTENSION)), $extensions, true);
+    }
+
+    private function isErrorLog(string $name): bool
+    {
+        return stripos($name, 'error') !== false;
+    }
+
+    private function isTraderLog(string $name): bool
+    {
+        return str_starts_with(strtoupper($name), 'TM');
+    }
+
+    private function isScriptLog(string $name): bool
+    {
+        return str_starts_with(strtolower($name), 'script');
+    }
+
+    /**
+     * @param array{name:string,path:string,size:int,modified:string} $file
+     * @return array<string, mixed>
+     */
+    private function entry(array $file, string $serverId): array
+    {
+        return $file + [
+            'directory' => rtrim(dirname($file['path']), '/') ?: '/',
+            'modified_display' => $this->formatModified((string) ($file['modified'] ?? '')),
+            'size_display' => $this->formatBytes($file['size']),
+            'edit_url' => '/server/' . rawurlencode($serverId) . '/files/edit#' . $this->encodePath($file['path']),
+        ];
+    }
+
+    private function browseUrl(string $serverId, string $path): string
+    {
+        return '/server/' . rawurlencode($serverId) . '/files#' . $this->encodePath($path);
+    }
+
+    private function encodePath(string $path): string
+    {
+        $path = '/' . ltrim(str_replace('\\', '/', $path), '/');
+
+        return implode('/', array_map('rawurlencode', explode('/', $path)));
+    }
+
+    private function formatBytes(int $bytes): string
+    {
+        if ($bytes <= 0) {
+            return '—';
+        }
+
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $power = min((int) floor(log((float) $bytes, 1024)), count($units) - 1);
+
+        return sprintf('%.1f %s', $bytes / (1024 ** $power), $units[$power]);
+    }
+
+    private function formatModified(string $value): string
+    {
+        $value = trim($value);
+
+        if ($value === '') {
+            return '';
+        }
+
+        $timestamp = strtotime($value);
+
+        return $timestamp === false ? $value : date('d-m-Y H:i', $timestamp);
+    }
+}

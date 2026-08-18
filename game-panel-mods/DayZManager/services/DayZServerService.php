@@ -14,6 +14,9 @@ final class DayZServerService
 {
     /** @var list<int> */
     private const RESTART_WARNINGS_MINUTES = [180, 120, 60, 30, 20, 15, 10, 5, 2, 1];
+    private const RESTART_MESSAGES_XML_PATH = '/mpmissions/dayzOffline.chernarusplus/db/messages.xml';
+    private const RESTART_MESSAGES_XML_START = '<!-- PteroMods restart warnings: start -->';
+    private const RESTART_MESSAGES_XML_END = '<!-- PteroMods restart warnings: end -->';
     private const FOLLOW_UP_RUNNING_GRACE_SECONDS = 15;
 
     /**
@@ -250,9 +253,12 @@ final class DayZServerService
         // Pre-mark warnings whose window has already opened for the first cycle
         // so the next tick does not fire them all at once. Warnings that are due
         // later in the cycle will still fire at the appropriate times.
+        // Use strict `>` (not `>=`) so a warning whose threshold equals the
+        // remaining time right now (e.g. 180-min warning for a 180-min interval)
+        // is NOT pre-marked — it should still fire on the first tick.
         $preFilledWarnings = $nextTimestamp === null ? [] : array_values(array_filter(
             $warningMinutesEnabled,
-            static fn (int $m): bool => $now >= ($nextTimestamp - ($m * 60)),
+            static fn (int $m): bool => $now > ($nextTimestamp - ($m * 60)),
         ));
 
         $update = [
@@ -286,6 +292,8 @@ final class DayZServerService
             return ['status' => 'failed', 'message' => 'Failed to save restart schedule.'];
         }
 
+        $this->syncRestartMessagesXml($server);
+
         return [
             'status' => 'applied',
             'message' => $enabled
@@ -300,6 +308,39 @@ final class DayZServerService
     public function tickRestartSchedule(mixed $server): array
     {
         $serverId = $this->serverIdentifier($server);
+        $lockKey = 'pteromods.dayz.restart_schedule.tick.' . md5($serverId);
+        $locked = false;
+
+        if ($serverId !== '' && class_exists('Illuminate\\Support\\Facades\\Cache')) {
+            try {
+                $locked = \Illuminate\Support\Facades\Cache::add($lockKey, 1, 25);
+
+                if (!$locked) {
+                    return ['status' => 'idle', 'message' => 'Restart schedule is already being checked.'];
+                }
+            } catch (Throwable) {
+                // Continue without a lock when the configured cache is unavailable.
+            }
+        }
+
+        try {
+            return $this->tickRestartScheduleUnlocked($server, $serverId);
+        } finally {
+            if ($locked) {
+                try {
+                    \Illuminate\Support\Facades\Cache::forget($lockKey);
+                } catch (Throwable) {
+                    // The short lock TTL safely releases it if cache cleanup fails.
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function tickRestartScheduleUnlocked(mixed $server, string $serverId): array
+    {
         $schedule = $this->scheduleRow($serverId);
 
         if ($schedule === null) {
@@ -319,10 +360,25 @@ final class DayZServerService
                 // delayed), fire the restart immediately without sending
                 // retrospective warning messages that would spam global chat.
                 if ($now >= $timedNext) {
-                    $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
-                    $this->gateway->power($server, 'restart');
                     $this->clearTimedRestart($serverId);
                     $this->storeLastRestart($serverId, $now);
+
+                    if ((bool) ($schedule['enabled'] ?? false)) {
+                        $interval = max(60, (int) ($schedule['interval_minutes'] ?? 0));
+                        $startTime = $this->hasScheduleColumn('start_time')
+                            ? $this->normalizeStartTime((string) ($schedule['start_time'] ?? ''))
+                            : '';
+                        $scheduledNext = strtotime((string) ($schedule['next_restart_at'] ?? ''));
+
+                        if ($scheduledNext === false || $scheduledNext <= $now) {
+                            $scheduledNext = $this->nextRestartTimestamp($startTime, $interval, $now);
+                        }
+
+                        $this->storeScheduleTick($serverId, $schedule, $interval, $scheduledNext, [], true, $now);
+                    }
+
+                    $this->syncRestartMessagesXml($server);
+                    $this->gateway->power($server, 'restart');
 
                     return [
                         'status'          => 'restarted',
@@ -345,12 +401,6 @@ final class DayZServerService
                 );
 
                 if ($warning !== null) {
-                    $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule));
-
-                    if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
-                        $results[] = $message;
-                    }
-
                     $timedWarningsSent = $warning['sent'];
                 }
 
@@ -361,6 +411,23 @@ final class DayZServerService
         }
 
         // ── Recurring scheduled restart ───────────────────────────────────────
+        // While a one-time timed restart is pending, the scheduled restart is
+        // suppressed so the timed override is the sole authority for when the
+        // next restart and its warning messages will fire.
+        if ($this->hasScheduleColumn('timed_restart_at')) {
+            $pendingTimed = $schedule['timed_restart_at'] ?? null;
+            $pendingTimedTs = $pendingTimed !== null ? strtotime((string) $pendingTimed) : false;
+            if ($pendingTimedTs !== false && $pendingTimedTs > $now) {
+                return [
+                    'status'          => $results === [] ? 'idle' : 'warning_sent',
+                    'messages_sent'   => $results,
+                    'next_restart_at' => (string) ($schedule['next_restart_at'] ?? ''),
+                    'interval_minutes' => (int) ($schedule['interval_minutes'] ?? 0),
+                    'restarted'       => false,
+                ];
+            }
+        }
+
         if (!(bool) ($schedule['enabled'] ?? false)) {
             return [
                 'status'          => $results === [] ? 'idle' : 'warning_sent',
@@ -385,10 +452,7 @@ final class DayZServerService
         $lastRestart = null;
 
         if ($now >= $next) {
-            // Restart time has passed; restart immediately without sending
-            // any retrospective warning messages.
-            $this->gateway->sendCommand($server, "say -1 <t color='#ff0000'>Restarting now.</t>");
-            $restarted = $this->gateway->power($server, 'restart');
+            // Restart time has passed; restart immediately.
             $lastRestart = $now;
 
             // Advance in whole intervals (anchored to the configured start time
@@ -396,22 +460,21 @@ final class DayZServerService
             // tick cannot leave a due timestamp behind and restart in a loop.
             $next = $this->nextRestartTimestamp($startTime, $interval, max($now, $next));
             $warningsSent = [];
+            $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true, $lastRestart);
+            $this->syncRestartMessagesXml($server);
+            $restarted = $this->gateway->power($server, 'restart');
         } else {
             $warningsSent = $this->parseWarnings((string) ($schedule['warnings_sent'] ?? ''));
             $warning = $this->dueWarning($next, $now, $this->enabledWarningMinutes($schedule), $warningsSent);
 
             if ($warning !== null) {
-                $message = $this->warningMessage($warning['minutes'], $this->warningMessages($schedule));
-
-                if ($this->gateway->sendCommand($server, 'say -1 ' . $message)) {
-                    $results[] = $message;
-                }
-
                 $warningsSent = $warning['sent'];
             }
         }
 
-        $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true, $lastRestart);
+        if ($lastRestart === null) {
+            $this->storeScheduleTick($serverId, $schedule, $interval, $next, $warningsSent, true, null);
+        }
 
         $storedLastRestart = $lastRestart !== null
             ? date('Y-m-d H:i:s', $lastRestart)
@@ -437,9 +500,13 @@ final class DayZServerService
      * the countdown accurate and avoids a burst of stale "restart in 3 hours"
      * style messages when ticks resume after a gap.
      *
+     * The returned `remaining_minutes` equals the threshold key (`minutes`) so
+     * the in-game message always reads the configured value (e.g. "2 hours") and
+     * is never off by a minute due to scheduler tick timing drift.
+     *
      * @param list<int> $enabledMinutes
      * @param list<int> $alreadySent
-     * @return array{minutes: int, sent: list<int>}|null
+     * @return array{minutes: int, remaining_minutes: int, sent: list<int>}|null
      */
     private function dueWarning(int $next, int $now, array $enabledMinutes, array $alreadySent): ?array
     {
@@ -455,9 +522,13 @@ final class DayZServerService
 
         sort($due);
 
+        // Use the threshold key as the display value so that minor scheduler
+        // tick drift (a few seconds late) never causes the message to read
+        // "1 hour 59 min" instead of "2 hours", etc.
         return [
-            'minutes' => $due[0],
-            'sent' => array_values(array_unique(array_merge($alreadySent, $due))),
+            'minutes'          => $due[0],
+            'remaining_minutes' => $due[0],
+            'sent'             => array_values(array_unique(array_merge($alreadySent, $due))),
         ];
     }
 
@@ -735,9 +806,23 @@ final class DayZServerService
         // delay (i.e., M >= $minutes) so the first tick does not fire them all at
         // once. The immediate announcement below already covers the "restart in N
         // minutes" message; shorter-interval warnings will fire at the right time.
+        //
+        // Additionally, if the recurring schedule has a next_restart_at that is
+        // sooner than the timed delay, also pre-mark thresholds covered by that
+        // proximity: those warnings would have been sent by the scheduled path and
+        // the timed override should start its countdown from where the schedule
+        // left off.
+        $schedule = $this->scheduleRow($serverId);
+        $scheduledNextTs = $schedule !== null
+            ? strtotime((string) ($schedule['next_restart_at'] ?? ''))
+            : false;
+        $minutesUntilScheduled = ($scheduledNextTs !== false && $scheduledNextTs > time())
+            ? (int) ceil(($scheduledNextTs - time()) / 60)
+            : 0;
+
         $alreadySent = array_values(array_filter(
             self::RESTART_WARNINGS_MINUTES,
-            static fn (int $m): bool => $m >= $minutes,
+            static fn (int $m): bool => $m >= $minutes || ($minutesUntilScheduled > 0 && $m >= $minutesUntilScheduled),
         ));
 
         $update = [
@@ -755,6 +840,8 @@ final class DayZServerService
         } catch (Throwable) {
             return ['status' => 'failed', 'message' => 'Failed to save timed restart.'];
         }
+
+        $this->syncRestartMessagesXml($server);
 
         // Announce immediately to global chat.
         $announcement = 'Server will restart in ' . $this->formatMinutes($minutes) . '.';
@@ -800,6 +887,8 @@ final class DayZServerService
         } catch (Throwable) {
             return ['status' => 'failed', 'message' => 'Failed to cancel timed restart.'];
         }
+
+        $this->syncRestartMessagesXml($server);
 
         return ['status' => 'cancelled', 'message' => 'Timed restart cancelled.'];
     }
@@ -1147,17 +1236,160 @@ final class DayZServerService
     }
 
     /**
-     * @param array<string, string> $customMessages
+     * @param int                   $minutes         Warning threshold key (used for custom message lookup).
+     * @param array<string, string> $customMessages  Map of threshold → template string.
+     * @param int|null              $remainingMinutes Actual remaining minutes to the restart;
+     *                                               when provided it replaces the threshold
+     *                                               value in the {time} placeholder so the
+     *                                               in-game countdown is always accurate.
      */
-    private function warningMessage(int $minutes, array $customMessages): string
+    private function warningMessage(int $minutes, array $customMessages, ?int $remainingMinutes = null): string
     {
+        $displayMinutes = $remainingMinutes ?? $minutes;
         $template = $customMessages[(string) $minutes] ?? 'Server restart in {time}.';
-        $message = str_replace('{time}', $this->formatMinutes($minutes), $template);
+        $message = str_replace('{time}', $this->formatMinutes($displayMinutes), $template);
 
         if (preg_match('/<t\b/i', $message) !== 1) {
             $message = "<t color='#ff0000'>" . $message . '</t>';
         }
 
         return $message;
+    }
+
+    private function syncRestartMessagesXml(mixed $server): void
+    {
+        $serverId = $this->serverIdentifier($server);
+
+        if ($serverId === '') {
+            return;
+        }
+
+        $schedule = $this->scheduleRow($serverId);
+        $managedBlock = $this->buildRestartMessagesXmlBlock($schedule);
+        $existing = $this->gateway->readFileFresh($server, self::RESTART_MESSAGES_XML_PATH);
+        $updated = $this->mergeRestartMessagesXml($existing, $managedBlock);
+
+        if ($updated === null || $updated === $existing) {
+            return;
+        }
+
+        $this->gateway->writeFile($server, self::RESTART_MESSAGES_XML_PATH, $updated);
+    }
+
+    private function buildRestartMessagesXmlBlock(?array $schedule): string
+    {
+        if ($schedule === null) {
+            return '';
+        }
+
+        $targetTimestamp = $this->restartMessagesTargetTimestamp($schedule);
+
+        if ($targetTimestamp === null) {
+            return '';
+        }
+
+        $warnings = $this->enabledWarningMinutes($schedule);
+        $messages = $this->warningMessages($schedule);
+
+        // Use last_restart_at as the server start anchor so delays are
+        // computed as seconds from when the server actually booted, which is
+        // what DayZ's messages.xml <delay> field expects.  Fall back to the
+        // current time when no restart has been recorded yet (first cycle).
+        $serverStartedAt = $this->hasScheduleColumn('last_restart_at')
+            ? strtotime((string) ($schedule['last_restart_at'] ?? ''))
+            : false;
+        $serverStartTime = ($serverStartedAt !== false && $serverStartedAt > 0) ? $serverStartedAt : time();
+
+        $entries = [];
+
+        foreach ($warnings as $warningMinutes) {
+            $delaySeconds = $targetTimestamp - $warningMinutes * 60 - $serverStartTime;
+
+            if ($delaySeconds < 0) {
+                continue;
+            }
+
+            $entries[] = [
+                'delay' => (int) $delaySeconds,
+                'text' => $this->plainRestartMessage($warningMinutes, $messages),
+            ];
+        }
+
+        $entries[] = [
+            'delay' => max(0, (int) ($targetTimestamp - $serverStartTime)),
+            'text' => 'Server restarting now.',
+        ];
+
+        usort($entries, static function (array $left, array $right): int {
+            return ($left['delay'] <=> $right['delay']) ?: strcmp((string) $left['text'], (string) $right['text']);
+        });
+
+        $xml = [];
+
+        foreach ($entries as $entry) {
+            $xml[] = '    <message>';
+            $xml[] = '        <delay>' . max(0, (int) $entry['delay']) . '</delay>';
+            $xml[] = '        <text>' . htmlspecialchars((string) $entry['text'], ENT_XML1 | ENT_COMPAT, 'UTF-8') . '</text>';
+            $xml[] = '    </message>';
+        }
+
+        return implode("\n", $xml);
+    }
+
+    private function restartMessagesTargetTimestamp(array $schedule): ?int
+    {
+        if ($this->hasScheduleColumn('timed_restart_at')) {
+            $timedAt = strtotime((string) ($schedule['timed_restart_at'] ?? ''));
+
+            if ($timedAt !== false && $timedAt > time()) {
+                return $timedAt;
+            }
+        }
+
+        if (!(bool) ($schedule['enabled'] ?? false)) {
+            return null;
+        }
+
+        $next = strtotime((string) ($schedule['next_restart_at'] ?? ''));
+
+        return $next !== false && $next > time() ? $next : null;
+    }
+
+    /**
+     * Converts the HTML-flavoured warning template into plain text for DayZ's
+     * messages.xml scheduler.
+     *
+     * @param array<string, string> $customMessages
+     */
+    private function plainRestartMessage(int $warningMinutes, array $customMessages): string
+    {
+        $message = trim(strip_tags($this->warningMessage($warningMinutes, $customMessages, $warningMinutes)));
+
+        return $message !== '' ? $message : 'Server restart in ' . $this->formatMinutes($warningMinutes) . '.';
+    }
+
+    private function mergeRestartMessagesXml(?string $existing, string $managedBlock): ?string
+    {
+        $content = is_string($existing) && trim($existing) !== ''
+            ? str_replace("\r\n", "\n", $existing)
+            : "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<messages>\n</messages>\n";
+        $block = $managedBlock === ''
+            ? ''
+            : self::RESTART_MESSAGES_XML_START . "\n" . $managedBlock . "\n" . self::RESTART_MESSAGES_XML_END;
+        $pattern = '/' . preg_quote(self::RESTART_MESSAGES_XML_START, '/') . '.*?' . preg_quote(self::RESTART_MESSAGES_XML_END, '/') . '\n?/s';
+
+        if (preg_match($pattern, $content) === 1) {
+            $updated = preg_replace($pattern, $block === '' ? '' : $block . "\n", $content, 1);
+
+            return is_string($updated) ? $updated : null;
+        }
+
+        if (preg_match('/<\/messages>\s*$/i', $content) === 1) {
+            return preg_replace('/<\/messages>\s*$/i', ($block === '' ? '' : $block . "\n") . '</messages>' . "\n", $content, 1);
+        }
+
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<messages>\n"
+            . ($block === '' ? '' : $block . "\n")
+            . "</messages>\n";
     }
 }
