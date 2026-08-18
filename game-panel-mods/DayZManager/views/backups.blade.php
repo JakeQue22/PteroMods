@@ -1,10 +1,12 @@
 <section class="dz-card">
-    <h2>Database Backups</h2>
+    <h2>DayZ Server Backups</h2>
     <p class="dz-sub">
-        Backups capture the current database state for this server: mod load order, restart schedule,
-        mod install queue, plus global player lists and settings (for reference). Restoring a backup
-        overwrites the per-server rows (mod order, restart schedule, install queue) immediately;
-        tick <em>Restart server after restore</em> to apply mod / configuration changes at once.
+        Backups compress the DayZ persistence folder
+        (<code>/mpmissions/&lt;mission&gt;/storage_1</code>) on the game server into a
+        <code>.tar.gz</code> archive stored at
+        <code>/mpmissions/&lt;mission&gt;/storage_1_backups/</code>.
+        A safety backup of the current <code>storage_1</code> is taken automatically before
+        every Restore or Restore &amp; Restart so you can always roll back if needed.
     </p>
 </section>
 
@@ -92,12 +94,11 @@
                             {{ $backup['created_at'] }}
                             &middot; {{ $backup['trigger'] === 'auto' ? 'automatic' : 'manual' }}
                         </span>
-                        <span class="dz-sub" style="display:block;font-size:0.75rem;">
-                            Size: {{ $backup['file_size_display'] ?? '—' }}
-                        </span>
-                        <span class="dz-sub" style="display:block;font-size:0.75rem;word-break:break-all;">
-                            File: <code>{{ $backup['file_path'] ?? '—' }}</code>
-                        </span>
+                        @if (!empty($backup['archive_path']))
+                            <span class="dz-sub" style="display:block;font-size:0.75rem;word-break:break-all;">
+                                Archive: <code>{{ $backup['archive_path'] }}</code>
+                            </span>
+                        @endif
                     </span>
                     <div style="display:flex;gap:0.4rem;flex-shrink:0;flex-wrap:wrap;">
                         <button class="dz-btn dz-btn-sm dz-btn-amber"
@@ -161,12 +162,12 @@
     };
 
     window.pteroBackupRestore = function (id, restart) {
-        if (!confirm('Restore this backup?' + (restart ? ' The server will be restarted.' : ''))) { return; }
-        setStatus('dz-backup-action-status', 'Restoring…');
+        if (!confirm('Restore this backup? A safety backup of the current storage_1 will be taken first.' + (restart ? ' The server will then be restarted.' : ''))) { return; }
+        setStatus('dz-backup-action-status', 'Taking safety backup then restoring… this may take a minute.');
         req('POST', '/dayz/backups/restore', { backup_id: id, restart: restart })
             .then(function (d) {
                 if (d.status === 'restored') {
-                    setStatus('dz-backup-action-status', 'Restored.' + (d.restarted ? ' Server is restarting.' : ''));
+                    setStatus('dz-backup-action-status', 'Restored.' + (d.restarted ? ' Server is restarting.' : ' Reload to see the updated backup list.'));
                 } else {
                     setStatus('dz-backup-action-status', d.message || 'Restore failed.', false);
                 }

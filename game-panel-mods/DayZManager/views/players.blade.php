@@ -124,7 +124,7 @@
                     </dd></div>
                     <div><dt>Money</dt><dd>
                         @if (($player['bank_money'] ?? null) !== null)
-                            {{ number_format((float) $player['bank_money'], 2) }}
+                            ${{ number_format((float) $player['bank_money']) }}
                         @else
                             —
                         @endif
@@ -186,7 +186,7 @@
                     @if ($resetBackupId > 0)
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-accent);" onclick="pteroRestorePlayer({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $resetBackupId }}, {{ json_encode((string) ($resetBackupLabel ?? ''), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Restore Data{{ $resetBackupLabel ? ' · ' . $resetBackupLabel : '' }}</button>
                     @endif
-                    <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Money</button>
+                    <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroGiveMoney({{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ $isOnline ? 'true' : 'false' }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) ($uid ?? $playerId), JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Give Cash</button>
                     @if ($steam64)
                         <button class="dz-btn dz-btn-ghost" type="button" style="color:var(--dz-success,#10b981);" onclick="pteroAlterBankMoney({{ json_encode((string) $steam64, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode($player['name'] ?: $playerId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode(($player['bank_money'] ?? null) !== null ? (string) $player['bank_money'] : '', JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }}, {{ json_encode((string) $actionId, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) }})">Alter Bank Money</button>
                     @endif
@@ -211,8 +211,8 @@
     <div class="dz-player-modal__dialog">
         <button type="button" class="dz-player-modal__close" onclick="window.pteroCloseGiveMoneyModal && window.pteroCloseGiveMoneyModal()" aria-label="Close">✕</button>
         <div class="dz-player-modal__header">
-            <p class="dz-player-modal__eyebrow">Give Money</p>
-            <h3 id="dz-give-money-modal-title" style="margin:0;">Queue money</h3>
+            <p class="dz-player-modal__eyebrow">Give Cash</p>
+            <h3 id="dz-give-money-modal-title" style="margin:0;">Queue cash</h3>
             <p class="dz-sub" style="margin:0;">Online players receive it instantly; offline players receive it after reconnecting.</p>
         </div>
         <form id="dz-give-money-form" class="dz-player-modal__form">
@@ -244,7 +244,7 @@
             <p id="dz-give-money-modal-status" class="dz-status dz-hidden" style="margin:0;"></p>
             <div class="dz-player-modal__actions">
                 <button type="button" class="dz-btn dz-btn-ghost" onclick="window.pteroCloseGiveMoneyModal && window.pteroCloseGiveMoneyModal()">Cancel</button>
-                <button id="dz-give-money-submit" type="submit" class="dz-btn" style="background:var(--dz-success,#10b981);border-color:var(--dz-success,#10b981);">Queue Money</button>
+                <button id="dz-give-money-submit" type="submit" class="dz-btn" style="background:var(--dz-success,#10b981);border-color:var(--dz-success,#10b981);">Queue Cash</button>
             </div>
         </form>
     </div>
@@ -656,7 +656,7 @@
         var title = document.getElementById('dz-give-money-modal-title');
         var denomEl = document.getElementById('dz-give-money-denomination');
         var qtyEl = document.getElementById('dz-give-money-quantity');
-        if (title) { title.textContent = 'Give money to ' + playerName; }
+        if (title) { title.textContent = 'Give cash to ' + playerName; }
         if (denomEl) { denomEl.value = '100'; }
         if (qtyEl) { qtyEl.value = '1'; }
         updateGiveMoneySummary();

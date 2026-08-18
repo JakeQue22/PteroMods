@@ -278,6 +278,52 @@ final class DayZPanelGateway
     }
 
     /**
+     * Asks Wings to compress a list of paths inside `$root` into a tar.gz
+     * archive placed in the same `$root`.  Returns the archive filename on
+     * success (e.g. `"archive-2024-01-01T12:00:00.tar.gz"`), or null on failure.
+     *
+     * @param list<string> $files Paths relative to `$root` to include.
+     */
+    public function compressServerPath(mixed $server, string $root, array $files, int $timeout = 120): ?string
+    {
+        $result = $this->daemonRequest(
+            $server,
+            'POST',
+            '/files/compress',
+            ['root' => $root, 'files' => $files],
+            true,
+            null,
+            $timeout,
+        );
+
+        if (!is_array($result) || !isset($result['name']) || !is_string($result['name'])) {
+            return null;
+        }
+
+        return $result['name'];
+    }
+
+    /**
+     * Asks Wings to decompress `$file` (relative to `$root`) into `$root`.
+     */
+    public function decompressServerPath(mixed $server, string $root, string $file, int $timeout = 120): bool
+    {
+        $result = $this->daemonRequest(
+            $server,
+            'POST',
+            '/files/decompress',
+            ['root' => $root, 'file' => $file],
+            true,
+            null,
+            $timeout,
+        );
+
+        // Wings returns a 204 No Content on success; daemonRequest returns [] for
+        // empty JSON bodies, or null on HTTP error.
+        return $result !== null;
+    }
+
+    /**
      * Sends a power signal (`start`, `stop`, `restart`, `kill`) to the server.
      */
     public function power(mixed $server, string $signal): bool
@@ -564,6 +610,7 @@ final class DayZPanelGateway
         array $payload = [],
         bool $json = true,
         ?string $body = null,
+        int $timeout = 5,
     ): mixed {
         $node = $this->context->rawAttribute($server, 'node');
         $uuid = $this->context->attribute($server, ['uuid']);
@@ -585,7 +632,7 @@ final class DayZPanelGateway
 
         try {
             $request = \Illuminate\Support\Facades\Http::withToken($token)
-                ->timeout(5)
+                ->timeout($timeout)
                 ->acceptJson();
 
             if (strtoupper($method) !== 'POST' && strtoupper($method) !== 'PUT') {
