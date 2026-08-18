@@ -1,0 +1,406 @@
+PanelWidgetClass Page0 {
+ visible 1
+ ignorepointer 1
+ size 1 1
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 0
+ {
+  ButtonWidgetClass button0 {
+   clipchildren 0
+   position 0 20
+   size 0.8 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Button1"
+   {
+    PanelWidgetClass uaPrimary0 {
+     ignorepointer 1
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+    TextWidgetClass buttonsubtext0 {
+     ignorepointer 1
+     position 0 50
+     size 1.2 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "subtext 1"
+     "text halign" center
+    }
+   }
+  }
+  ButtonWidgetClass button1 {
+   clipchildren 0
+   position 0 120
+   size 0.8 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Button2"
+   {
+    PanelWidgetClass uaPrimary1 {
+     ignorepointer 1
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+    TextWidgetClass buttonsubtext1 {
+     ignorepointer 1
+     position 0 50
+     size 1.2 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "subtext 1"
+     "text halign" center
+    }
+   }
+  }
+  ButtonWidgetClass button2 {
+   clipchildren 0
+   position 0 220
+   size 0.8 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Button3"
+   {
+    PanelWidgetClass uaPrimary2 {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+    TextWidgetClass buttonsubtext2 {
+     ignorepointer 1
+     position 0 50
+     size 1.2 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "subtext 1"
+     "text halign" center
+    }
+   }
+  }
+  ButtonWidgetClass button3 {
+   clipchildren 0
+   position 0 320
+   size 0.8 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Button4"
+   {
+    PanelWidgetClass uaPrimary3 {
+     ignorepointer 1
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+    TextWidgetClass buttonsubtext3 {
+     ignorepointer 1
+     position 0 50
+     size 1.2 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "subtext 1"
+     "text halign" center
+    }
+   }
+  }
+  ButtonWidgetClass button4 {
+   clipchildren 0
+   position 0 420
+   size 0.8 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Button5"
+   {
+    PanelWidgetClass uaPrimary4 {
+     ignorepointer 1
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+    TextWidgetClass buttonsubtext4 {
+     ignorepointer 1
+     position 0 50
+     size 1.2 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "subtext 1"
+     "text halign" center
+    }
+   }
+  }
+  ButtonWidgetClass button5 {
+   clipchildren 0
+   position 0 520
+   size 0.8 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Button6"
+   {
+    PanelWidgetClass uaPrimary20 {
+     ignorepointer 1
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+    TextWidgetClass buttonsubtext5 {
+     ignorepointer 1
+     position 0 50
+     size 1.2 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "subtext 1"
+     "text halign" center
+    }
+   }
+  }
+  GridSpacerWidgetClass PanelWidget1 {
+   ignorepointer 1
+   position 0 55
+   size 1 176
+   halign center_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   "Size To Content V" 1
+   Columns 2
+   Rows 4
+   {
+    TextWidgetClass desc_txt0 {
+     visible 1
+     ignorepointer 1
+     position 0.025 10
+     size 0.45 40
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text " #rl_survivors"
+     text_proportion 0.8
+     "text valign" center
+    }
+    TextWidgetClass txt_0 {
+     visible 1
+     ignorepointer 1
+     position 0.025 10
+     size 0.5 40
+     halign right_ref
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+    }
+    TextWidgetClass desc_txt1 {
+     ignorepointer 1
+     position 0.025 52
+     size 0.45 40
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text " #rl_gametime"
+     text_proportion 0.8
+     "text valign" center
+    }
+    TextWidgetClass txt_1 {
+     ignorepointer 1
+     position 0.025 52
+     size 0.5 40
+     halign right_ref
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+    }
+    TextWidgetClass desc_txt2 {
+     ignorepointer 1
+     position 0.025 94
+     size 0.45 40
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text " #rl_servertime"
+     text_proportion 0.8
+     "text valign" center
+    }
+    TextWidgetClass txt_2 {
+     ignorepointer 1
+     position 0.025 94
+     size 0.5 40
+     halign right_ref
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+    }
+    TextWidgetClass desc_txt3 {
+     ignorepointer 1
+     position 0.025 136
+     size 0.45 40
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text " #rl_coordinates"
+     text_proportion 0.8
+     "text valign" center
+    }
+    GridSpacerWidgetClass mousePosPanel {
+     ignorepointer 1
+     size 48 30
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     Columns 2
+     Rows 1
+     {
+      TextWidgetClass txt_3_0 {
+       ignorepointer 1
+       position 0.28 141
+       size 0.245 30
+       halign right_ref
+       hexactpos 0
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+      }
+      TextWidgetClass txt_3_1 {
+       ignorepointer 1
+       position 0.025 141
+       size 0.245 30
+       halign right_ref
+       hexactpos 0
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+      }
+     }
+    }
+   }
+  }
+  TextWidgetClass modcreator {
+   ignorepointer 1
+   position 10 10
+   size 0.95 15
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Mod created by RayLab"
+  }
+  PanelWidgetClass ident_page0_0 {
+   visible 0
+   ignorepointer 1
+   position 10 10
+   size 48 48
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+  }
+  ButtonWidgetClass btnCpyPlayerCoords {
+   position 5 30
+   size 0.4 20
+   halign right_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "#rl_btn_copy_coords"
+   {
+    PanelWidgetClass uaPrimary110 {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+ }
+}

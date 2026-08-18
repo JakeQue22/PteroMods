@@ -1,0 +1,16 @@
+MetaFileClass {
+ Name "{8C98381EFBA825EA}gui/images/Background.edds"
+ Author "yulkvwor"
+ ChangeDate -1231163131
+ Configurations {
+  PNGResourceClass PC {
+   SourceFile "Background.png"
+  }
+  PNGResourceClass XBOX_ONE : PC {
+  }
+  PNGResourceClass PS4 : PC {
+  }
+  PNGResourceClass LINUX : PC {
+  }
+ }
+}

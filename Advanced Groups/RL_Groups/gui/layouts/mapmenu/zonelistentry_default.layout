@@ -1,0 +1,82 @@
+PanelWidgetClass rootFrame {
+ color 0.8196 0.8196 0.8196 0.3137
+ size 1 25
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 1
+ style blank
+ {
+  GridSpacerWidgetClass left {
+   ignorepointer 1
+   size 48 1
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 0
+   Padding 0
+   Margin 0
+   "Size To Content H" 1
+   Columns 2
+   Rows 1
+   {
+    TextWidgetClass name {
+     ignorepointer 1
+     position 321 17
+     size 48 48
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Hallo Peter"
+     "exact text" 0
+     "size to text h" 1
+     "size to text v" 1
+     "text halign" center
+     "text valign" center
+    }
+   }
+  }
+  GridSpacerWidgetClass right {
+   ignorepointer 1
+   size 0.002 25
+   halign right_ref
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   Padding 0
+   Margin 0
+   "Size To Content H" 1
+   Rows 1
+   {
+    PanelWidgetClass button_border {
+     ignorepointer 1
+     color 1 1 1 0.5529
+     size 25 25
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     style RL_Clean_outline
+     {
+      ButtonWidgetClass btn_0 {
+       size 23 23
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 1
+       vexactsize 1
+       text "X"
+      }
+     }
+    }
+   }
+  }
+ }
+}

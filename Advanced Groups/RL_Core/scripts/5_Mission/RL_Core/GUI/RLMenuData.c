@@ -1,0 +1,2 @@
+class RLMenuData : Managed {
+}

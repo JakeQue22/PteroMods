@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<modded_inputs>
+    <inputs>
+        <actions>
+            <input name="UARLAdminMenuToggle" loc="Toggle Admin Menu active" />
+            <input name="UARLAdminMenuOpen" loc="Open Admin Menu" />
+        </actions>
+		<sorting name="rl_admin" loc="RayLab">
+			<input name="UARLAdminMenuToggle"/>
+			<input name="UARLAdminMenuOpen"/>
+		</sorting>
+    </inputs>
+    <preset>
+		<input name="UARLAdminMenuToggle">
+            <btn name="kU"/>
+        </input>
+		<input name="UARLAdminMenuOpen">
+            <btn name="kI"/>
+        </input>
+    </preset>
+</modded_inputs>

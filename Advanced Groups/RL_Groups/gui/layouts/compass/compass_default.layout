@@ -1,0 +1,44 @@
+FrameWidgetClass rootFrame {
+ clipchildren 1
+ size 700 64
+ halign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 1
+ vexactsize 1
+ {
+  ImageWidgetClass compassimage {
+   ignorepointer 1
+   size 4 0.5
+   hexactpos 0
+   vexactpos 0
+   hexactsize 0
+   vexactsize 0
+   imageTexture "{D64A829CEF7E545B}RayLab_Groups/gui/images/compass.edds"
+   mode blend
+   "src alpha" 1
+   stretch 1
+  }
+  PanelWidgetClass compassLineWidget {
+   ignorepointer 1
+   color 1 0 0 1
+   size 4 10
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   style rover_sim_colorable
+  }
+  PanelWidgetClass topMarkerWidget {
+   ignorepointer 1
+   position 0 0
+   size 1 0.5
+   valign bottom_ref
+   hexactpos 0
+   vexactpos 0
+   hexactsize 0
+   vexactsize 0
+  }
+ }
+}

@@ -1,0 +1,181 @@
+PanelWidgetClass Page1_0 {
+ visible 1
+ ignorepointer 1
+ position 0 0
+ size 1 1
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 0
+ {
+  TextWidgetClass TextWidget0 {
+   ignorepointer 1
+   position 0 10
+   size 0.95 50
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "#rl_create_group"
+   "text halign" center
+   "text valign" center
+  }
+  EditBoxWidgetClass input_groupname {
+   position 0 110
+   size 0.95 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   {
+    PanelWidgetClass uaSecondary4 {
+     ignorepointer 1
+     color 1 1 1 0.4902
+     size 1.2 1.2
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  TextWidgetClass TextWidget1 {
+   ignorepointer 1
+   position 0 80
+   size 0.95 30
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "#rl_groupname:"
+   text_proportion 0.8
+   "text valign" center
+  }
+  TextWidgetClass TextWidget2 {
+   ignorepointer 1
+   position 0 180
+   size 0.95 30
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "#rl_groupname_short:"
+   text_proportion 0.8
+   "text valign" center
+  }
+  EditBoxWidgetClass input_groupnametag {
+   position 0 210
+   size 0.95 48
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   {
+    PanelWidgetClass uaSecondary5 {
+     ignorepointer 1
+     color 1 1 1 0.4902
+     size 1.2 1.2
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  ButtonWidgetClass btn_create {
+   position 0 300
+   size 0.95 35
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "#rl_create"
+   text_proportion 0.8
+   {
+    PanelWidgetClass uaPrimary11 {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  MultilineTextWidgetClass groupCreationInfo {
+   ignorepointer 1
+   position 0 500
+   size 0.95 80
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "#rl_group_create_info 5000$"
+   wrap 1
+  }
+  PanelWidgetClass ident_page1_0 {
+   visible 0
+   ignorepointer 1
+   position 10 10
+   size 48 48
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+  }
+  ButtonWidgetClass btn_accept {
+   visible 0
+   position 0 350
+   size 0.95 35
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   text "Accept Invite for ???"
+   {
+    PanelWidgetClass uaPrimary10 {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  TextWidgetClass txt_obfName {
+   ignorepointer 1
+   position 0 350
+   size 0.95 30
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+  }
+ }
+}

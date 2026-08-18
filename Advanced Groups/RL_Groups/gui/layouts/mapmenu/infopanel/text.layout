@@ -1,0 +1,14 @@
+TextWidgetClass text {
+ ignorepointer 1
+ size 1 0.146
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 0
+ text "<u>Peter</u>"
+ font "gui/fonts/sdf_MetronLight72"
+ "exact text" 1
+ "exact text size" 25
+ "size to text h" 1
+ "size to text v" 1
+}

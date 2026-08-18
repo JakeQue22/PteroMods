@@ -1,0 +1,312 @@
+FrameWidgetClass rootWidget {
+ size 1 1
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 0
+ {
+  PanelWidgetClass left {
+   size 0.25 1
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   {
+    PanelWidgetClass PanelWidget0 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style rover_sim_colorable
+     {
+      PanelWidgetClass panel_edit {
+       ignorepointer 1
+       size 1 250
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       {
+        TextWidgetClass TextWidget11 {
+         ignorepointer 1
+         position 0 160
+         size 0.99 48
+         halign center_ref
+         valign bottom_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_zones_add"
+         "text halign" center
+         "text valign" center
+        }
+        SliderWidgetClass slider_size {
+         position 0.155 70
+         size 0.34 20
+         halign right_ref
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         minimum 10
+         maximum 2000
+         current 300
+         "fill in" 1
+        }
+        EditBoxWidgetClass txt_size {
+         ignorepointer 0
+         position 0.005 70
+         size 0.145 20
+         halign right_ref
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "300m"
+         {
+          PanelWidgetClass uaPrimary12 {
+           ignorepointer 1
+           color 1 1 1 0.4902
+           position 0 0
+           size 1.2 1.4
+           halign center_ref
+           valign bottom_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        TextWidgetClass TextWidget1 {
+         ignorepointer 1
+         position 0.005 70
+         size 0.49 20
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_zones_desc_radius"
+         "text halign" right
+        }
+        ButtonWidgetClass btn_add {
+         position 0.005 30
+         size 0.49 30
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_txt_toggle_placing"
+         text_proportion 0.8
+         {
+          PanelWidgetClass uaPrimary14 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btn_save {
+         position 0.005 30
+         size 0.49 30
+         halign right_ref
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_txt_save_all"
+         text_proportion 0.8
+         {
+          PanelWidgetClass uaPrimary10 {
+           ignorepointer 1
+           color 0.1961 1 0.1961 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        CheckBoxWidgetClass chckbx_show_territorry_flags {
+         visible 1
+         position 0.005 5
+         size 0.99 20
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_txt_show_all_teritorryFlags"
+        }
+        TextWidgetClass TextWidget0 {
+         ignorepointer 1
+         position 0.005 95
+         size 0.49 20
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_zones_desc_name"
+         "text halign" right
+        }
+        EditBoxWidgetClass txt_name {
+         ignorepointer 0
+         position 0.005 95
+         size 0.49 20
+         halign right_ref
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         {
+          PanelWidgetClass uaPrimary11 {
+           ignorepointer 1
+           color 1 1 1 0.4902
+           position 0 0
+           size 1.2 1.4
+           halign center_ref
+           valign bottom_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        CheckBoxWidgetClass chckbx_enable {
+         visible 1
+         position 0.005 140
+         size 0.99 20
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_txt_enable_no_build_zones"
+        }
+        CheckBoxWidgetClass chckbx_show {
+         visible 1
+         position 0.005 120
+         size 0.99 20
+         valign bottom_ref
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Show on Map"
+        }
+       }
+      }
+     }
+    }
+    TextWidgetClass TextWidget10 {
+     ignorepointer 1
+     position 0 10
+     size 0.99 48
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "#rl_zones_list"
+     "text halign" center
+     "text valign" center
+    }
+    ScrollWidgetClass ScrollWidget0 {
+     ignorepointer 1
+     position 0 80
+     size 0.95 0.65
+     halign center_ref
+     hexactpos 0
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     "Scrolrlar V" 1
+     {
+      GridSpacerWidgetClass zones_w {
+       ignorepointer 1
+       size 1 1
+       halign center_ref
+       hexactpos 0
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       "Size To Content V" 1
+       Columns 1
+       Rows 100
+      }
+     }
+    }
+   }
+  }
+  MapWidgetClass mapWidget {
+   visible 1
+   size 0.75 1
+   halign right_ref
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   priority 5
+   {
+    PanelWidgetClass iconPane {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign right_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     priority 399
+    }
+    CanvasWidgetClass drawCanvas {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign right_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     priority 398
+    }
+   }
+  }
+ }
+}

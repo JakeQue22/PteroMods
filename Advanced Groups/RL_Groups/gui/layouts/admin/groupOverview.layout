@@ -1,0 +1,865 @@
+FrameWidgetClass rootFrame {
+ position 0 0
+ size 1 1
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 0
+ {
+  PanelWidgetClass PanelWidget0 {
+   ignorepointer 1
+   position 5 0
+   size 0.2 0.99
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style RL_Clean_outline
+   {
+    PanelWidgetClass PanelWidget1 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     position 0 0
+     size 1 1
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style rover_sim_colorable
+     {
+      TextWidgetClass TextWidget0 {
+       ignorepointer 1
+       position 0 5
+       size 1 48
+       halign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       text "#rl_header_grp_management"
+       "text halign" center
+      }
+      ButtonWidgetClass btnRefresh {
+       position 0 5
+       size 0.5 35
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       text "#rl_refresh"
+       {
+        PanelWidgetClass uaPrimary10 {
+         ignorepointer 1
+         position 0 0
+         size 1 1
+         halign center_ref
+         valign center_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 0
+         style RL_Clean_outline
+        }
+       }
+      }
+      TextListboxWidgetClass groupsList {
+       position 0 210
+       size 0.98 0.72
+       halign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       lines 25
+       {
+        PanelWidgetClass uaPrimary19 {
+         ignorepointer 1
+         position 0 0
+         size 1 1
+         halign center_ref
+         valign center_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 0
+         style RL_Clean_outline
+        }
+       }
+      }
+      PanelWidgetClass uaPrimary11 {
+       ignorepointer 1
+       position 0 60
+       size 0.98 135
+       halign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       style RL_Clean_outline
+       {
+        TextWidgetClass TextWidget1 {
+         ignorepointer 1
+         position 4 2.5
+         size 0.25 30
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Search:"
+        }
+        EditBoxWidgetClass searchInput {
+         position 0 2.5
+         size 0.74 30
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         {
+          PanelWidgetClass uaPrimary118 {
+           ignorepointer 1
+           color 1 1 1 0.4902
+           position 0 0
+           size 1.2 1.4
+           halign center_ref
+           valign bottom_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        CheckBoxWidgetClass chckbxShortnames {
+         position 0 35
+         size 1 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Search Shortnames"
+         checked 1
+        }
+        CheckBoxWidgetClass chckbxNames {
+         position 0 60
+         size 1 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Search Group Names"
+         checked 1
+        }
+        CheckBoxWidgetClass chckbxMemberNames {
+         position 0 85
+         size 1 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Search Member Names"
+         checked 1
+        }
+        CheckBoxWidgetClass chckbxSteamids {
+         position 0 110
+         size 1 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Search Member SteamIDs"
+         checked 1
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+  PanelWidgetClass PanelWidget2 {
+   ignorepointer 1
+   position 0.21 5
+   size 0.35 0.5
+   hexactpos 0
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style RL_Clean_outline
+   {
+    PanelWidgetClass PanelWidget3 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style rover_sim_colorable
+     {
+      TextWidgetClass TextWidget2 {
+       ignorepointer 1
+       position 0 5
+       size 1 48
+       halign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       text "#rl_header_group_info"
+       "text halign" center
+      }
+      TextListboxWidgetClass memberList {
+       position 5 60
+       size 0.485 0.87
+       halign right_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       lines 15
+       {
+        PanelWidgetClass uaPrimary111 {
+         ignorepointer 1
+         position 0 0
+         size 1 1
+         halign center_ref
+         valign center_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 0
+         style RL_Clean_outline
+        }
+       }
+      }
+      PanelWidgetClass uaPrimary18 {
+       ignorepointer 1
+       position 5 60
+       size 0.49 300
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       style RL_Clean_outline
+       {
+        TextWidgetClass TextWidget3 {
+         ignorepointer 1
+         position 5 2.5
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Shortname:"
+        }
+        TextWidgetClass TextWidget4 {
+         ignorepointer 1
+         position 5 25
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Name:"
+        }
+        TextWidgetClass TextWidget5 {
+         ignorepointer 1
+         position 5 75
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Level:"
+        }
+        TextWidgetClass TextWidget6 {
+         ignorepointer 1
+         position 5 125
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Created:"
+        }
+        TextWidgetClass TextWidget7 {
+         ignorepointer 1
+         position 5 150
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Last Active:"
+        }
+        TextWidgetClass TextWidget8 {
+         ignorepointer 1
+         position 5 175
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Playercount:"
+        }
+        TextWidgetClass TextWidget9 {
+         ignorepointer 1
+         position 5 200
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Markercount:"
+        }
+        EditBoxWidgetClass shortname {
+         ignorepointer 0
+         position 5 2.5
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         {
+          PanelWidgetClass uaPrimary117 {
+           ignorepointer 1
+           color 1 1 1 0.4902
+           position 0 0
+           size 1.2 1.4
+           halign center_ref
+           valign bottom_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        EditBoxWidgetClass name {
+         ignorepointer 0
+         position 5 25
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         {
+          PanelWidgetClass uaPrimary116 {
+           ignorepointer 1
+           color 1 1 1 0.4902
+           position 0 0
+           size 1.2 1.4
+           halign center_ref
+           valign bottom_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        TextWidgetClass level {
+         ignorepointer 1
+         position 5 75
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+        }
+        TextWidgetClass created {
+         ignorepointer 1
+         position 5 125
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+        }
+        TextWidgetClass lastactive {
+         ignorepointer 1
+         position 5 150
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+        }
+        TextWidgetClass playercount {
+         ignorepointer 1
+         position 5 175
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+        }
+        TextWidgetClass markercount {
+         ignorepointer 1
+         position 5 200
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+        }
+        ButtonWidgetClass btnChangeGroupNames {
+         position 5 50
+         size 0.97 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Change Group Names"
+         {
+          PanelWidgetClass uaPrimary114 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btnLevelUp {
+         position 5 100
+         size 0.45 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Level Up"
+         {
+          PanelWidgetClass uaPrimary112 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btnLevelDown {
+         position 5 100
+         size 0.5 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Level Down"
+         {
+          PanelWidgetClass uaPrimary113 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btnJoin {
+         color 0 1 0 1
+         position 5 5
+         size 0.45 20
+         valign bottom_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Join"
+         "text color" 0 1 0 1
+         {
+          PanelWidgetClass uaPrimary16 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btnDelete {
+         color 1 0 0 1
+         position 5 5
+         size 0.5 20
+         halign right_ref
+         valign bottom_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Delete"
+         "text color" 1 0 0 1
+         {
+          PanelWidgetClass uaPrimary15 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        CheckBoxWidgetClass chckbx_hasCustomTag {
+         position 5 225
+         size 0.7 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Has Custom Chat Tag Color"
+        }
+        SliderWidgetClass sliderR {
+         color 1 0 0 1
+         position 5 250
+         size 0.32 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         maximum 255
+         current 255
+         "fill in" 1
+        }
+        SliderWidgetClass sliderG {
+         color 0 1 0 1
+         position 0 250
+         size 0.32 20
+         halign center_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         maximum 255
+         current 255
+         "fill in" 1
+        }
+        SliderWidgetClass sliderB {
+         color 0 0 1 1
+         position 5 250
+         size 0.32 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         maximum 255
+         current 255
+         "fill in" 1
+        }
+        ButtonWidgetClass btnApplyColor {
+         position 5 225
+         size 0.25 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#apply"
+         {
+          PanelWidgetClass chatColorPreview {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+       }
+      }
+      PanelWidgetClass uaPrimary110 {
+       visible 1
+       ignorepointer 1
+       position 5 5
+       size 0.49 120
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       style RL_Clean_outline
+       {
+        TextWidgetClass TextWidget10 {
+         ignorepointer 1
+         position 5 2.5
+         size 0.3 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "SteamID:"
+        }
+        TextWidgetClass TextWidget11 {
+         ignorepointer 1
+         position 5 25
+         size 0.3 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Rank: "
+        }
+        ButtonWidgetClass btnDemote {
+         position 0 70
+         size 0.33 20
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Demote"
+         {
+          PanelWidgetClass uaPrimary13 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btnPromote {
+         position 0.335 70
+         size 0.33 20
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Promote"
+         {
+          PanelWidgetClass uaPrimary12 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btnKick {
+         position 0.67 70
+         size 0.33 20
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Kick"
+         {
+          PanelWidgetClass uaPrimary17 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        ButtonWidgetClass btnToLeader {
+         position 0 92
+         size 0.33 20
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "To Leader"
+         {
+          PanelWidgetClass uaPrimary14 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+        TextWidgetClass steamid {
+         ignorepointer 1
+         position 5 2.5
+         size 0.65 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+        }
+        TextWidgetClass rank {
+         ignorepointer 1
+         position 5 25
+         size 0.65 20
+         halign right_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+        }
+        ButtonWidgetClass btnCopy {
+         position 0.335 92
+         size 0.33 20
+         hexactpos 0
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "Copy"
+         {
+          PanelWidgetClass uaPrimary115 {
+           ignorepointer 1
+           position 0 0
+           size 1 1
+           halign center_ref
+           valign center_ref
+           hexactpos 1
+           vexactpos 1
+           hexactsize 0
+           vexactsize 0
+           style RL_Clean_outline
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+  MapWidgetClass mapWidget {
+   position 0 0
+   size 0.43 0.99
+   halign right_ref
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+  }
+  PanelWidgetClass PanelWidget4 {
+   ignorepointer 1
+   position 0.21 5
+   size 0.35 0.485
+   valign bottom_ref
+   hexactpos 0
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style RL_Clean_outline
+   {
+    PanelWidgetClass PanelWidget5 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style rover_sim_colorable
+     {
+      WrapSpacerWidgetClass WrapSpacerWidget0 {
+       ignorepointer 1
+       size 0.98 0.98
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       "Size To Content V" 1
+       {
+        CheckBoxWidgetClass chckbx_show_territorry_flags {
+         visible 1
+         size 1 20
+         valign bottom_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 1
+         text "#rl_txt_show_all_teritorryFlags"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+  PanelWidgetClass ident_page5_0 {
+   visible 0
+   ignorepointer 1
+   position 10 10
+   size 48 48
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+  }
+ }
+}

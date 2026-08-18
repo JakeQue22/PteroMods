@@ -1,0 +1,1219 @@
+FrameWidgetClass rootFrame {
+ position 0 0
+ size 1 1
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 0
+ {
+  PanelWidgetClass panel_general {
+   clipchildren 0
+   ignorepointer 1
+   position 10 50
+   size 0.32 550
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   {
+    PanelWidgetClass PanelWidget100 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     size 1 590
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     style rover_sim_colorable
+    }
+    CheckBoxWidgetClass chckbx_display_tags {
+     position 10 10
+     size 500 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Display Group Tags in Chat"
+    }
+    CheckBoxWidgetClass chckbx_force_display_tags {
+     position 10 30
+     size 500 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Force Tags shown in Chat"
+    }
+    CheckBoxWidgetClass chckbx_allow_vote {
+     position 10 50
+     size 500 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Allow Players to mute for vote with \"!mutevote [PlayerName]\""
+    }
+    TextWidgetClass TextWidget0 {
+     ignorepointer 1
+     position 10 70
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Min Players online to start vote for mute: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_min_players_online {
+     position 410 70
+     size 100 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary114 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget1 {
+     ignorepointer 1
+     position 10 110
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Minutes the player is muted after successful vote: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_mute_time {
+     position 410 110
+     size 100 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary112 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget2 {
+     ignorepointer 1
+     position 10 90
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Min Players percentile to vote for mute: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_min_players_voting {
+     position 410 90
+     size 100 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary113 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget3 {
+     ignorepointer 1
+     position 10 130
+     size 500 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Battleye message colors: "
+     "text halign" center
+    }
+    SliderWidgetClass slider_be_color_a {
+     position 10 150
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_be_color_r {
+     color 1 0 0 1
+     position 135 150
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_be_color_g {
+     color 0 1 0 1
+     position 260 150
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_be_color_b {
+     color 0 0 1 1
+     position 385 150
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    CheckBoxWidgetClass chckbx_filter_badwords {
+     position 10 190
+     size 500 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Enable Bad Words Filter"
+    }
+    CheckBoxWidgetClass chckbx_block_filtered_msg {
+     position 10 210
+     size 600 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Block whole message when Filtered. Otherwise word is replaced with ***"
+    }
+    TextWidgetClass TextWidget4 {
+     ignorepointer 1
+     position 10 230
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Blocked Error Message: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_block_message {
+     position 210 230
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary111 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget5 {
+     ignorepointer 1
+     position 10 250
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Minutes muted after writing Bad Word. (0 = No mute): "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_mute_bad_word {
+     position 410 250
+     size 100 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary110 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextListboxWidgetClass list_bad_words {
+     position 10 290
+     size 500 200
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     lines 10
+    }
+    TextWidgetClass TextWidget6 {
+     ignorepointer 1
+     position 10 270
+     size 500 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "List of Bad Words"
+     "text halign" center
+    }
+    TextWidgetClass TextWidget7 {
+     ignorepointer 1
+     position 10 490
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Bad Word: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_add_bad_word {
+     position 210 490
+     size 300 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary19 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_add_word {
+     position 310 510
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Add new Word"
+     {
+      PanelWidgetClass uaPrimary10 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_remove_word {
+     position 10 510
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Remove Selected"
+     {
+      PanelWidgetClass uaPrimary11 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget8 {
+     ignorepointer 1
+     position 0 -30
+     size 1 30
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "General Config"
+     "text halign" center
+    }
+   }
+  }
+  PanelWidgetClass panel_channel {
+   clipchildren 0
+   ignorepointer 1
+   position 0 10
+   size 0.32 200
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   {
+    PanelWidgetClass PanelWidget101 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     position 0 0
+     size 1 194
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     style rover_sim_colorable
+     {
+      ButtonWidgetClass btn_create_channel {
+       position 0 70
+       size 200 20
+       halign right_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 1
+       vexactsize 1
+       text "Create New"
+       {
+        PanelWidgetClass uaPrimary122 {
+         ignorepointer 1
+         position 0 0
+         size 1 1
+         halign center_ref
+         valign center_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 0
+         style RL_Clean_outline
+        }
+       }
+      }
+      ButtonWidgetClass btn_delete_channel {
+       position 0 70
+       size 200 20
+       hexactpos 1
+       vexactpos 1
+       hexactsize 1
+       vexactsize 1
+       text "Delete Selected"
+       {
+        PanelWidgetClass uaPrimary123 {
+         ignorepointer 1
+         position 0 0
+         size 1 1
+         halign center_ref
+         valign center_ref
+         hexactpos 1
+         vexactpos 1
+         hexactsize 0
+         vexactsize 0
+         style RL_Clean_outline
+        }
+       }
+      }
+     }
+    }
+    TextWidgetClass TextWidget9 {
+     ignorepointer 1
+     position 0 10
+     size 1 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "Channels"
+     "text halign" center
+    }
+    SliderWidgetClass slider_channel_color_a {
+     position 100 110
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_channel_color_r {
+     color 1 0 0 1
+     position 225 110
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_channel_color_g {
+     color 0 1 0 1
+     position 350 110
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_channel_color_b {
+     color 0 0 1 1
+     position 475 110
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    XComboBoxWidgetClass combo_channel {
+     position 0 50
+     size 600 20
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+    }
+    TextWidgetClass TextWidget10 {
+     ignorepointer 1
+     position 0 90
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Name: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_channel_name {
+     position 200 90
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary118 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget11 {
+     ignorepointer 1
+     position 0 110
+     size 100 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Color: "
+     "text halign" right
+    }
+    CheckBoxWidgetClass chckbx_global {
+     position 0 130
+     size 150 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Global"
+    }
+    CheckBoxWidgetClass chckbx_group {
+     position 150 130
+     size 150 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Group"
+    }
+    CheckBoxWidgetClass chckbx_direct {
+     position 300 130
+     size 150 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Direct"
+    }
+    CheckBoxWidgetClass chckbx_default {
+     position 0 150
+     size 150 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Default"
+    }
+    CheckBoxWidgetClass chckbx_channel_muted {
+     position 0 170
+     size 150 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Muted"
+    }
+   }
+  }
+  PanelWidgetClass panel_prefix {
+   clipchildren 0
+   ignorepointer 1
+   position 0 300
+   size 0.32 400
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   {
+    PanelWidgetClass PanelWidget103 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     size 1 430
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     style rover_sim_colorable
+    }
+    TextWidgetClass TextWidget12 {
+     ignorepointer 1
+     position 0 -20
+     size 1 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "Prefix Groups"
+     "text halign" center
+    }
+    SliderWidgetClass slider_prefix_color_r {
+     color 1 0 0 1
+     position 225 90
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_prefix_color_g {
+     color 0 1 0 1
+     position 350 90
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    SliderWidgetClass slider_prefix_color_b {
+     color 0 0 1 1
+     position 475 90
+     size 125 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     maximum 255
+     "fill in" 1
+    }
+    XComboBoxWidgetClass combo_prefix {
+     position 0 30
+     size 600 20
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+    }
+    TextWidgetClass TextWidget13 {
+     ignorepointer 1
+     position 0 70
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "shown Prefix: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_prefix_name {
+     position 200 70
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary117 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget14 {
+     ignorepointer 1
+     position 0 90
+     size 100 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Color: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_permission {
+     position 200 110
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary116 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget15 {
+     ignorepointer 1
+     position 0 110
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Required Permission: "
+     "text halign" right
+    }
+    TextListboxWidgetClass list_prefix_members {
+     position 0 150
+     size 600 200
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     lines 10
+    }
+    TextWidgetClass TextWidget16 {
+     ignorepointer 1
+     position 0 130
+     size 600 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Steamids in Group"
+     "text halign" center
+    }
+    TextWidgetClass TextWidget17 {
+     ignorepointer 1
+     position 0 350
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Steamid: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_add_to_prefix {
+     position 200 350
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary115 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_add_steamid {
+     position 400 370
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Add Steamid"
+     {
+      PanelWidgetClass uaPrimary13 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_remove_steamid {
+     position 0 370
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Remove Steamid"
+     {
+      PanelWidgetClass uaPrimary12 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_create_prefix {
+     position 0 50
+     size 200 20
+     halign right_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Create New"
+     {
+      PanelWidgetClass uaPrimary17 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_delete_prefix {
+     position 0 50
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Delete Selected"
+     {
+      PanelWidgetClass uaPrimary18 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+   }
+  }
+  PanelWidgetClass panel_mute {
+   clipchildren 0
+   ignorepointer 1
+   position 10 10
+   size 0.32 560
+   halign right_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   {
+    PanelWidgetClass PanelWidget102 {
+     ignorepointer 1
+     color 0.3922 0.3922 0.3922 0.3922
+     position 0 0
+     size 1 560
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     style rover_sim_colorable
+    }
+    TextWidgetClass TextWidget18 {
+     ignorepointer 1
+     position 0 10
+     size 1 30
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "Mute Players"
+     "text halign" center
+    }
+    TextListboxWidgetClass list_muted {
+     position 0 50
+     size 600 200
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     "title visible" 1
+     colums "Name;40;Steamid;40;Duration;20;"
+     lines 10
+    }
+    ButtonWidgetClass btn_unmute_selected {
+     position 0 250
+     size 300 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Unmute selected Player"
+     {
+      PanelWidgetClass uaPrimary16 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextListboxWidgetClass list_online {
+     position 0 310
+     size 600 200
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     colums "name;50;steamid;50;"
+     lines 10
+    }
+    TextWidgetClass TextWidget19 {
+     ignorepointer 1
+     position 0 270
+     size 500 20
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Online Players"
+     "text halign" center
+    }
+    TextWidgetClass TextWidget20 {
+     ignorepointer 1
+     position 0 510
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Duration in Minutes: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_mute_duration {
+     position 200 510
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary120 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget21 {
+     ignorepointer 1
+     position 0 530
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Steamid: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_mute_steamid {
+     position 200 530
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary119 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_mute_steamid {
+     position 400 530
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Mute by Steamid"
+     {
+      PanelWidgetClass uaPrimary14 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    ButtonWidgetClass btn_mute_selected {
+     position 400 510
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Mute selected Player"
+     {
+      PanelWidgetClass uaPrimary15 {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign center_ref
+       valign center_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+    TextWidgetClass TextWidget22 {
+     ignorepointer 1
+     position 0 290
+     size 200 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     text "Search: "
+     "text halign" right
+    }
+    EditBoxWidgetClass input_search_online {
+     position 200 290
+     size 400 20
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     {
+      PanelWidgetClass uaPrimary121 {
+       ignorepointer 1
+       color 1 1 1 0.4902
+       position 0 0
+       size 1.2 1.4
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       style RL_Clean_outline
+      }
+     }
+    }
+   }
+  }
+  ButtonWidgetClass btn_save {
+   position 5 5
+   size 300 30
+   halign right_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Save Configs"
+   {
+    PanelWidgetClass uaPrimary124 {
+     ignorepointer 1
+     color 0.1961 1 0.1961 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+ }
+}

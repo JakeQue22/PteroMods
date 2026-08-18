@@ -1,0 +1,281 @@
+FrameWidgetClass rootFrame {
+ clipchildren 0
+ position 10 10
+ size 780 600
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 1
+ vexactsize 1
+ {
+  PanelWidgetClass PanelWidget0 {
+   ignorepointer 1
+   color 0.3922 0.3922 0.3922 0.3922
+   position -10 -10
+   size 800 600
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   style rover_sim_colorable
+  }
+  TextWidgetClass TextWidget0 {
+   ignorepointer 1
+   position 0 0
+   size 300 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Currency Prefix: "
+   "text halign" right
+  }
+  EditBoxWidgetClass input_prefix {
+   position 300 0
+   size 200 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   {
+    PanelWidgetClass uaPrimary1122 {
+     ignorepointer 1
+     color 1 1 1 0.4902
+     position 0 0
+     size 1.2 1.4
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  TextWidgetClass TextWidget1 {
+   ignorepointer 1
+   position 0 25
+   size 300 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Currency Suffix: "
+   "text halign" right
+  }
+  EditBoxWidgetClass input_suffix {
+   position 300 25
+   size 200 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   {
+    PanelWidgetClass uaPrimary1123 {
+     ignorepointer 1
+     color 1 1 1 0.4902
+     position 0 0
+     size 1.2 1.4
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  TextWidgetClass TextWidget2 {
+   ignorepointer 1
+   position 0 50
+   size 500 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Currencies"
+   "text halign" center
+  }
+  TextListboxWidgetClass list_currencies {
+   position 0 75
+   size 500 300
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   lines 10
+  }
+  TextWidgetClass TextWidget3 {
+   ignorepointer 1
+   position 0 375
+   size 200 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Itemname: "
+   "text halign" right
+  }
+  EditBoxWidgetClass input_itemname {
+   position 200 375
+   size 300 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   {
+    PanelWidgetClass uaPrimary1121 {
+     ignorepointer 1
+     color 1 1 1 0.4902
+     position 0 0
+     size 1.2 1.4
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  TextWidgetClass TextWidget4 {
+   ignorepointer 1
+   position 0 400
+   size 200 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Value: "
+   "text halign" right
+  }
+  EditBoxWidgetClass input_value {
+   position 200 400
+   size 300 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   {
+    PanelWidgetClass uaPrimary1120 {
+     ignorepointer 1
+     color 1 1 1 0.4902
+     position 0 0
+     size 1.2 1.4
+     halign center_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  CheckBoxWidgetClass chckbx_depositable_only {
+   position 0 425
+   size 500 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Depositable Only"
+  }
+  ButtonWidgetClass btn_add {
+   position 0 460
+   size 250 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Add New Currency"
+   {
+    PanelWidgetClass uaPrimary12 {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  ButtonWidgetClass btn_delete {
+   position 250 460
+   size 250 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Delete Selected Currency"
+   {
+    PanelWidgetClass uaPrimary11 {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  MultilineTextWidgetClass TextWidget5 {
+   ignorepointer 1
+   position 510 150
+   size 250 48
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Green = Currency configured properly, Red = Item not found"
+   wrap 1
+  }
+  ButtonWidgetClass btn_save {
+   position 0 20
+   size 250 25
+   halign right_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Save"
+   {
+    PanelWidgetClass uaPrimary10 {
+     ignorepointer 1
+     color 0.1961 1 0.1961 1
+     position 0 0
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     style RL_Clean_outline
+    }
+   }
+  }
+  ItemPreviewWidgetClass item_preview {
+   ignorepointer 1
+   position 510 300
+   size 225 225
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+  }
+ }
+}

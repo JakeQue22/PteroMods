@@ -1,0 +1,254 @@
+FrameWidgetClass rootFrame {
+ position 0 0
+ size 1 1
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 0
+ vexactsize 0
+ {
+  ImageWidgetClass Background {
+   ignorepointer 1
+   position 0 0
+   size 1 1
+   hexactpos 0
+   vexactpos 0
+   hexactsize 0
+   vexactsize 0
+   imageTexture "{16ED54394F40D99D}RayLab_Groups/gui/images/Background.edds"
+   mode blend
+   "src alpha" 1
+   "stretch mode" stretch_w_h
+  }
+  PanelWidgetClass MapNotFound {
+   ignorepointer 1
+   color 0.2745 0.2745 0.2745 0.6549
+   position 11.9558 10
+   size 0.75 0.92
+   halign right_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style rover_sim_colorable
+   {
+    ImageWidgetClass mapNotFoundImage {
+     clipchildren 0
+     ignorepointer 1
+     size 512 512
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     imageTexture "{68950FEC12524FA2}images/missing.edds"
+     mode additive
+     "src alpha" 1
+     "stretch mode" stretch_w_h
+     {
+      TextWidgetClass mapNotFoundText {
+       ignorepointer 1
+       size 3 60
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       text "Map not found !"
+       "text halign" center
+       "text valign" center
+      }
+     }
+    }
+   }
+  }
+  MapWidgetClass Map {
+   visible 1
+   position 12.0362 10
+   size 0.75 0.92
+   halign right_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   priority 5
+   {
+    PanelWidgetClass iconPane {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign right_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     priority 399
+    }
+    CanvasWidgetClass drawCanvas {
+     ignorepointer 1
+     position 0 0
+     size 1 1
+     halign right_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     priority 398
+    }
+    PanelWidgetClass mapLegendParent {
+     ignorepointer 1
+     position 2.01636 -5.96727
+     size 300 600
+     halign right_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     priority 430
+     style blank
+     {
+      PanelWidgetClass mapLegend {
+       ignorepointer 1
+       color 0.2706 0.2706 0.2706 0.6235
+       position -1.99593 -1.99593
+       size 1 48
+       halign center_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+       priority 450
+       style rover_sim_colorable
+      }
+     }
+    }
+   }
+  }
+  PanelWidgetClass leftPanel {
+   clipchildren 0
+   ignorepointer 1
+   color 0.2039 0.2039 0.2039 0.6745
+   position 2.30933 210.308
+   size 0.23 0.76
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style blank
+   {
+    ImageWidgetClass logo {
+     ignorepointer 1
+     position 0 -210
+     size 200 200
+     halign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     mode blend
+     "src alpha" 1
+     "stretch mode" stretch_w_h
+    }
+    CheckBoxWidgetClass chckbx_dragMarkers {
+     position 0 -40
+     size 1 25
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 1
+     text "#rl_drag_markers"
+    }
+    GridSpacerWidgetClass playerPosPanel {
+     ignorepointer 1
+     position 0 -40
+     size 200 30
+     halign right_ref
+     valign bottom_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 1
+     Columns 2
+     Rows 1
+     {
+      TextWidgetClass txt_pos_x {
+       ignorepointer 1
+       position 0.28 141
+       size 0.245 30
+       halign right_ref
+       hexactpos 0
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+      }
+      TextWidgetClass txt_pos_y {
+       ignorepointer 1
+       position 0.025 141
+       size 0.245 30
+       halign right_ref
+       hexactpos 0
+       vexactpos 1
+       hexactsize 0
+       vexactsize 1
+      }
+     }
+    }
+   }
+  }
+  PanelWidgetClass topPanel {
+   ignorepointer 1
+   position 12.7595 19.1271
+   size 0.75 52
+   halign right_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 1
+   {
+    PanelWidgetClass uaSecondary2 {
+     ignorepointer 1
+     size 1 1
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+    }
+   }
+  }
+  PanelWidgetClass fullPanel {
+   ignorepointer 1
+   color 0.2039 0.2039 0.2039 0.6745
+   position -5.17592 10
+   size 0.99539 0.92
+   halign center_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style blank
+  }
+  PanelWidgetClass ident_mapmenu {
+   visible 0
+   ignorepointer 1
+   position 10 10
+   size 48 48
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+  }
+ }
+}

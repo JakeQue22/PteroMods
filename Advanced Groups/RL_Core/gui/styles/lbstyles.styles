@@ -1,0 +1,28 @@
+<WidgetStyles>
+    <Widget Name="PanelWidget">
+        <Style Name="RL_Clean_outline" Font="gui/fonts/AmorSerifPro-Bold" ImageSet="rl_core_set" Color="4294967295">
+            <State Name="Disabled">
+                <Item Name="Top" Image="" />
+                <Item Name="RightTop" Image="" />
+                <Item Name="Right" Image="" />
+                <Item Name="RightBottom" Image="" />
+                <Item Name="Bottom" Image="" />
+                <Item Name="LeftBottom" Image="" />
+                <Item Name="Left" Image="" />
+                <Item Name="LeftTop" Image="" />
+                <Item Name="Center" Image="" />
+            </State>
+            <State Name="Normal">
+                <Item Name="Top" Image="pixel" />
+                <Item Name="RightTop" Image="pixel" />
+                <Item Name="Right" Image="pixel" />
+                <Item Name="RightBottom" Image="pixel" />
+                <Item Name="Bottom" Image="pixel" />
+                <Item Name="LeftBottom" Image="pixel" />
+                <Item Name="Left" Image="pixel" />
+                <Item Name="LeftTop" Image="pixel" />
+                <Item Name="Center" Image="" />
+            </State>
+        </Style>
+    </Widget>
+</WidgetStyles>

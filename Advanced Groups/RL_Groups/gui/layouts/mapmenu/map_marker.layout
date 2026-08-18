@@ -1,0 +1,55 @@
+GridSpacerWidgetClass rootFrame {
+ ignorepointer 1
+ size 100 100
+ hexactpos 1
+ vexactpos 1
+ hexactsize 1
+ vexactsize 1
+ draggable 0
+ Padding 0
+ Margin 0
+ "Size To Content H" 1
+ "Size To Content V" 1
+ content_valign center
+ Columns 2
+ Rows 1
+ {
+  ImageWidgetClass icon {
+   ignorepointer 1
+   position 35 26
+   size 25 25
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   mode blend
+   "src alpha" 1
+   stretch 1
+  }
+  TextWidgetClass name {
+   ignorepointer 1
+   size 48 48
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   font "gui/fonts/sdf_MetronLight72"
+   "bold text" 1
+   "exact text" 1
+   "exact text size" 15
+   "size to text h" 1
+   "size to text v" 1
+  }
+  PanelWidgetClass ident_map_marker {
+   visible 0
+   ignorepointer 1
+   position 10 10
+   size 48 48
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+  }
+ }
+}

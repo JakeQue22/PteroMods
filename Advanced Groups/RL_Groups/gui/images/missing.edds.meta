@@ -1,0 +1,16 @@
+MetaFileClass {
+ Name "{68950FEC12524FA2}RayLab_Groups/gui/images/missing.edds"
+ Author "desktop-1jtbbmp"
+ ChangeDate -278369380
+ Configurations {
+  PNGResourceClass PC {
+   SourceFile "missing.png"
+  }
+  PNGResourceClass XBOX_ONE : PC {
+  }
+  PNGResourceClass PS4 : PC {
+  }
+  PNGResourceClass LINUX : PC {
+  }
+ }
+}

@@ -1,0 +1,117 @@
+PanelWidgetClass rootFrame {
+ visible 1
+ clipchildren 1
+ color 0 0 0 1
+ position 0.02 0.15
+ size 300 300
+ halign right_ref
+ valign bottom_ref
+ hexactpos 0
+ vexactpos 0
+ hexactsize 1
+ vexactsize 1
+ style RL_Clean_outline
+ {
+  PanelWidgetClass panelTop {
+   ignorepointer 1
+   size 1 0.07
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   {
+    TextWidgetClass txt_angle {
+     ignorepointer 1
+     position 0.15 0
+     size 50 1
+     halign center_ref
+     hexactpos 0
+     vexactpos 1
+     hexactsize 1
+     vexactsize 0
+     "text halign" center
+     "text valign" center
+    }
+    TextWidgetClass txt_speed {
+     ignorepointer 1
+     position 2.5 0
+     size 80 1
+     halign right_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 0
+     "text halign" right
+     "text valign" center
+    }
+    TextWidgetClass txt_coords {
+     ignorepointer 1
+     position 2.5 0
+     size 100 1
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 1
+     vexactsize 0
+     "size to text h" 1
+     "size to text v" 0
+     "text valign" center
+    }
+   }
+  }
+  PanelWidgetClass panelMap {
+   clipchildren 1
+   ignorepointer 1
+   color 0 0 0 1
+   size 1 0.93
+   halign center_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style RL_Clean_outline
+   {
+    MapWidgetClass mapWidget {
+     clipchildren 1
+     size 0.995 0.995
+     halign center_ref
+     valign center_ref
+     hexactpos 1
+     vexactpos 1
+     hexactsize 0
+     vexactsize 0
+     priority 5
+     {
+      PanelWidgetClass iconPane {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign right_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       priority 399
+      }
+      CanvasWidgetClass drawCanvas {
+       ignorepointer 1
+       position 0 0
+       size 1 1
+       halign right_ref
+       valign bottom_ref
+       hexactpos 1
+       vexactpos 1
+       hexactsize 0
+       vexactsize 0
+       priority 398
+      }
+     }
+    }
+   }
+  }
+ }
+}

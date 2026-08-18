@@ -1,0 +1,20 @@
+ImageSetClass {
+ Name "rl_core_set"
+ RefSize 1024 1024
+ Textures {
+  ImageSetTextureClass {
+   mpix 1
+   path "{534691EE0479871C}gui/imagesets/dayz_gui.edds"
+  }
+ }
+ Images {
+  ImageSetDefClass pixel {
+   Name "pixel"
+   Pos 161 302
+   Size 1 1
+   Flags 0
+  }
+ }
+ Groups {
+ }
+}

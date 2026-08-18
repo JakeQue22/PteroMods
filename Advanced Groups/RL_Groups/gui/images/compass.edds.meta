@@ -1,0 +1,16 @@
+MetaFileClass {
+ Name "{D64A829CEF7E545B}RayLab_Groups/gui/images/compass.edds"
+ Author "desktop-1jtbbmp"
+ ChangeDate 1414752635
+ Configurations {
+  PNGResourceClass PC {
+   SourceFile "compass.png"
+  }
+  PNGResourceClass XBOX_ONE : PC {
+  }
+  PNGResourceClass PS4 : PC {
+  }
+  PNGResourceClass LINUX : PC {
+  }
+ }
+}

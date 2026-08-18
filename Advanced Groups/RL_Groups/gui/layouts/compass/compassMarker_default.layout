@@ -1,0 +1,43 @@
+GridSpacerWidgetClass rootFrame {
+ visible 1
+ position 0 0
+ size 0.079 0.029
+ hexactpos 0
+ vexactpos 0
+ hexactsize 0
+ vexactsize 0
+ style RL_Clean_outline
+ Padding 1
+ Margin 1
+ "Size To Content H" 1
+ "Size To Content V" 1
+ Columns 2
+ Rows 1
+ {
+  ImageWidgetClass icon {
+   ignorepointer 1
+   position 10 10
+   size 16 16
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   mode blend
+   "src alpha" 1
+   stretch 1
+  }
+  TextWidgetClass name {
+   visible 1
+   ignorepointer 1
+   position 10 10
+   size 48 16
+   hexactpos 1
+   vexactpos 1
+   hexactsize 1
+   vexactsize 1
+   text "Displayname"
+   "size to text h" 1
+   "size to text v" 1
+  }
+ }
+}

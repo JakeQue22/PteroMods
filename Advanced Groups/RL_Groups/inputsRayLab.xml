@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<modded_inputs>
+    <inputs>
+        <actions>
+            <input name="UARLMGroupOpenMap" loc="rl_input_open_map" />
+            <input name="UARLMGroupOpenMapGroup" loc="rl_input_open_map_group" />
+            <input name="UARLMGroupTacticalPing" loc="rl_input_tactical_ping" />
+            <input name="UARLMGroupTacticalPingClear" loc="rl_input_clear_tactical_ping" />
+            <input name="UARLMGroupAcceptInvite" loc="rl_input_accept_invite" />
+            <input name="UARLMGroupDeleteMarker" loc="rl_input_delete_marker" />
+            <input name="UARLMGroupToggleVisibility" loc="rl_input_toggle_visibility" />
+            <input name="UARLMSwitchChatChannel" loc="rl_input_chat_channel" />
+            <input name="UARLMGroupToggleCompass" loc="rl_input_toggle_compass" />
+            <input name="UARLMGroupTogglePlayerList" loc="rl_input_toggle_playerlist" />
+            <input name="UARLMGroupToggleMiniMap" loc="rl_input_toggle_minimap" />
+        </actions>
+		<sorting name="rl_admin" loc="RayLab">
+            <input name="UARLMGroupOpenMap"/>
+            <input name="UARLMGroupOpenMapGroup"/>
+            <input name="UARLMGroupTacticalPing"/>
+            <input name="UARLMGroupTacticalPingClear"/>
+            <input name="UARLMGroupAcceptInvite"/>
+            <input name="UARLMGroupDeleteMarker"/>
+            <input name="UARLMGroupToggleVisibility"/>
+            <input name="UARLMSwitchChatChannel"/>
+            <input name="UARLMGroupToggleCompass"/>
+            <input name="UARLMGroupTogglePlayerList"/>
+            <input name="UARLMGroupToggleMiniMap"/>
+		</sorting>
+    </inputs>
+    <preset>
+		<input name="UARLMGroupOpenMap">
+            <btn name="kM"/>
+        </input>
+		<input name="UARLMGroupOpenMapGroup">
+            <btn name="kP"/>
+        </input>
+		<input name="UARLMGroupTacticalPing">
+            <btn name="kT"/>
+        </input>
+		<input name="UARLMGroupTacticalPingClear">
+            <btn name="kC"/>
+        </input>
+		<input name="UARLMGroupDeleteMarker">
+            <btn name="kDelete"/>
+        </input>
+		<input name="UARLMGroupToggleVisibility">
+            <btn name="kK"/>
+        </input>
+		<input name="UARLMSwitchChatChannel">
+            <btn name="kComma"/>
+        </input>
+		<input name="UARLMGroupToggleCompass">
+            <btn name="kH"/>
+        </input>
+		<input name="UARLMGroupTogglePlayerList">
+            <btn name="kU"/>
+        </input>
+		<input name="UARLMGroupToggleMiniMap" value="0.5">
+            <btn name="kB"/>
+        </input>
+		<input name="UARLMGroupAcceptInvite">
+            <btn name="kLControl">
+				<btn name="kJ"/>
+			</btn>
+            <btn name="kRControl">
+				<btn name="kJ"/>
+			</btn>
+        </input>
+    </preset>
+</modded_inputs>

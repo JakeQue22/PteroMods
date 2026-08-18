@@ -1,0 +1,23 @@
+ButtonWidgetClass btn {
+ visible 1
+ size 100 20
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 1
+ vexactsize 1
+ {
+  PanelWidgetClass btnColor {
+   ignorepointer 1
+   size 1 1
+   halign center_ref
+   valign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   style RL_Clean_outline
+  }
+ }
+}

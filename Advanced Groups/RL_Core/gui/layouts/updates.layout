@@ -1,0 +1,40 @@
+PanelWidgetClass rootFrame {
+ color 0.3922 0.3922 0.3922 0.3922
+ size 800 500
+ halign center_ref
+ valign center_ref
+ hexactpos 1
+ vexactpos 1
+ hexactsize 1
+ vexactsize 1
+ style rover_sim_colorable
+ {
+  RichTextWidgetClass messages {
+   ignorepointer 1
+   size 0.98 0.9
+   halign center_ref
+   valign bottom_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   text "ABC\ndef\n"
+   font "gui/fonts/Metron28"
+   "exact text" 1
+   text_proportion 0.5
+   wrap 1
+  }
+  TextWidgetClass TextWidget0 {
+   ignorepointer 1
+   size 1 0.1
+   halign center_ref
+   hexactpos 1
+   vexactpos 1
+   hexactsize 0
+   vexactsize 0
+   text "Mod Update Checker"
+   "text halign" center
+   "text valign" center
+  }
+ }
+}

@@ -1,0 +1,1 @@
+class RL_Webhook_Empty {}
