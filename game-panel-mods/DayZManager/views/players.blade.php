@@ -885,18 +885,32 @@
             return ['contents', 'cargo', 'inventory', 'items', 'children', 'attachments', 'attached', 'pockets', 'storage', 'containers'].indexOf(String(key || '').toLowerCase()) !== -1;
         }
 
+        function numericField(entry, keys) {
+            for (var i = 0; i < keys.length; i += 1) {
+                var v = entry ? entry[keys[i]] : undefined;
+                if (typeof v === 'number' && v > 0) { return v; }
+                if (typeof v === 'string' && v.trim() !== '') {
+                    var n = parseInt(v.trim(), 10);
+                    if (!isNaN(n) && n > 0) { return n; }
+                }
+            }
+            return 0;
+        }
+
         function collectEntry(entry, parentSlot, parentClass, inContainer) {
             if (!entry || typeof entry !== 'object') { return; }
             var cls = stringField(entry, ['className', 'classname', 'class', 'type', 'item', 'itemClass', 'item_class']);
             var itemId = stringField(entry, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']);
             var itemName = stringField(entry, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']);
             var slot = typeof entry.slot === 'string' ? entry.slot : (parentSlot || '');
+            var qty = numericField(entry, ['quantity', 'count', 'amount', 'stackCount', 'stack_count']);
             if (cls !== '') {
                 items.push({
                     slot: slot,
                     className: cls,
                     itemId: itemId,
                     name: itemName,
+                    quantity: qty,
                     isContainerContent: !!inContainer,
                     containerSlot: parentSlot || '',
                     containerClass: parentClass || ''
@@ -956,6 +970,7 @@
                         className: cls,
                         itemId: stringField(obj, ['itemId', 'item_id', 'internalId', 'internal_id', 'identifier', 'id']),
                         name: stringField(obj, ['name', 'itemName', 'item_name', 'displayName', 'display_name', 'label', 'title']),
+                        quantity: numericField(obj, ['quantity', 'count', 'amount', 'stackCount', 'stack_count']),
                         isContainerContent: !!inContainer,
                         containerSlot: parentSlot || '',
                         containerClass: parentClass || ''
@@ -1062,8 +1077,16 @@
             card.style.cssText = cardStyle;
 
             var imgWrap = document.createElement('div');
-            imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;';
+            imgWrap.style.cssText = 'width:80px;height:80px;display:flex;align-items:center;justify-content:center;position:relative;';
             setCardImage(imgWrap, '', label);
+
+            if (item.quantity > 1) {
+                var badge = document.createElement('span');
+                badge.textContent = 'x' + item.quantity;
+                badge.style.cssText = 'position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,0.72);color:#fff;font-size:0.65rem;font-weight:700;padding:1px 4px;border-radius:0.3em;line-height:1.4;pointer-events:none;';
+                imgWrap.appendChild(badge);
+            }
+
             card.appendChild(imgWrap);
 
             var nameEl = document.createElement('div');

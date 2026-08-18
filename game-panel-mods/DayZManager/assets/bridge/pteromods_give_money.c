@@ -41,6 +41,10 @@
  *                             static void JsonSaveFile(string filename, T data)
  *   3_game/systems/inventory/inventory.c
  *                             EntityAI CreateInInventory(string type)
+ *   3_game/entities/itembase.c
+ *                             void SetQuantity(float value, bool destroyOnEmpty = true,
+ *                                              bool isCold = false, bool isInWater = false,
+ *                                              bool force = false)
  *   3_game/playeridentity.c   string GetPlainId()
  *                             string GetId()
  */
@@ -266,12 +270,24 @@ class PteroMods_GiveMoneyBridge
         if (quantity < 1)
             return 0;
 
-        for (int i = 0; i < quantity; i++)
+        const int MAX_STACK = 99;
+
+        while (quantity > 0)
         {
             EntityAI created = player.GetInventory().CreateInInventory(entry.item_class);
 
             if (!created)
-                return quantity - i;
+                return quantity;
+
+            int stackSize = quantity;
+            if (stackSize > MAX_STACK)
+                stackSize = MAX_STACK;
+
+            ItemBase stackItem = ItemBase.Cast(created);
+            if (stackItem)
+                stackItem.SetQuantity(stackSize);
+
+            quantity -= stackSize;
         }
 
         return 0;
