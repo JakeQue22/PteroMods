@@ -84,5 +84,28 @@ use Illuminate\Support\Facades\Route;
                 $register($routeFile);
             }
         }
+
+        // Register Artisan console commands when running in CLI context.
+        if (PHP_SAPI === 'cli' && is_dir($moduleDirectory . '/console')) {
+            foreach (glob($moduleDirectory . '/console/*Command.php') ?: [] as $commandFile) {
+                $className = null;
+                $contents = (string) file_get_contents($commandFile);
+
+                if (preg_match('/namespace\s+([\w\\\\]+)/', $contents, $nsMatch)
+                    && preg_match('/class\s+(\w+)/', $contents, $clsMatch)) {
+                    $className = $nsMatch[1] . '\\' . $clsMatch[1];
+                }
+
+                if ($className !== null && class_exists($className)) {
+                    try {
+                        \Illuminate\Support\Facades\Artisan::starting(function ($artisan) use ($className) {
+                            $artisan->resolve($className);
+                        });
+                    } catch (\Throwable) {
+                        // Best-effort command registration.
+                    }
+                }
+            }
+        }
     }
 })();

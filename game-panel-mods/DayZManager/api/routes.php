@@ -53,6 +53,7 @@ foreach (['/api/servers/{server}/dayz', '/api/server/{server}/dayz'] as $prefix)
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/tab', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZTabController@status'];
     $routes[] = ['method' => 'GET', 'uri' => $prefix . '/dashboard', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZDashboardController@show'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/power', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@power'];
+    $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/send-message', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@sendMessage'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/restart-schedule', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@saveRestartSchedule'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/restart-schedule/tick', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@tickRestartSchedule'];
     $routes[] = ['method' => 'POST', 'uri' => $prefix . '/server/mod-install-followup/tick', 'action' => 'GamePanelMods\\DayZManager\\Controllers\\DayZServerController@tickModInstallFollowUp'];

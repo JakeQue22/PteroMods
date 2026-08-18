@@ -192,6 +192,30 @@ final class DayZServerController
     }
 
     /**
+     * Sends a global message to all connected players via `say -1`.
+     *
+     * @return array<string, mixed>
+     */
+    public function sendMessage(mixed $server = null): array
+    {
+        $model = $this->context->resolve($server)['model'];
+        $this->context->authorizeManage($model);
+
+        $message = trim($this->context->stringInput('message'));
+
+        if ($message === '') {
+            return ['status' => 'failed', 'message' => 'Message cannot be empty.'];
+        }
+
+        $sent = $this->gateway->sendCommand($model, 'say -1 ' . $message);
+
+        return [
+            'status' => $sent ? 'sent' : 'failed',
+            'message' => $sent ? 'Global message sent.' : 'Failed to send message (server may be offline).',
+        ];
+    }
+
+    /**
      * Renders the DZSA Launcher tab, or returns the server's DZSA endpoint for API requests.
      *
      * @return mixed

@@ -137,6 +137,11 @@ final class DayZManagerSettingsService
         'codelock_log_retention_days' => 14,
 
         /**
+         * Number of days Error log files are kept before auto-scrub deletes them.
+         */
+        'error_log_retention_days' => 14,
+
+        /**
          * Shared secret used by the optional server-side DayZ live-map bridge.
          */
         'live_map_bridge_secret' => '',
@@ -207,6 +212,7 @@ final class DayZManagerSettingsService
         'admin_log_retention_days' => 'Admin logs retention (days)',
         'airdrop_log_retention_days' => 'Airdrop logs retention (days)',
         'codelock_log_retention_days' => 'Code Lock logs retention (days)',
+        'error_log_retention_days' => 'Error logs retention (days)',
         'live_map_bridge_secret' => 'Live Map bridge secret (optional)',
         'live_map_tile_url' => 'Live Map tile URL template',
         'cache_fetch_timer_seconds' => 'Cache fetch timer (seconds)',
@@ -256,7 +262,7 @@ final class DayZManagerSettingsService
             . 'you would rather restart manually when convenient.',
         'auto_scrub_profile_logs' =>
             'Disabled by default. When enabled, DayZ Manager checks `/profiles` every day and '
-            . 'deletes old `script_*.log`, `crash_*.log`, `TM_GeneralLogs_*.log`, `DayZServer_*.ADM`, '
+            . 'deletes old `script_*.log`, `crash_*.log`, Error logs, `TM_GeneralLogs_*.log`, `DayZServer_*.ADM`, '
             . '`DayZServer_*.RPT`, Trader (`TM*`), Admin, Airdrop, and Code Lock logs older than each '
             . 'type\'s configured retention window.',
         'script_log_retention_days' =>
@@ -277,6 +283,8 @@ final class DayZManagerSettingsService
             'How many days to keep Airdrop logs in `/profiles/Airdrop/Logs` before automatic cleanup removes them.',
         'codelock_log_retention_days' =>
             'How many days to keep Code Lock logs in `/profiles/CodeLock/Logs` before automatic cleanup removes them.',
+        'error_log_retention_days' =>
+            'How many days to keep Error log files (filenames containing "error") in `/profiles` before automatic cleanup removes them.',
         'live_map_bridge_secret' =>
             'Optional shared secret for a server-side DayZ script to write player snapshots to '
             . 'the Live Map bridge file securely. Leave blank if your bridge writes directly to '

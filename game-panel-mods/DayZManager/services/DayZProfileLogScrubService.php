@@ -41,6 +41,7 @@ final class DayZProfileLogScrubService
         $retentionByType = [
             'script'         => max(1, (int) $this->settings->get('script_log_retention_days', 14)),
             'crash'          => max(1, (int) $this->settings->get('crash_log_retention_days', 14)),
+            'error'          => max(1, (int) $this->settings->get('error_log_retention_days', 14)),
             'tm_general_log' => max(1, (int) $this->settings->get('tm_general_log_retention_days', 14)),
             'trader_log'     => max(1, (int) $this->settings->get('trader_log_retention_days', 14)),
             'dzserver_adm'   => max(1, (int) $this->settings->get('dzserver_adm_log_retention_days', 14)),
@@ -67,6 +68,12 @@ final class DayZProfileLogScrubService
                 'path' => '/profiles',
                 'recursive' => false,
                 'matcher' => static fn (string $name): bool => preg_match('/^crash_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log$/i', $name) === 1,
+            ],
+            [
+                'type' => 'error',
+                'path' => '/profiles',
+                'recursive' => false,
+                'matcher' => static fn (string $name): bool => stripos($name, 'error') !== false,
             ],
             [
                 'type' => 'tm_general_log',

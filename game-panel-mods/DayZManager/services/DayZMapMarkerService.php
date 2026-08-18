@@ -288,7 +288,10 @@ final class DayZMapMarkerService
         foreach (self::CATEGORIES as $key => $meta) {
             $entries = $markers[$key] ?? [];
 
-            if ($entries === []) {
+            // Always include dynamic/server-sourced categories (like airdrop and
+            // trader) so they are visible in the layer control even before any
+            // data files are present on the server.
+            if ($entries === [] && !in_array($key, ['airdrop', 'trader'], true)) {
                 continue;
             }
 

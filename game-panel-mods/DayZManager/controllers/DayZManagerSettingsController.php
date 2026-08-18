@@ -74,6 +74,7 @@ final class DayZManagerSettingsController
                 'admin_log_retention_days',
                 'airdrop_log_retention_days',
                 'codelock_log_retention_days',
+                'error_log_retention_days',
             ], true)) {
                 $normalised[(string) $key] = max(1, min(3650, (int) $value));
                 continue;

@@ -65,6 +65,16 @@
 </section>
 
 <section class="dz-card">
+    <h2>Send Global Message</h2>
+    <p class="dz-sub">Broadcast a message to all connected players using the server console (<code>say -1</code>).</p>
+    <div class="dz-form">
+        <input id="dz-global-message" class="dz-input" type="text" placeholder="Message to broadcast…" style="flex:1 1 20rem;min-width:0;" />
+        <button class="dz-btn" onclick="pteroSendGlobalMessage()">Send Message</button>
+    </div>
+    <p id="dz-global-message-status" class="dz-status dz-hidden"></p>
+</section>
+
+<section class="dz-card">
     <h2>Scheduled Restarts</h2>
     <p class="dz-sub">Set restart timing, customize warning text, and choose which warning windows are broadcast.</p>
     <div class="dz-form">
@@ -290,6 +300,46 @@
 
     window.pteroRestartServer = function () {
         return window.pteroPowerSignal('restart');
+    };
+
+    window.pteroSendGlobalMessage = async function () {
+        const status = document.getElementById('dz-global-message-status');
+        const input = document.getElementById('dz-global-message');
+        const meta = document.querySelector('meta[name="csrf-token"]');
+        const message = input ? input.value.trim() : '';
+        if (!message) {
+            status.classList.remove('dz-hidden');
+            status.textContent = 'Please enter a message.';
+            status.className = 'dz-status dz-text-red';
+            return;
+        }
+        status.classList.remove('dz-hidden');
+        status.textContent = 'Sending…';
+        status.className = 'dz-status dz-text-muted';
+        try {
+            const res = await fetch('/api/server/' + encodeURIComponent(SERVER_ID) + '/dayz/server/send-message', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': meta ? meta.content : '',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ message: message }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok && data.status !== 'failed') {
+                status.textContent = '✓ ' + (data.message || 'Message sent.');
+                status.className = 'dz-status dz-text-green';
+                if (input) { input.value = ''; }
+            } else {
+                status.textContent = '✗ ' + (data.message || ('Request failed (' + res.status + ')'));
+                status.className = 'dz-status dz-text-red';
+            }
+        } catch (err) {
+            status.textContent = '✗ Network error: ' + err.message;
+            status.className = 'dz-status dz-text-red';
+        }
     };
 
     window.pteroStartTimedRestart = async function () {
